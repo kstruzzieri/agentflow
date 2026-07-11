@@ -1,0 +1,19 @@
+{
+  "schema_version": 1,
+  "_comment": "Canonical machine policy source for the review-cycle runner (agentflow review-manifest). docs/ai/config.yaml is the human-readable workflow mirror.",
+  "branch_modifiers": {
+    "codex/*": { "gate": "full" },
+    "feature/*": { "gate": "full" },
+    "feat/*": { "gate": "full" },
+    "hotfix/*": { "gate": "critical_only", "require_hotfix_debt": true },
+    "release/*": { "gate": "strict_medium_blocks" },
+    "spike/*": { "gate": "advisory_only" },
+    "*": { "gate": "full" }
+  },
+  "gate_policy": {
+    "full": { "blocks_on": ["critical", "high"], "warns_on": ["medium"] },
+    "critical_only": { "blocks_on": ["critical"], "warns_on": ["high", "medium"] },
+    "strict_medium_blocks": { "blocks_on": ["critical", "high", "medium"], "warns_on": [] },
+    "advisory_only": { "blocks_on": [], "warns_on": ["critical", "high", "medium"] }
+  }
+}

@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="178" height="22" viewBox="0 0 178 22" role="img" aria-label="agentflow: proof verified">
+  <clipPath id="r"><rect width="178" height="22" rx="4"/></clipPath>
+  <g clip-path="url(#r)">
+    <rect width="122" height="22" fill="#1E293B"/>
+    <rect x="122" width="56" height="22" fill="#00D4AA"/>
+  </g>
+  <!-- bolder, 2-rail gate so it reads at 16px inside the badge -->
+  <g transform="translate(5,3) scale(0.125)">
+    <g stroke="#00D4AA" stroke-width="17" stroke-linecap="round">
+      <path d="M26 46 L52 46"/><path d="M26 82 L52 82"/>
+      <path d="M76 46 L102 46"/><path d="M76 82 L102 82"/>
+    </g>
+    <rect x="55" y="30" width="18" height="68" rx="9" fill="#00D4AA"/>
+  </g>
+  <g font-family="Verdana,DejaVu Sans,Geneva,sans-serif" font-size="11">
+    <text x="74" y="15" text-anchor="middle" fill="#CBD5E1">agentflow</text>
+    <text x="150" y="15" text-anchor="middle" fill="#04201A" font-weight="bold">proof</text>
+  </g>
+</svg>

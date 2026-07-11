@@ -1,0 +1,23 @@
+{
+  "schema_version": "0.1.0",
+  "objective": "",
+  "scope": [],
+  "non_goals": [],
+  "invariants": [],
+  "allowed_files": [],
+  "blocked_files": [],
+  "validation_gates": [],
+  "rollback_plan": "",
+  "risk_level": "low",
+  "drift_budget": {
+    "unrelated_edits": 0,
+    "new_dependencies": 0,
+    "formatting_drift": "minimal",
+    "architecture_drift": "requires_approval",
+    "test_weakening": 0
+  },
+  "steps": [],
+  "evidence_ids": [],
+  "locked": false,
+  "locked_at": null
+}

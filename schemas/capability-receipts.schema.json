@@ -1,0 +1,35 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agentflow.dev/schemas/capability-receipts.schema.json",
+  "title": "Agentflow Capability Receipt Ledger Entry",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "id",
+    "capability",
+    "status",
+    "reason",
+    "evidence",
+    "recorded_at"
+  ],
+  "properties": {
+    "schema_version": { "type": "string", "pattern": "^0\\.[0-3]\\.[0-9]+$" },
+    "id": { "type": "string", "minLength": 1 },
+    "capability": { "type": "string", "minLength": 1 },
+    "status": { "enum": ["used", "waived"] },
+    "provider": { "type": "string", "minLength": 1 },
+    "reason": { "type": "string", "minLength": 1 },
+    "evidence": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 }
+    },
+    "recorded_at": { "type": "string" }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "status": { "const": "used" } } },
+      "then": { "required": ["provider"] }
+    }
+  ],
+  "additionalProperties": false
+}

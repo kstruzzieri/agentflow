@@ -1,0 +1,86 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    name: Tests and proof verification (${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12", "3.13"]
+    env:
+      AGENTFLOW_PROOF_ROOT: tests/fixtures/proof-bundle
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Run unit tests
+        run: PYTHONPATH=src python3 -m unittest discover -s tests -v
+
+      - name: Stage configured proof bundle
+        run: |
+          proof_root="$AGENTFLOW_PROOF_ROOT"
+          proof_base_ref="${AGENTFLOW_PROOF_BASE_REF:-}"
+          if [ -z "$proof_base_ref" ] && [ "$proof_root" = "." ] && [ "${{ github.event_name }}" = "pull_request" ]; then
+            proof_base_ref="${{ github.event.pull_request.base.sha }}"
+          fi
+          if [ ! -f "$proof_root/.agent/proof-pack.json" ]; then
+            echo "::error file=$proof_root/.agent/proof-pack.json::Agentflow proof metadata is missing"
+            exit 1
+          fi
+
+          bundle="$RUNNER_TEMP/proof-bundle"
+          rm -rf "$bundle"
+          mkdir -p "$bundle"
+
+          copy_tree() {
+            tar -C "$1" --exclude "./.git" --exclude "./.git/*" -cf - . | tar -C "$2" -xf -
+          }
+
+          if [ -n "$proof_base_ref" ]; then
+            baseline="$RUNNER_TEMP/proof-baseline"
+            rm -rf "$baseline"
+            mkdir -p "$baseline"
+            git archive "$proof_base_ref" -- "$proof_root" | tar -x -C "$baseline"
+            if [ "$proof_root" = "." ]; then
+              copy_tree "$baseline" "$bundle"
+            else
+              copy_tree "$baseline/$proof_root" "$bundle"
+            fi
+          else
+            copy_tree "$proof_root" "$bundle"
+          fi
+
+          git -C "$bundle" init -q
+          git -C "$bundle" add -A
+          git -C "$bundle" \
+            -c user.email=ci@agentflow.invalid \
+            -c user.name=agentflow-ci \
+            commit -qm "proof bundle baseline"
+
+          if [ -n "$proof_base_ref" ]; then
+            find "$bundle" -mindepth 1 -maxdepth 1 ! -name .git -exec rm -rf {} +
+            copy_tree "$proof_root" "$bundle"
+          fi
+
+      - name: verify-run
+        run: PYTHONPATH=src python3 -m agentflow verify-run --no-record --root "$RUNNER_TEMP/proof-bundle"
+
+      - name: verify-proof integrity
+        run: PYTHONPATH=src python3 -m agentflow verify-proof --root "$RUNNER_TEMP/proof-bundle"
+
+      - name: verify strict proof policy
+        run: PYTHONPATH=src python3 -m agentflow verify-proof --strict --root "$RUNNER_TEMP/proof-bundle"

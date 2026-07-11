@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agentflow.dev/schemas/amendments.schema.json",
+  "title": "Agentflow Plan Amendment Entry",
+  "type": "object",
+  "required": ["schema_version", "id", "reason", "requires_approval", "created_at"],
+  "properties": {
+    "schema_version": { "type": "string", "pattern": "^0\\.[0-2]\\.[0-9]+$" },
+    "id": { "type": "string", "minLength": 1 },
+    "reason": { "type": "string", "minLength": 1 },
+    "new_evidence": { "type": "array", "items": { "type": "string" } },
+    "changed_scope": { "type": "array", "items": { "type": "string" } },
+    "changed_steps": { "type": "array", "items": { "type": "string" } },
+    "changed_risk": { "type": ["string", "null"] },
+    "requires_approval": { "type": "boolean" },
+    "created_at": { "type": "string" }
+  },
+  "additionalProperties": true
+}

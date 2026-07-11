@@ -1,0 +1,271 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>agentflow — brand guide · gate / ledger</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700;800;900&family=Martian+Mono:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --ink:#0B1120; --panel:#111827; --panel2:#1F2937; --line:#374151;
+  --text:#F1F5F9; --body:#CBD5E1; --dim:#94A3B8;
+  --brand:#00D4AA; --deep:#0D9488; --pend:#94A3B8;
+  --pass:#86EFAC; --amber:#FCD34D; --rose:#FDA4AF;
+  --paper:#F1F5F9; --paper-ink:#0F172A; --paper-line:#CBD5E1;
+  --mono:'Martian Mono',ui-monospace,SFMono-Regular,Menlo,monospace;
+  --sans:'Archivo',ui-sans-serif,system-ui,sans-serif;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--ink);color:var(--text);font-family:var(--sans);line-height:1.5;-webkit-font-smoothing:antialiased;overflow-x:hidden}
+.wrap{max-width:1120px;margin:0 auto;padding:0 22px;position:relative}
+.mono{font-family:var(--mono)}
+.eyebrow{font-family:var(--mono);font-size:clamp(9px,2.4vw,11px);letter-spacing:.16em;text-transform:uppercase;color:var(--dim);overflow-wrap:anywhere}
+.hair{height:1px;background:linear-gradient(90deg,transparent,var(--line) 10%,var(--line) 90%,transparent)}
+.top{position:sticky;top:0;z-index:9;border-bottom:1px solid var(--line);background:linear-gradient(180deg,rgba(11,17,32,.95),rgba(11,17,32,.6));backdrop-filter:blur(8px)}
+.top .r{display:flex;align-items:center;gap:12px;height:50px}
+.top b{font-weight:800;letter-spacing:-.01em;font-size:15px}
+.top .sp{flex:1}
+.top .v{font-family:var(--mono);font-size:10px;color:#04201A;background:var(--brand);padding:3px 8px;border-radius:100px;font-weight:600}
+.top .n{font-family:var(--mono);font-size:10px;color:var(--dim);letter-spacing:.1em}
+.wm{font-family:var(--sans);font-weight:800;letter-spacing:-.03em;display:inline-flex;align-items:center;line-height:1}
+.wm .g{display:inline-block;width:.1em;height:.8em;background:var(--brand);margin:0 .1em;border-radius:2px}
+.wm .f{color:var(--brand)}
+.hero{padding:60px 0 40px}
+.hero .kick{display:flex;align-items:center;gap:10px;margin-bottom:22px;flex-wrap:wrap}
+.hero .kick i{width:22px;height:1px;background:var(--deep);flex:0 0 auto}
+.hero .kick .eyebrow{flex:1 1 auto;min-width:0}
+.hero-row{display:flex;align-items:center;gap:26px;flex-wrap:wrap}
+.hero .wm{font-size:clamp(38px,10vw,84px)}
+.hero .lede{font-size:clamp(19px,3.2vw,27px);font-weight:600;margin:24px 0 0;letter-spacing:-.01em}
+.hero .lede b{color:var(--brand)}
+.hero .sub{color:var(--body);max-width:60ch;margin:16px 0 0;font-size:clamp(14px,2.4vw,16px)}
+.chips{display:flex;gap:8px;margin-top:26px;flex-wrap:wrap}
+.chip{font-family:var(--mono);font-size:11px;color:var(--body);border:1px solid var(--line);padding:6px 11px;border-radius:100px}
+.chip b{color:var(--brand)}
+section{padding:50px 0}
+.sh{display:flex;align-items:baseline;gap:14px;margin-bottom:10px;flex-wrap:wrap}
+.sh .no{font-family:var(--mono);font-size:12px;color:var(--brand)}
+.sh h2{font-weight:800;font-size:clamp(21px,4vw,30px);letter-spacing:-.01em;margin:0}
+.sd{color:var(--body);max-width:64ch;margin:0 0 26px;font-size:clamp(14px,2.4vw,15px)}
+.sd b{color:var(--text)}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:14px}
+.prim{display:grid;grid-template-columns:1.05fr .95fr;gap:20px}
+.stage{padding:30px;display:grid;place-items:center;min-height:280px;background:radial-gradient(120% 90% at 60% 30%,rgba(0,212,170,.08),transparent 60%),var(--panel)}
+.steps{padding:26px 28px}
+.st{display:flex;gap:14px;padding:15px 0;border-bottom:1px dashed var(--line)}
+.st:last-child{border-bottom:0}
+.st .d{width:14px;height:14px;border-radius:4px;flex:0 0 auto;margin-top:3px}
+.st h4{margin:0 0 4px;font-size:15px;font-weight:700}
+.st p{margin:0;color:var(--dim);font-size:13px;line-height:1.5}
+.st p code{font-family:var(--mono);color:var(--brand);font-size:12px}
+.sizes{display:flex;gap:16px;align-items:flex-end;flex-wrap:wrap;padding:28px 30px}
+.szc{display:flex;flex-direction:column;align-items:center;gap:7px}
+.szc small{font-family:var(--mono);font-size:9px;color:var(--dim)}
+.tile{background:var(--panel2);border:1px solid var(--line);border-radius:8px;display:grid;place-items:center}
+.tile.lite{background:var(--paper);border-color:var(--paper-line)}
+.sw{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}
+.swx{border:1px solid var(--line);border-radius:12px;overflow:hidden}
+.swx .cap{height:76px}
+.swx .m{padding:11px 12px;background:var(--panel)}
+.swx .nm{font-weight:700;font-size:13px}
+.swx .hx{font-family:var(--mono);font-size:10px;color:var(--dim);margin-top:2px}
+.swx .role{font-family:var(--mono);font-size:9px;letter-spacing:.06em;margin-top:7px;text-transform:uppercase;color:var(--dim)}
+.type{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.spec{padding:26px 28px}
+.spec .role{font-family:var(--mono);font-size:10px;letter-spacing:.14em;color:var(--dim);text-transform:uppercase}
+.spec .nm{font-size:20px;font-weight:800;margin:6px 0 2px}
+.spec .nm.mono{font-family:var(--mono)}
+.spec .big{font-size:clamp(30px,5vw,46px);line-height:1;margin:16px 0 10px;letter-spacing:-.01em}
+.spec .big.mono{font-family:var(--mono);font-weight:700}
+.spec .set{font-family:var(--mono);font-size:12px;color:var(--dim);line-height:1.7}
+.apps{display:grid;grid-template-columns:1.25fr .75fr;gap:16px}
+.term{overflow:hidden}
+.tt{display:flex;align-items:center;gap:7px;padding:11px 15px;border-bottom:1px solid var(--line);background:var(--panel2)}
+.tt i{width:10px;height:10px;border-radius:50%;background:#39434b}.tt i.r{background:#FDA4AF}.tt i.y{background:#FCD34D}.tt i.g{background:#00D4AA}
+.tt .p{margin-left:6px;font-family:var(--mono);font-size:11px;color:var(--dim)}
+.tb{padding:20px 18px 24px;font-family:var(--mono);font-size:12.5px;line-height:1.8;white-space:pre-wrap;word-break:break-word}
+.tb .pr{color:var(--brand)}.tb .c{color:var(--text)}.tb .m{color:var(--dim)}.tb .ok{color:var(--pass)}.tb .ga{color:var(--amber)}
+.side{display:flex;flex-direction:column;gap:16px}
+.card{padding:22px;display:flex;flex-direction:column;gap:14px;align-items:center;justify-content:center;text-align:center}
+.cap{font-family:var(--mono);font-size:9px;color:var(--dim);letter-spacing:.06em}
+.badge{display:inline-flex;border-radius:5px;overflow:hidden;font-family:var(--mono);font-size:11px}
+.badge .l{background:#1E293B;color:#CBD5E1;padding:5px 8px;display:flex;align-items:center;gap:6px}
+.badge .r{background:var(--brand);color:#04201A;padding:5px 9px;font-weight:700}
+.avs{display:flex;gap:14px}
+.av{width:56px;height:56px;border-radius:50%;background:var(--panel2);border:1px solid var(--line);display:grid;place-items:center}
+.av.sq{border-radius:14px}
+.lightgrid{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.pp{background:var(--paper);color:var(--paper-ink);border:1px solid var(--paper-line);border-radius:14px;padding:26px}
+.pp .wm .f{color:var(--deep)}.pp .wm .g{background:var(--deep)}
+.docnav{display:flex;gap:14px;font-family:var(--mono);font-size:11px;color:#64748B;border-bottom:1px solid var(--paper-line);padding-bottom:12px;margin-bottom:16px;flex-wrap:wrap}.docnav b{color:#0F172A}
+.doctag{font-weight:800;font-size:19px;margin:14px 0 4px}.docsub{color:#475569;font-size:13px;margin:0}
+.install{font-family:var(--mono);font-size:12px;background:#E2E8F0;border:1px solid var(--paper-line);border-radius:8px;padding:10px 12px;color:#334155;margin-top:14px;overflow-x:auto;white-space:nowrap}.install .d{color:#64748B}
+.pbadges{display:flex;gap:8px;margin-top:14px;flex-wrap:wrap}
+.pbadge{display:inline-flex;border-radius:5px;overflow:hidden;font-family:var(--mono);font-size:10px}
+.pbadge .l{background:#334155;color:#F1F5F9;padding:4px 7px;display:flex;align-items:center;gap:5px}.pbadge .r{background:var(--deep);color:#F1F5F9;padding:4px 7px;font-weight:700}
+.ppk-h{display:flex;align-items:center;gap:10px;margin-bottom:14px}.ppk-h .t{font-family:var(--mono);font-weight:600;font-size:14px}
+.ppk-chip{margin-left:auto;font-family:var(--mono);font-size:9px;background:var(--deep);color:#F1F5F9;padding:3px 8px;border-radius:100px}
+.ledger{font-family:var(--mono);font-size:12px}
+.ledger .row{display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px dashed var(--paper-line)}.ledger .row:last-child{border-bottom:0}
+.ledger .k{color:#64748B}.ledger .v{color:#0F172A;font-weight:600}.ledger .v.ok{color:#047857}
+.ppk-foot{font-family:var(--mono);font-size:10px;color:#64748B;margin-top:14px;text-align:right}
+footer{padding:46px 0 70px;text-align:center}
+.strip{display:flex;height:9px;border-radius:6px;overflow:hidden;max-width:480px;margin:0 auto 20px;border:1px solid var(--line)}.strip span{flex:1}
+footer .fn{font-family:var(--mono);font-size:11px;color:var(--dim)}
+@media(max-width:820px){.prim,.type,.apps,.lightgrid{grid-template-columns:1fr}.sw{grid-template-columns:repeat(2,1fr)}}
+@media(max-width:560px){.top .desc{display:none}.hero .kick{display:none}}
+</style>
+</head>
+<body>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="g-mark" viewBox="0 0 128 128">
+    <g stroke="#94A3B8" stroke-width="9" stroke-linecap="round"><path d="M18 40 L57 40"/><path d="M18 64 L57 64"/><path d="M18 88 L57 88"/></g>
+    <rect x="58" y="22" width="12" height="84" rx="6" fill="#00D4AA"/>
+    <g stroke="#00D4AA" stroke-width="9" stroke-linecap="round"><path d="M71 40 L88 40"/><path d="M71 64 L88 64"/><path d="M71 88 L88 88"/></g>
+    <g fill="#00D4AA"><path d="M86 32 L106 40 L86 48 Z"/><path d="M86 56 L106 64 L86 72 Z"/><path d="M86 80 L106 88 L86 96 Z"/></g>
+  </symbol>
+  <symbol id="g-mark-light" viewBox="0 0 128 128">
+    <g stroke="#64748B" stroke-width="9" stroke-linecap="round"><path d="M18 40 L57 40"/><path d="M18 64 L57 64"/><path d="M18 88 L57 88"/></g>
+    <rect x="58" y="22" width="12" height="84" rx="6" fill="#0D9488"/>
+    <g stroke="#0D9488" stroke-width="9" stroke-linecap="round"><path d="M71 40 L88 40"/><path d="M71 64 L88 64"/><path d="M71 88 L88 88"/></g>
+    <g fill="#0D9488"><path d="M86 32 L106 40 L86 48 Z"/><path d="M86 56 L106 64 L86 72 Z"/><path d="M86 80 L106 88 L86 96 Z"/></g>
+  </symbol>
+  <symbol id="g-mono" viewBox="0 0 128 128">
+    <g stroke="currentColor" stroke-width="9" stroke-linecap="round"><path d="M18 40 L57 40"/><path d="M18 64 L57 64"/><path d="M18 88 L57 88"/><path d="M71 40 L88 40"/><path d="M71 64 L88 64"/><path d="M71 88 L88 88"/></g>
+    <rect x="58" y="22" width="12" height="84" rx="6" fill="currentColor"/>
+    <g fill="currentColor"><path d="M86 32 L106 40 L86 48 Z"/><path d="M86 56 L106 64 L86 72 Z"/><path d="M86 80 L106 88 L86 96 Z"/></g>
+  </symbol>
+  <symbol id="g-tiny" viewBox="0 0 128 128">
+    <g stroke="#00D4AA" stroke-width="15" stroke-linecap="round"><path d="M26 42 L52 42"/><path d="M26 64 L52 64"/><path d="M26 86 L52 86"/><path d="M76 42 L102 42"/><path d="M76 64 L102 64"/><path d="M76 86 L102 86"/></g>
+    <rect x="56" y="26" width="14" height="76" rx="7" fill="#00D4AA"/>
+  </symbol>
+</svg>
+
+<div class="top"><div class="wrap"><div class="r">
+  <svg width="22" height="22"><use href="#g-tiny"/></svg>
+  <b>agentflow</b><span class="n desc">/ brand guide · gate / ledger</span>
+  <span class="sp"></span><span class="n">REV&nbsp;003</span><span class="v">v0.3.0</span>
+</div></div></div>
+
+<header class="wrap hero">
+  <div class="kick"><i></i><span class="eyebrow">accountable workflow protocol · for coding agents</span></div>
+  <div class="hero-row">
+    <svg width="92" height="92" style="filter:drop-shadow(0 10px 22px rgba(0,0,0,.5))"><use href="#g-mark"/></svg>
+    <span class="wm">agent<span class="g"></span><span class="f">flow</span></span>
+  </div>
+  <p class="lede">Gate the flow. <b>Prove the work.</b></p>
+  <p class="sub">A local protocol for accountable agent work. Plan steps flow through validation gates; each transition is recorded and provable. The mark <b>is</b> that idea — ledger rails passing through a gate, changing state from pending to verified.</p>
+  <div class="chips"><span class="chip"><b>plan</b> locked</span><span class="chip"><b>steps</b> ledgered</span><span class="chip"><b>gate</b> validates</span><span class="chip"><b>proof</b> recorded</span></div>
+</header>
+
+<div class="wrap"><div class="hair"></div></div>
+
+<section class="wrap">
+  <div class="sh"><span class="no">01</span><h2>The primitive</h2></div>
+  <p class="sd">One shape, drawn from what the product does: <b>ledger rails crossing a validation gate</b>. It reuses the vertical bar in the wordmark, so mark and wordmark share a single element. No paper, no checkmark — that language belongs to proof documents, not to workflow.</p>
+  <div class="prim">
+    <div class="panel stage"><svg width="220" height="220"><use href="#g-mark"/></svg></div>
+    <div class="panel steps">
+      <div class="st"><span class="d" style="background:var(--pend)"></span><div><h4>Rails enter — pending</h4><p>Gray inbound rails are <code>plan.steps</code> not yet validated. The ledger of work to do.</p></div></div>
+      <div class="st"><span class="d" style="background:var(--brand)"></span><div><h4>The gate — validate</h4><p>The teal bar is the <code>validation gate</code>. Nothing advances without passing it. Same bar as the wordmark.</p></div></div>
+      <div class="st"><span class="d" style="background:var(--brand)"></span><div><h4>Rails exit — verified</h4><p>Teal outbound rails + arrows: steps that <code>passed</code> and flow on as recorded proof.</p></div></div>
+    </div>
+  </div>
+</section>
+
+<section class="wrap">
+  <div class="sh"><span class="no">02</span><h2>Sizes &amp; variants</h2></div>
+  <p class="sd">The primary mark carries the gray→teal state change. At <b>≤16px the split and arrows get noisy</b>, so the favicon is a reduced one-color gate. Mono knocks everything to a single color.</p>
+  <div class="panel sizes">
+    <div class="szc"><div class="tile" style="width:88px;height:88px;padding:12px"><svg width="64" height="64"><use href="#g-mark"/></svg></div><small>primary</small></div>
+    <div class="szc"><div class="tile" style="width:64px;height:64px;color:#F1F5F9"><svg width="44" height="44"><use href="#g-mono"/></svg></div><small>mono white</small></div>
+    <div class="szc"><div class="tile" style="width:64px;height:64px;color:#00D4AA"><svg width="44" height="44"><use href="#g-mono"/></svg></div><small>mono teal</small></div>
+    <div class="szc"><div class="tile lite" style="width:64px;height:64px"><svg width="44" height="44"><use href="#g-mark-light"/></svg></div><small>on light</small></div>
+    <div class="szc"><div class="tile" style="width:32px;height:32px"><svg width="32" height="32"><use href="#g-tiny"/></svg></div><small>favicon 32</small></div>
+    <div class="szc"><div class="tile" style="width:16px;height:16px"><svg width="16" height="16"><use href="#g-tiny"/></svg></div><small>favicon 16</small></div>
+  </div>
+</section>
+
+<section class="wrap">
+  <div class="sh"><span class="no">03</span><h2>Color system</h2></div>
+  <p class="sd">Teal is the brand + gate + verified color. Mint is reserved for runtime <b>PASS</b>/success — never the general brand. Slate grounds keep the kit readable in light and dark contexts.</p>
+  <div class="sw">
+    <div class="swx"><div class="cap" style="background:#00D4AA"></div><div class="m"><div class="nm">Agentflow teal</div><div class="hx">#00D4AA</div><div class="role" style="color:var(--brand)">brand · gate · verified</div></div></div>
+    <div class="swx"><div class="cap" style="background:#94A3B8"></div><div class="m"><div class="nm">Slate gray</div><div class="hx">#94A3B8</div><div class="role">rail · pending step</div></div></div>
+    <div class="swx"><div class="cap" style="background:#86EFAC"></div><div class="m"><div class="nm">Mint</div><div class="hx">#86EFAC</div><div class="role" style="color:var(--pass)">status: PASS only</div></div></div>
+    <div class="swx"><div class="cap" style="background:#FCD34D"></div><div class="m"><div class="nm">Amber</div><div class="hx">#FCD34D</div><div class="role" style="color:var(--amber)">gate: pending</div></div></div>
+    <div class="swx"><div class="cap" style="background:#FDA4AF"></div><div class="m"><div class="nm">Rose</div><div class="hx">#FDA4AF</div><div class="role" style="color:var(--rose)">drift · fail</div></div></div>
+    <div class="swx"><div class="cap" style="background:#0B1120"></div><div class="m"><div class="nm">Slate ink</div><div class="hx">#0B1120</div><div class="role">ground (dark)</div></div></div>
+    <div class="swx"><div class="cap" style="background:#111827"></div><div class="m"><div class="nm">Surface</div><div class="hx">#111827</div><div class="role">panels</div></div></div>
+    <div class="swx"><div class="cap" style="background:#F1F5F9"></div><div class="m"><div class="nm">Slate-50</div><div class="hx">#F1F5F9</div><div class="role">ground (light)</div></div></div>
+  </div>
+</section>
+
+<section class="wrap">
+  <div class="sh"><span class="no">04</span><h2>Typography</h2></div>
+  <div class="type">
+    <div class="panel spec"><div class="role">Wordmark / UI</div><div class="nm">Archivo</div><div class="big">Aa Gg 0‑9</div><div class="set" style="font-family:var(--sans)">Not Martian Mono for the wordmark — its lowercase l reads as 1.</div></div>
+    <div class="panel spec"><div class="role">Commands / artifacts</div><div class="nm mono">Martian Mono</div><div class="big mono">Aa Gg 0‑9</div><div class="set">agentflow verify-run build-proof audit-drift claim-step</div></div>
+  </div>
+</section>
+
+<section class="wrap">
+  <div class="sh"><span class="no">05</span><h2>In the wild</h2></div>
+  <div class="apps">
+    <div class="panel term">
+      <div class="tt"><i class="r"></i><i class="y"></i><i class="g"></i><span class="p">agentflow — zsh</span></div>
+      <div class="tb">
+<span class="m">$</span> <span class="pr">agentflow</span> <span class="c">verify-run</span>
+<span class="ga">gate</span>  P1 · lint       <span class="ok">PASS</span>
+<span class="ga">gate</span>  P2 · unittest   <span class="ok">PASS</span>
+<span class="ok">PASS</span> run verified · <span class="c">7 steps</span> · <span class="c">0 drift</span>
+<span class="m">$</span> <span class="pr">agentflow</span> <span class="c">build-proof</span>
+<span class="ok">SEALED</span> proof-pack →
+  <span class="m">.agent/proof-pack.{json,md}</span>
+      </div>
+    </div>
+    <div class="side">
+      <div class="panel card"><span class="badge"><span class="l"><svg width="14" height="14"><use href="#g-tiny"/></svg>agentflow</span><span class="r">proof</span></span><span class="cap">README status badge</span></div>
+      <div class="panel card"><div class="avs"><span class="av"><svg width="30" height="30"><use href="#g-mono"/></svg></span><span class="av sq" style="background:#00D4AA;color:#04201A"><svg width="30" height="30"><use href="#g-mono"/></svg></span></div><span class="cap">avatar · round / squircle</span></div>
+      <div class="panel card"><div style="display:flex;gap:12px;align-items:flex-end"><div class="tile" style="width:16px;height:16px"><svg width="16" height="16"><use href="#g-tiny"/></svg></div><div class="tile" style="width:24px;height:24px"><svg width="24" height="24"><use href="#g-tiny"/></svg></div><div class="tile" style="width:32px;height:32px"><svg width="32" height="32"><use href="#g-tiny"/></svg></div></div><span class="cap">favicon 16 / 24 / 32</span></div>
+    </div>
+  </div>
+</section>
+
+<section class="wrap">
+  <div class="sh"><span class="no">06</span><h2>Docs-first / light</h2></div>
+  <p class="sd">The brand lives mostly on light surfaces — README, docs, proof reports, CI. Ink-first on slate-50, teal as the one accent.</p>
+  <div class="lightgrid">
+    <div class="pp">
+      <div class="docnav"><b>Docs</b><span>Guide</span><span>CLI</span><span>MCP</span><span>Proof</span></div>
+      <div style="display:flex;align-items:center;gap:14px"><svg width="44" height="44"><use href="#g-mark-light"/></svg><span class="wm" style="font-size:29px;color:#0F172A">agent<span class="g"></span><span class="f">flow</span></span></div>
+      <p class="doctag">A local protocol for accountable agent work.</p>
+      <p class="docsub">Lock the plan. Gate every step. Prove exactly what changed.</p>
+      <div class="install"><span class="d">$</span> uv tool install --editable . &nbsp;<span class="d"># then</span>&nbsp; agentflow init</div>
+      <div class="pbadges"><span class="pbadge"><span class="l"><svg width="11" height="11" style="color:#0D9488"><use href="#g-mono"/></svg>agentflow</span><span class="r">proof</span></span><span class="pbadge"><span class="l">license</span><span class="r">MIT</span></span><span class="pbadge"><span class="l">python</span><span class="r">3.11+</span></span></div>
+    </div>
+    <div class="pp">
+      <div class="ppk-h"><svg width="26" height="26"><use href="#g-mark-light"/></svg><span class="t">proof-pack.md</span><span class="ppk-chip">VERIFIED</span></div>
+      <div class="ledger">
+        <div class="row"><span class="k">plan</span><span class="v">locked · 9f3c…a1</span></div>
+        <div class="row"><span class="k">P1 · lint</span><span class="v ok">PASS</span></div>
+        <div class="row"><span class="k">P2 · unittest</span><span class="v ok">PASS</span></div>
+        <div class="row"><span class="k">steps</span><span class="v ok">7 / 7 verified</span></div>
+        <div class="row"><span class="k">drift</span><span class="v ok">0 · attributed</span></div>
+        <div class="row"><span class="k">proof</span><span class="v ok">sealed · 2026-07-04</span></div>
+      </div>
+      <div class="ppk-foot">schema 0.7.0 · .agent/proof-pack.json</div>
+    </div>
+  </div>
+</section>
+
+<footer class="wrap">
+  <div class="strip"><span style="background:#00D4AA"></span><span style="background:#94A3B8"></span><span style="background:#86EFAC"></span><span style="background:#FCD34D"></span><span style="background:#FDA4AF"></span><span style="background:#111827"></span></div>
+  <div class="fn">agentflow · rev 003 · gate / ledger direction · gate the flow, prove the work</div>
+</footer>
+
+</body>
+</html>

@@ -1,0 +1,31 @@
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+.venv/
+dist/
+build/
+*.egg-info/
+.DS_Store
+.idea/
+.remember/
+.abacusai/
+.playwright-mcp/
+
+# Local credentials and environment overrides.
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+
+# Agentflow runtime artifacts are task-local by default.
+/.agent/
+/.claude/
+
+# Local AI review-cycle artifacts are branch/task-local by default.
+docs/ai/state/

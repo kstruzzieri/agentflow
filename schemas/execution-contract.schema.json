@@ -1,0 +1,77 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agentflow.dev/schemas/execution-contract.schema.json",
+  "title": "Agentflow Execution Contract",
+  "type": "object",
+  "required": ["schema_version", "contract_type", "root", "shell", "agent_interface", "concurrency", "command_policy", "proof_policy"],
+  "properties": {
+    "schema_version": { "type": "string", "pattern": "^0\\.[0-3]\\.[0-9]+$" },
+    "contract_type": { "const": "agentflow_execution_contract" },
+    "root": { "type": "string" },
+    "shell": {
+      "type": "object",
+      "required": ["default", "requires_posix"],
+      "properties": {
+        "default": { "type": "string", "minLength": 1 },
+        "requires_posix": { "type": "boolean" }
+      },
+      "additionalProperties": true
+    },
+    "agent_interface": {
+      "type": "object",
+      "required": ["minimum_capabilities", "forbidden_assumptions"],
+      "properties": {
+        "minimum_capabilities": { "type": "array", "items": { "type": "string", "minLength": 1 } },
+        "forbidden_assumptions": { "type": "array", "items": { "type": "string", "minLength": 1 } }
+      },
+      "additionalProperties": true
+    },
+    "concurrency": {
+      "type": "object",
+      "required": ["writer_model", "reconcile_ignore"],
+      "properties": {
+        "writer_model": { "enum": ["single_writer"] },
+        "reconcile_ignore": { "type": "array", "items": { "type": "string", "minLength": 1 } },
+        "lease_policy": { "enum": ["advisory", "enforce"] },
+        "lease_ttl_minutes": { "type": "integer", "minimum": 1 },
+        "lease_grace_seconds": { "type": "integer", "minimum": 0 }
+      },
+      "additionalProperties": true
+    },
+    "command_policy": {
+      "type": "object",
+      "required": ["record_outputs", "max_output_bytes", "capture_stderr", "receipt_store"],
+      "properties": {
+        "record_outputs": { "type": "boolean" },
+        "max_output_bytes": { "type": "integer", "minimum": 0 },
+        "capture_stderr": { "type": "boolean" },
+        "receipt_store": { "enum": ["by_attempt", "content_addressed"] },
+        "risk_policy": { "enum": ["block", "require-confirmation", "warn"] },
+        "command_timeout_seconds": { "type": "integer", "minimum": 1 }
+      },
+      "additionalProperties": true
+    },
+    "proof_policy": {
+      "type": "object",
+      "required": [
+        "strict_by_default",
+        "require_command_receipts_for_validation",
+        "require_file_receipts_for_changed_files",
+        "require_managed_receipts_for_validation",
+        "require_evidence_for_inspection_gates"
+      ],
+      "properties": {
+        "strict_by_default": { "type": "boolean" },
+        "require_command_receipts_for_validation": { "type": "boolean" },
+        "require_file_receipts_for_changed_files": { "type": "boolean" },
+        "require_managed_receipts_for_validation": { "type": "boolean" },
+        "require_evidence_for_inspection_gates": { "type": "boolean" },
+        "review_gate": { "enum": ["ignore", "warn", "block"] },
+        "require_review_run": { "type": "boolean" },
+        "hunk_attribution": { "enum": ["enforce", "observe", "off"] }
+      },
+      "additionalProperties": true
+    }
+  },
+  "additionalProperties": true
+}

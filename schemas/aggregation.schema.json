@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agentflow.dev/schemas/aggregation.schema.json",
+  "title": "Agentflow Cross-Worktree Aggregation Report",
+  "type": "object",
+  "required": ["schema_version", "mode", "source_count", "sources"],
+  "properties": {
+    "schema_version": { "type": "string", "pattern": "^0\\.[0-1]\\.[0-9]+$" },
+    "mode": { "enum": ["cross_worktree"] },
+    "source_count": { "type": "integer", "minimum": 1 },
+    "sources": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/source" }
+    }
+  },
+  "$defs": {
+    "source": {
+      "type": "object",
+      "required": ["source_id", "root_label", "base_commit", "head_commit", "namespaced_prefix"],
+      "properties": {
+        "source_id": { "type": "string", "pattern": "^[a-z0-9]{1,16}$" },
+        "root_label": { "type": "string" },
+        "base_commit": { "type": ["string", "null"] },
+        "head_commit": { "type": ["string", "null"] },
+        "namespaced_prefix": { "type": "string", "pattern": "^WT[a-z0-9]{1,16}-$" }
+      },
+      "additionalProperties": true
+    }
+  },
+  "additionalProperties": true
+}

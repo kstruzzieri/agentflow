@@ -1,0 +1,65 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agentflow.dev/schemas/workflow-contract.schema.json",
+  "title": "Agentflow Workflow Contract",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "workflow_pack",
+    "workflow_profile",
+    "selected_by",
+    "selection_reason",
+    "required_capabilities",
+    "review_depth",
+    "validation_policy",
+    "proof_policy"
+  ],
+  "properties": {
+    "schema_version": { "type": "string", "pattern": "^0\\.[0-1]\\.[0-9]+$" },
+    "workflow_pack": { "type": "string", "minLength": 1 },
+    "workflow_profile": { "type": "string", "minLength": 1 },
+    "selected_by": { "type": "string", "minLength": 1 },
+    "selection_reason": { "type": "string", "minLength": 1 },
+    "required_capabilities": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/capability" }
+    },
+    "review_depth": {
+      "enum": ["deep", "light", "none", "spec_quality", "standard"]
+    },
+    "validation_policy": { "$ref": "#/$defs/validationPolicy" },
+    "proof_policy": { "$ref": "#/$defs/proofPolicy" }
+  },
+  "$defs": {
+    "capability": {
+      "type": "object",
+      "required": ["id", "required"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "required": { "type": "boolean" }
+      },
+      "additionalProperties": false
+    },
+    "validationPolicy": {
+      "type": "object",
+      "required": ["required_gates"],
+      "properties": {
+        "required_gates": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        }
+      },
+      "additionalProperties": false
+    },
+    "proofPolicy": {
+      "type": "object",
+      "required": ["hunk_attribution", "require_review_run"],
+      "properties": {
+        "hunk_attribution": { "enum": ["enforce", "observe", "off"] },
+        "require_review_run": { "type": "boolean" }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

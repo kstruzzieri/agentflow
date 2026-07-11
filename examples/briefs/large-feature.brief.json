@@ -1,0 +1,10 @@
+{
+  "schema_version": "0.1.0",
+  "task_type": "feature",
+  "declared_risk": "low",
+  "security_sensitive": false,
+  "candidate_files": ["src/agentflow/runtime.py", "src/agentflow/execution.py", "tests/test_runtime.py"],
+  "blast_radius": "cross_cutting",
+  "validation_needs": ["unit-tests"],
+  "declared_size": "l"
+}

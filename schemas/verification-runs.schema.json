@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agentflow.dev/schemas/verification-runs.schema.json",
+  "title": "Agentflow Verification Run",
+  "type": "object",
+  "required": ["schema_version", "id", "scope", "recorded_at", "findings"],
+  "properties": {
+    "schema_version": { "type": "string", "pattern": "^0\\.[0-4]\\.[0-9]+$" },
+    "id": { "type": "string", "pattern": "^(WT[a-z0-9]{1,16}-)?VR[0-9]+$" },
+    "scope": { "enum": ["proof", "replay", "run", "step"] },
+    "step_id": { "type": "string" },
+    "attempt_id": { "type": "string" },
+    "strict": { "type": "boolean" },
+    "replay": { "type": "boolean" },
+    "status": { "enum": ["failed", "passed", "warning"] },
+    "findings": { "type": "array", "items": { "type": "object", "additionalProperties": true } },
+    "recorded_at": { "type": "string" }
+  },
+  "additionalProperties": true
+}

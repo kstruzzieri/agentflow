@@ -1,0 +1,10 @@
+{
+  "schema_version": "0.1.0",
+  "task_type": "docs",
+  "declared_risk": "low",
+  "security_sensitive": false,
+  "candidate_files": ["docs/roadmap.md"],
+  "blast_radius": "isolated",
+  "validation_needs": [],
+  "declared_size": "xs"
+}

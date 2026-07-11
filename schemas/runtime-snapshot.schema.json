@@ -1,0 +1,73 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agentflow.dev/schemas/runtime-snapshot.schema.json",
+  "title": "Agentflow Runtime Snapshot",
+  "type": "object",
+  "required": ["schema_version", "id", "created_at", "runtime_config_sha256", "runtimes", "routes"],
+  "properties": {
+    "schema_version": { "type": "string", "pattern": "^0\\.[0-3]\\.[0-9]+$" },
+    "id": { "type": "string", "minLength": 1 },
+    "created_at": { "type": "string" },
+    "runtime_config_sha256": { "type": "string", "minLength": 64, "maxLength": 64 },
+    "runtimes": { "type": "array", "items": { "$ref": "#/$defs/runtime_status" } },
+    "routes": { "type": "array", "items": { "$ref": "#/$defs/route_status" } },
+    "mcp_servers": { "type": "array", "items": { "$ref": "#/$defs/mcp_server_status" } }
+  },
+  "$defs": {
+    "check": {
+      "type": "object",
+      "required": ["name", "status"],
+      "properties": {
+        "name": { "type": "string", "minLength": 1 },
+        "status": { "enum": ["failed", "not_applicable", "not_run", "passed", "skipped", "warning"] },
+        "message": { "type": "string" }
+      },
+      "additionalProperties": true
+    },
+    "runtime_status": {
+      "type": "object",
+      "required": ["id", "adapter", "enabled", "status", "declared_capabilities", "observed_capabilities", "capability_source", "reachable", "checks"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "adapter": { "enum": ["claude", "codex", "custom", "go-llm", "openai-compatible"] },
+        "enabled": { "type": "boolean" },
+        "status": { "enum": ["configured", "degraded", "ready", "unavailable"] },
+        "declared_capabilities": { "type": "array", "items": { "type": "string" } },
+        "observed_capabilities": { "type": "array", "items": { "type": "string" } },
+        "capability_source": { "enum": ["declared", "none", "probed"] },
+        "reachable": { "type": "boolean" },
+        "version": { "type": "string" },
+        "checks": { "type": "array", "items": { "$ref": "#/$defs/check" } }
+      },
+      "additionalProperties": true
+    },
+    "route_status": {
+      "type": "object",
+      "required": ["role", "primary", "status"],
+      "properties": {
+        "role": { "type": "string", "minLength": 1 },
+        "primary": { "type": "string", "minLength": 1 },
+        "status": { "enum": ["configured", "degraded", "ready", "unavailable"] },
+        "missing_capabilities": { "type": "array", "items": { "type": "string" } }
+      },
+      "additionalProperties": true
+    },
+    "mcp_server_status": {
+      "type": "object",
+      "required": ["id", "transport", "enabled", "status", "reachable", "declared_tools", "declared_tool_count", "tool_source", "checks"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "transport": { "enum": ["http", "sse", "stdio"] },
+        "enabled": { "type": "boolean" },
+        "status": { "enum": ["configured", "ready", "unavailable"] },
+        "reachable": { "type": "boolean" },
+        "declared_tools": { "type": "array", "items": { "type": "string" } },
+        "declared_tool_count": { "type": "integer", "minimum": 0 },
+        "tool_source": { "enum": ["declared"] },
+        "checks": { "type": "array", "items": { "$ref": "#/$defs/check" } }
+      },
+      "additionalProperties": true
+    }
+  },
+  "additionalProperties": true
+}

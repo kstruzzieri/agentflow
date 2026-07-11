@@ -1,0 +1,59 @@
+{
+  "schema_version": "0.1.0",
+  "id": "openhands-hook-integration",
+  "name": "OpenHands Hook Integration",
+  "description": "Workflow pack that declares a hook template and README for OpenHands integration. Agentflow validates the declared paths but never reads or executes them.",
+  "plan_templates": {
+    "hook-integration": {
+      "schema_version": "0.3.0",
+      "objective": "TODO: describe the OpenHands hook integration change",
+      "scope": ["src/", ".openhands/"],
+      "non_goals": ["Agentflow does not execute hook scripts"],
+      "invariants": ["Hook scripts are wired up by the operator, not by Agentflow"],
+      "allowed_files": ["src/", ".openhands/", ".agent/"],
+      "blocked_files": [],
+      "validation_gates": ["hook-smoke"],
+      "rollback_plan": "Revert the branch with git restore . and git checkout .",
+      "risk_level": "low",
+      "drift_budget": {
+        "unrelated_edits": 0,
+        "new_dependencies": 0,
+        "formatting_drift": "minimal",
+        "architecture_drift": "requires_approval",
+        "test_weakening": 0
+      },
+      "steps": [
+        {
+          "id": "P1",
+          "action": "TODO: wire the declared hook template into the OpenHands runtime",
+          "files": [".openhands/"],
+          "preconditions": ["plan locked"],
+          "expected_diff": ["hook registered"],
+          "validation": ["hook-smoke"],
+          "evidence_ids": []
+        }
+      ],
+      "evidence_ids": [],
+      "locked": false,
+      "locked_at": null
+    }
+  },
+  "profiles": [
+    {
+      "id": "default",
+      "review_depth": "light",
+      "required_capabilities": [{ "id": "openhands", "required": false }],
+      "validation_policy": { "required_gates": ["hook-smoke"] },
+      "proof_policy": { "hunk_attribution": "observe", "require_review_run": false },
+      "plan_template": "hook-integration"
+    }
+  ],
+  "hook_templates": [
+    {
+      "id": "pre-commit",
+      "path": "hooks/pre-commit.sh",
+      "describe": "Reference pre-commit hook; copy into the host project and wire up manually."
+    }
+  ],
+  "readme": "README.md"
+}

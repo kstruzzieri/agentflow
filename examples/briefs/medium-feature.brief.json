@@ -1,0 +1,10 @@
+{
+  "schema_version": "0.1.0",
+  "task_type": "feature",
+  "declared_risk": "medium",
+  "security_sensitive": false,
+  "candidate_files": ["src/agentflow/events.py", "tests/test_events.py"],
+  "blast_radius": "local",
+  "validation_needs": ["unit-tests"],
+  "declared_size": "m"
+}

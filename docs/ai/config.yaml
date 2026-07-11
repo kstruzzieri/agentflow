@@ -1,0 +1,135 @@
+# branch_modifiers and gate_policy below mirror docs/ai/config.json,
+# the canonical machine policy source read by `agentflow review-manifest`.
+schema_version: 1
+
+workflow:
+  name: agentflow-review-cycle
+  state_root: docs/ai/state
+  finding_schema: docs/ai/finding-schema.md
+  severity_rubric: docs/ai/severity-rubric.md
+  provider_neutral: true
+  automation_status: manual_passes_with_manifest_producer
+
+outputs:
+  pass_1: findings-bp.yaml
+  pass_2: findings-adv.yaml
+  pass_3: findings-final.yaml
+  pass_4:
+    required:
+      synthesis: synthesis.md
+      gate: gate.yaml
+    conditional:
+      ready: ready-for-pr.md
+
+passes:
+  "1":
+    id: best-practices
+    prompt: docs/ai/prompts/pass-1-best-practices.md
+    reads_prior_findings: false
+    writes: findings-bp.yaml
+  "2":
+    id: adversarial
+    prompt: docs/ai/prompts/pass-2-adversarial.md
+    reads_prior_findings: false
+    writes: findings-adv.yaml
+  "3":
+    id: defender
+    prompt: docs/ai/prompts/pass-3-defender.md
+    reads_prior_findings: true
+    writes: findings-final.yaml
+  "4":
+    id: synthesis-gate
+    prompt: docs/ai/prompts/pass-4-synthesis-gate.md
+    reads_prior_findings: true
+    writes:
+      - synthesis.md
+      - gate.yaml
+    conditional_writes:
+      - ready-for-pr.md
+
+depths:
+  quick: ["1", "3", "4"]
+  standard: ["1", "2", "3", "4"]
+  thorough: ["1", "2", "3", "4"]
+  proof_sensitive: ["1", "2", "3", "4"]
+
+elevators:
+  - id: schema-validator-drift
+    paths:
+      - schemas/
+      - src/agentflow/validation.py
+      - src/agentflow/contracts.py
+    minimum_depth: thorough
+    severity_floor: high
+    why: "Schema and validator drift can make valid artifacts fail or invalid artifacts pass."
+  - id: proof-pack-integrity
+    paths:
+      - src/agentflow/proof.py
+      - schemas/proof-pack.schema.json
+      - .agent/proof-pack.json
+      - .agent/proof-pack.md
+    minimum_depth: proof_sensitive
+    severity_floor: high
+    critical_if: "A change can make verify-proof miss stale hashes, missing artifacts, or tampered proof metadata."
+  - id: receipt-provenance-replay
+    paths:
+      - src/agentflow/receipts.py
+      - src/agentflow/execution_coverage.py
+      - .agent/command-receipts.jsonl
+      - .agent/file-receipts.jsonl
+    minimum_depth: proof_sensitive
+    severity_floor: high
+    critical_if: "A forged, mismatched, or replayed receipt can satisfy a proof gate."
+  - id: execution-state-machine
+    paths:
+      - src/agentflow/execution.py
+      - .agent/execution.contract.json
+      - .agent/step-runs.jsonl
+      - .agent/verification-runs.jsonl
+    minimum_depth: proof_sensitive
+    severity_floor: high
+    critical_if: "A step can be completed without a verified attempt or dependency order can be bypassed."
+  - id: cli-exit-contracts
+    paths:
+      - src/agentflow/cli.py
+    minimum_depth: thorough
+    severity_floor: high
+    why: "Automation relies on non-zero exits for failed validation, drift, proof, and run checks."
+  - id: dependencies-packaging
+    paths:
+      - pyproject.toml
+      - uv.lock
+    minimum_depth: thorough
+    severity_floor: medium
+    high_if: "A dependency change violates the no-runtime-dependency invariant or changes install behavior."
+
+branch_modifiers:
+  "codex/*":
+    gate: full
+  "feature/*":
+    gate: full
+  "feat/*":
+    gate: full
+  "hotfix/*":
+    gate: critical_only
+    require_hotfix_debt: true
+  "release/*":
+    gate: strict_medium_blocks
+  "spike/*":
+    gate: advisory_only
+  "*":
+    gate: full
+
+gate_policy:
+  full:
+    blocks_on: ["critical", "high"]
+    warns_on: ["medium"]
+  critical_only:
+    blocks_on: ["critical"]
+    warns_on: ["high", "medium"]
+  strict_medium_blocks:
+    blocks_on: ["critical", "high", "medium"]
+    warns_on: []
+  advisory_only:
+    blocks_on: []
+    warns_on: ["critical", "high", "medium"]

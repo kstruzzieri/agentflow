@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-label="agentflow">
+  <!-- tiny mark: bold two-rail gate. matches the badge icon; reads at 16px. -->
+  <g stroke="#00D4AA" stroke-width="17" stroke-linecap="round">
+    <path d="M24 46 L52 46"/><path d="M24 82 L52 82"/>
+    <path d="M76 46 L104 46"/><path d="M76 82 L104 82"/>
+  </g>
+  <rect x="55" y="30" width="18" height="68" rx="9" fill="#00D4AA"/>
+</svg>

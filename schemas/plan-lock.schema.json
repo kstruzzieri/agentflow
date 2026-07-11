@@ -1,0 +1,146 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agentflow.dev/schemas/plan-lock.schema.json",
+  "title": "Agentflow Plan Lock",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "objective",
+    "scope",
+    "non_goals",
+    "invariants",
+    "allowed_files",
+    "blocked_files",
+    "validation_gates",
+    "rollback_plan",
+    "risk_level",
+    "drift_budget",
+    "steps",
+    "evidence_ids"
+  ],
+  "properties": {
+    "schema_version": { "type": "string", "pattern": "^0\\.[0-3]\\.[0-9]+$" },
+    "objective": { "type": "string", "minLength": 1 },
+    "scope": { "type": "array", "items": { "type": "string", "minLength": 1 }, "minItems": 1 },
+    "non_goals": { "type": "array", "items": { "type": "string" } },
+    "invariants": { "type": "array", "items": { "type": "string", "minLength": 1 }, "minItems": 1 },
+    "allowed_files": { "type": "array", "items": { "type": "string", "minLength": 1 }, "minItems": 1 },
+    "blocked_files": { "type": "array", "items": { "type": "string" } },
+    "validation_gates": { "type": "array", "items": { "type": "string", "minLength": 1 }, "minItems": 1 },
+    "rollback_plan": { "type": "string", "minLength": 1 },
+    "risk_level": { "enum": ["low", "medium", "high"] },
+    "drift_budget": {
+      "type": "object",
+      "required": ["unrelated_edits", "new_dependencies", "formatting_drift", "architecture_drift"],
+      "properties": {
+        "unrelated_edits": { "type": "integer", "minimum": 0 },
+        "new_dependencies": { "type": "integer", "minimum": 0 },
+        "formatting_drift": { "type": "string" },
+        "architecture_drift": { "type": "string" },
+        "test_weakening": { "type": "integer", "minimum": 0 }
+      },
+      "additionalProperties": true
+    },
+    "runtime_routes": { "type": "object", "additionalProperties": true },
+    "context_budget": {
+      "type": "object",
+      "properties": {
+        "max_files": { "type": "integer", "minimum": 0 },
+        "max_total_bytes": { "type": "integer", "minimum": 0 },
+        "max_log_lines_per_failure": { "type": "integer", "minimum": 0 },
+        "receipts_required": { "type": "boolean" }
+      },
+      "additionalProperties": true
+    },
+    "quality_gates": { "type": "array", "items": { "type": "string", "minLength": 1 } },
+    "requirements": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["id", "text", "acceptance_criteria"],
+        "properties": {
+          "id": { "type": "string", "pattern": "^[A-Za-z][A-Za-z0-9._-]{0,127}$" },
+          "text": { "type": "string", "minLength": 1 },
+          "acceptance_criteria": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "object",
+              "required": ["id", "text"],
+              "properties": {
+                "id": { "type": "string", "pattern": "^[A-Za-z][A-Za-z0-9._-]{0,127}$" },
+                "text": { "type": "string", "minLength": 1 },
+                "review": {
+                  "type": "object",
+                  "required": ["minimum_depth"],
+                  "properties": {
+                    "minimum_depth": { "enum": ["spec_quality", "deep"] }
+                  },
+                  "additionalProperties": true
+                }
+              },
+              "additionalProperties": true
+            }
+          }
+        },
+        "additionalProperties": true
+      }
+    },
+    "steps": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "action", "files", "preconditions", "expected_diff", "validation", "evidence_ids"],
+        "properties": {
+          "id": { "type": "string", "minLength": 1 },
+          "action": { "type": "string", "minLength": 1 },
+          "files": { "type": "array", "items": { "type": "string", "minLength": 1 }, "minItems": 1 },
+          "preconditions": { "type": "array", "items": { "type": "string" } },
+          "expected_diff": { "type": "array", "items": { "type": "string" } },
+          "validation": { "type": "array", "items": { "type": "string", "minLength": 1 }, "minItems": 1 },
+          "evidence_ids": { "type": "array", "items": { "type": "string" } },
+          "criterion_ids": {
+            "type": "array",
+            "items": { "type": "string", "minLength": 1 },
+            "minItems": 1,
+            "uniqueItems": true
+          },
+          "depends_on": {
+            "type": "array",
+            "items": { "type": "string", "minLength": 1 }
+          },
+          "gates": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": ["kind"],
+              "properties": {
+                "kind": { "enum": ["command", "inspection"] },
+                "run": { "type": "array", "items": { "type": "string" }, "minItems": 1 },
+                "timeout_seconds": { "type": "integer", "minimum": 1 },
+                "evidence_id": { "type": "string", "minLength": 1 },
+                "describe": { "type": "string", "minLength": 1 },
+                "criterion_ids": {
+                  "type": "array",
+                  "items": { "type": "string", "minLength": 1 },
+                  "minItems": 1,
+                  "uniqueItems": true
+                }
+              },
+              "additionalProperties": true
+            }
+          },
+          "execution_mode": { "enum": ["assistive", "external", "manual", "same_session"] },
+          "runtime_role": { "type": "string", "minLength": 1 },
+          "authority": { "enum": ["advise", "commit", "edit", "read", "verify"] }
+        },
+        "additionalProperties": true
+      }
+    },
+    "evidence_ids": { "type": "array", "items": { "type": "string" } },
+    "locked": { "type": "boolean" },
+    "locked_at": { "type": ["string", "null"] }
+  },
+  "additionalProperties": true
+}

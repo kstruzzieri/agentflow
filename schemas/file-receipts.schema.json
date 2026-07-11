@@ -1,0 +1,42 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agentflow.dev/schemas/file-receipts.schema.json",
+  "title": "Agentflow File Receipt",
+  "type": "object",
+  "required": ["schema_version", "id", "step_id", "attempt_id", "path", "change_kind", "before_git_blob", "after_sha256", "recorded_at"],
+  "properties": {
+    "schema_version": { "type": "string", "pattern": "^0\\.[0-4]\\.[0-9]+$" },
+    "id": { "type": "string", "pattern": "^(WT[a-z0-9]{1,16}-)?FR[0-9]+$" },
+    "step_id": { "type": "string", "minLength": 1 },
+    "attempt_id": { "type": "string", "pattern": "^(WT[a-z0-9]{1,16}-)?A[0-9]+$" },
+    "path": { "type": "string", "minLength": 1 },
+    "previous_path": { "type": ["string", "null"] },
+    "change_kind": { "enum": ["added", "deleted", "modified", "renamed"] },
+    "before_git_blob": { "type": ["string", "null"] },
+    "after_sha256": { "type": ["string", "null"], "pattern": "^[0-9a-f]{64}$" },
+    "recorded_at": { "type": "string" },
+    "diff_engine": { "type": "string" },
+    "diff_command_version": { "type": "string" },
+    "diff_algorithm": { "type": "string" },
+    "diff_unified": { "type": "integer" },
+    "hunk_attribution": { "enum": ["hunked", "whole_file_fallback", "disabled"] },
+    "hunks": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["hash", "old_start", "old_count", "new_start", "new_count"],
+        "properties": {
+          "hash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+          "old_start": { "type": "integer" },
+          "old_count": { "type": "integer" },
+          "new_start": { "type": "integer" },
+          "new_count": { "type": "integer" },
+          "context_sha256": { "type": ["string", "null"], "pattern": "^[0-9a-f]{64}$" },
+          "context_source": { "enum": ["head-baseline", "none"] }
+        },
+        "additionalProperties": true
+      }
+    }
+  },
+  "additionalProperties": true
+}

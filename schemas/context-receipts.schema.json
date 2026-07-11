@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agentflow.dev/schemas/context-receipts.schema.json",
+  "title": "Agentflow Context Receipt Entry",
+  "type": "object",
+  "required": ["schema_version", "id", "source", "reason", "used_for", "created_at"],
+  "properties": {
+    "schema_version": { "type": "string", "pattern": "^0\\.[0-2]\\.[0-9]+$" },
+    "id": { "type": "string", "minLength": 1 },
+    "source": { "type": "string", "minLength": 1 },
+    "reason": { "type": "string", "minLength": 1 },
+    "used_for": { "type": "array", "items": { "type": "string", "minLength": 1 } },
+    "bytes": { "type": "integer", "minimum": 0 },
+    "created_at": { "type": "string" }
+  },
+  "additionalProperties": true
+}

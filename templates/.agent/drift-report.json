@@ -1,0 +1,12 @@
+{
+  "schema_version": "0.1.0",
+  "status": "warning",
+  "changed_files": [],
+  "unmapped_hunks": [],
+  "out_of_scope_files": [],
+  "blocked_files_changed": [],
+  "dependency_changes": [],
+  "test_weakening": [],
+  "notes": ["No drift audit has been run yet."],
+  "generated_at": ""
+}

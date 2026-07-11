@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agentflow.dev/schemas/evidence.schema.json",
+  "title": "Agentflow Evidence Entry",
+  "type": "object",
+  "required": ["schema_version", "id", "claim", "source", "confidence", "last_verified"],
+  "properties": {
+    "schema_version": { "type": "string", "pattern": "^0\\.[0-2]\\.[0-9]+$" },
+    "id": { "type": "string", "minLength": 1 },
+    "kind": { "enum": ["command", "file", "log", "review", "runtime", "test", "url", "user"] },
+    "claim": { "type": "string", "minLength": 1 },
+    "source": { "type": "string", "minLength": 1 },
+    "confidence": { "enum": ["low", "medium", "high"] },
+    "last_verified": { "type": "string" },
+    "supports": { "type": "array", "items": { "type": "string", "minLength": 1 } }
+  },
+  "additionalProperties": true
+}

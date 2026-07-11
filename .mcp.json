@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "agentflow": {
+      "command": "python3",
+      "args": ["-m", "agentflow.mcp_server"],
+      "env": {
+        "PYTHONPATH": "src"
+      }
+    }
+  }
+}

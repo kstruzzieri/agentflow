@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agentflow.dev/schemas/task-brief.schema.json",
+  "title": "Agentflow Task Brief",
+  "type": "object",
+  "required": ["schema_version", "task_type", "declared_risk"],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": { "type": "string", "pattern": "^0\\.[0-1]\\.[0-9]+$" },
+    "task_type": { "enum": ["docs", "bugfix", "feature", "refactor"] },
+    "declared_risk": { "enum": ["low", "medium", "high"] },
+    "security_sensitive": { "type": "boolean" },
+    "candidate_files": { "type": "array", "items": { "type": "string", "minLength": 1 } },
+    "blast_radius": { "enum": ["isolated", "local", "cross_cutting"] },
+    "validation_needs": { "type": "array", "items": { "type": "string", "minLength": 1 } },
+    "declared_size": { "enum": ["xs", "s", "m", "l", "xl"] }
+  }
+}

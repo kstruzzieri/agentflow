@@ -1,0 +1,67 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agentflow.dev/schemas/drift-report.schema.json",
+  "title": "Agentflow Drift Report",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "status",
+    "changed_files",
+    "unmapped_hunks",
+    "out_of_scope_files",
+    "blocked_files_changed",
+    "dependency_changes",
+    "test_weakening",
+    "notes",
+    "generated_at"
+  ],
+  "properties": {
+    "schema_version": { "type": "string", "pattern": "^0\\.[0-2]\\.[0-9]+$" },
+    "status": { "enum": ["pass", "fail", "warning"] },
+    "changed_files": { "type": "array", "items": { "type": "string" } },
+    "unmapped_hunks": {
+      "type": "array",
+      "items": {
+        "oneOf": [
+          { "type": "string" },
+          {
+            "type": "object",
+            "required": ["path", "hash", "old_start", "old_count", "new_start", "new_count", "reason"],
+            "properties": {
+              "path": { "type": "string", "minLength": 1 },
+              "hash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+              "old_start": { "type": "integer" },
+              "old_count": { "type": "integer" },
+              "new_start": { "type": "integer" },
+              "new_count": { "type": "integer" },
+              "reason": { "enum": ["no_matching_hunk"] }
+            },
+            "additionalProperties": true
+          }
+        ]
+      }
+    },
+    "out_of_scope_files": { "type": "array", "items": { "type": "string" } },
+    "blocked_files_changed": { "type": "array", "items": { "type": "string" } },
+    "dependency_changes": { "type": "array", "items": { "type": "string" } },
+    "test_weakening": { "type": "array", "items": { "type": "string" } },
+    "notes": { "type": "array", "items": { "type": "string" } },
+    "stale_attempts": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["step_id", "attempt_id", "owner", "expired_at", "note"],
+        "properties": {
+          "step_id": { "type": "string" },
+          "attempt_id": { "type": "string", "pattern": "^A[0-9]+$" },
+          "owner": { "type": ["string", "null"] },
+          "expired_at": { "type": "string" },
+          "note": { "type": "string" }
+        },
+        "additionalProperties": true
+      }
+    },
+    "generated_at": { "type": "string" }
+  },
+  "additionalProperties": true
+}

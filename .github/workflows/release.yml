@@ -1,0 +1,44 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Build and publish release artifacts
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+
+      - name: Run unit tests
+        run: PYTHONPATH=src python3 -m unittest discover -s tests
+
+      - name: Build zipapp artifacts
+        run: python3 scripts/build_zipapp.py --output-dir dist
+
+      - name: Smoke test artifacts
+        run: |
+          python3 dist/agentflow.pyz --version
+          printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}' \
+            | python3 dist/agentflow-mcp.pyz | grep -q '"serverInfo"'
+
+      - name: Generate checksums
+        working-directory: dist
+        run: sha256sum agentflow.pyz agentflow-mcp.pyz > SHA256SUMS
+
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" \
+            dist/agentflow.pyz dist/agentflow-mcp.pyz dist/SHA256SUMS \
+            --title "$GITHUB_REF_NAME" \
+            --generate-notes

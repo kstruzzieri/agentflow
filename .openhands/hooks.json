@@ -1,0 +1,13 @@
+{
+  "_comment": "Example OpenHands Stop hook for Agentflow. Copy/adapt key names to your OpenHands version. Contract: run the script, treat a non-zero exit as 'block completion'. See docs/stop-hook.md.",
+  "hooks": {
+    "stop": [
+      {
+        "name": "agentflow-proof-gate",
+        "command": "sh hooks/stop-gate.sh",
+        "blocking": true,
+        "description": "Block session completion until the Agentflow proof chain (verify-run -> build-proof -> verify-proof) passes. Exits 0 when no plan is locked, so it is safe in ungoverned repos."
+      }
+    ]
+  }
+}

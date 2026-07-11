@@ -1,0 +1,93 @@
+{
+  "allowed_files": [
+    "docs/roadmap.md",
+    ".agent/"
+  ],
+  "blocked_files": [
+    ".claude/",
+    "src/",
+    "tests/",
+    "pyproject.toml"
+  ],
+  "drift_budget": {
+    "architecture_drift": "minimal",
+    "formatting_drift": "minimal",
+    "new_dependencies": 0,
+    "test_weakening": 0,
+    "unrelated_edits": 0
+  },
+  "evidence_ids": [
+    "E1",
+    "E2",
+    "E3"
+  ],
+  "invariants": [
+    "Agentflow remains a model-agnostic workflow and proof microkernel.",
+    "No runtime dependency is added.",
+    "The roadmap stays scoped to protocol, proof, safety, and interoperability work rather than full agent orchestration."
+  ],
+  "locked": true,
+  "locked_at": "2026-06-09T00:00:00+00:00",
+  "non_goals": [
+    "Do not implement any roadmap items in this task.",
+    "Do not add OpenHands as a dependency.",
+    "Do not add review-cycle integration beyond GitHub issue creation."
+  ],
+  "objective": "Create prioritized GitHub tickets from the OpenHands feature analysis and update the Agentflow roadmap.",
+  "risk_level": "low",
+  "rollback_plan": "Close or retitle the created GitHub issues if necessary and revert docs/roadmap.md to the previous roadmap ordering.",
+  "schema_version": "0.3.0",
+  "scope": [
+    "Create specialized Agentflow GitHub issues for the best OpenHands-derived opportunities.",
+    "Prioritize the new work in docs/roadmap.md.",
+    "Record the roadmap edit through Agentflow receipts and verify the run."
+  ],
+  "steps": [
+    {
+      "action": "Create prioritized GitHub tickets and update roadmap.",
+      "evidence_ids": [
+        "E1",
+        "E2",
+        "E3"
+      ],
+      "expected_diff": [
+        "GitHub issues created for OpenHands-derived Agentflow opportunities.",
+        "docs/roadmap.md updated with a prioritized OpenHands-derived opportunity section."
+      ],
+      "files": [
+        "docs/roadmap.md",
+        ".agent/"
+      ],
+      "gates": [
+        {
+          "kind": "command",
+          "run": [
+            "sh",
+            "-c",
+            "PYTHONPATH=src python3 -m unittest discover -s tests -v"
+          ]
+        },
+        {
+          "kind": "command",
+          "run": [
+            "sh",
+            "-c",
+            "PYTHONPATH=src python3 -m agentflow validate-plan .agent/plan.lock.json"
+          ]
+        }
+      ],
+      "id": "P1",
+      "preconditions": [
+        "OpenHands feature analysis identified hook, event, security, stuck-loop, plugin, proof viewer, CI, and MCP-status opportunities."
+      ],
+      "validation": [
+        "PYTHONPATH=src python3 -m unittest discover -s tests -v",
+        "PYTHONPATH=src python3 -m agentflow validate-plan .agent/plan.lock.json"
+      ]
+    }
+  ],
+  "validation_gates": [
+    "PYTHONPATH=src python3 -m unittest discover -s tests -v",
+    "PYTHONPATH=src python3 -m agentflow validate-plan .agent/plan.lock.json"
+  ]
+}

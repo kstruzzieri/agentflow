@@ -1,0 +1,46 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agentflow.dev/schemas/review-manifest.schema.json",
+  "title": "Agentflow Review Manifest",
+  "type": "object",
+  "required": ["schema_version", "review_run_id", "state_dir", "gate_status", "findings", "artifacts"],
+  "properties": {
+    "schema_version": { "type": "string", "pattern": "^0\\.[0-2]\\.[0-9]+$" },
+    "review_run_id": { "type": "string", "pattern": "^RR-[0-9]{8}T[0-9]{6}Z-[0-9a-f]{8}$" },
+    "state_dir": { "type": "string", "minLength": 1 },
+    "policy": { "type": "string" },
+    "gate_status": { "enum": ["pass", "warn", "fail"] },
+    "active_blocking": { "type": "array", "items": { "type": "string" } },
+    "depth_profile": { "enum": ["none", "light", "standard", "spec_quality", "deep"] },
+    "findings": {
+      "type": "object",
+      "properties": {
+        "counts_by_severity": { "type": "object", "additionalProperties": { "type": "integer", "minimum": 0 } },
+        "counts_by_status": { "type": "object", "additionalProperties": { "type": "integer", "minimum": 0 } },
+        "index": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["finding_id", "severity", "status"],
+            "properties": {
+              "finding_id": { "type": "string", "minLength": 1 },
+              "severity": { "enum": ["critical", "high", "medium", "low"] },
+              "status": { "enum": ["open", "accepted", "fixed", "rejected", "superseded"] },
+              "steelman_verdict": { "type": "string" },
+              "superseded_by": { "type": "string" },
+              "fix_commit": { "type": "string" }
+            },
+            "additionalProperties": true
+          }
+        }
+      },
+      "additionalProperties": true
+    },
+    "artifacts": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "type": "object", "required": ["path"], "properties": { "path": { "type": "string", "minLength": 1 } }, "additionalProperties": true }
+    }
+  },
+  "additionalProperties": true
+}

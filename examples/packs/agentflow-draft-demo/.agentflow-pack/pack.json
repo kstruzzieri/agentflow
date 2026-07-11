@@ -1,0 +1,208 @@
+{
+  "schema_version": "0.1.0",
+  "id": "agentflow-draft-demo",
+  "name": "Agentflow Draft Demo",
+  "description": "A demo pack with one profile per recommend archetype so `draft-plan` can compile a brief in each posture (docs-only, small-bugfix, medium-feature, large-feature, high-risk).",
+  "plan_templates": {
+    "docs": {
+      "schema_version": "0.3.0",
+      "objective": "TODO: describe the documentation change",
+      "scope": ["docs/"],
+      "non_goals": ["No code or behavior changes"],
+      "invariants": ["Documentation only; no source edits"],
+      "allowed_files": ["docs/", ".agent/"],
+      "blocked_files": [],
+      "validation_gates": ["docs-build"],
+      "rollback_plan": "Revert the branch with git restore . && git checkout .",
+      "risk_level": "low",
+      "drift_budget": {
+        "unrelated_edits": 0,
+        "new_dependencies": 0,
+        "formatting_drift": "minimal",
+        "architecture_drift": "requires_approval",
+        "test_weakening": 0
+      },
+      "steps": [
+        {
+          "id": "P1",
+          "action": "TODO: write the documentation change",
+          "files": ["docs/"],
+          "preconditions": ["plan locked"],
+          "expected_diff": ["updated documentation"],
+          "validation": ["docs-build"],
+          "evidence_ids": []
+        }
+      ],
+      "evidence_ids": [],
+      "locked": false,
+      "locked_at": null
+    },
+    "bugfix": {
+      "schema_version": "0.3.0",
+      "objective": "TODO: describe the bug fix",
+      "scope": ["src/", "tests/"],
+      "non_goals": ["No unrelated refactors"],
+      "invariants": ["The fix is covered by a regression test"],
+      "allowed_files": ["src/", "tests/", ".agent/"],
+      "blocked_files": [],
+      "validation_gates": ["unit-tests"],
+      "rollback_plan": "Revert the branch with git restore . && git checkout .",
+      "risk_level": "low",
+      "drift_budget": {
+        "unrelated_edits": 0,
+        "new_dependencies": 0,
+        "formatting_drift": "minimal",
+        "architecture_drift": "requires_approval",
+        "test_weakening": 0
+      },
+      "steps": [
+        {
+          "id": "P1",
+          "action": "TODO: add a failing regression test, then the minimal fix",
+          "files": ["src/", "tests/"],
+          "preconditions": ["plan locked"],
+          "expected_diff": ["a regression test plus the fix"],
+          "validation": ["unit-tests"],
+          "evidence_ids": []
+        }
+      ],
+      "evidence_ids": [],
+      "locked": false,
+      "locked_at": null
+    },
+    "feature": {
+      "schema_version": "0.3.0",
+      "objective": "TODO: describe the feature",
+      "scope": ["src/", "tests/"],
+      "non_goals": ["No new runtime dependencies"],
+      "invariants": [
+        "Standard library only; no new runtime dependencies",
+        "All new behavior covered by unit tests"
+      ],
+      "allowed_files": ["src/", "tests/", ".agent/"],
+      "blocked_files": [],
+      "validation_gates": ["unit-tests"],
+      "rollback_plan": "Revert the branch with git restore . && git checkout .",
+      "risk_level": "low",
+      "drift_budget": {
+        "unrelated_edits": 0,
+        "new_dependencies": 0,
+        "formatting_drift": "minimal",
+        "architecture_drift": "requires_approval",
+        "test_weakening": 0
+      },
+      "steps": [
+        {
+          "id": "P1",
+          "action": "TODO: write the failing unit test for the new behavior",
+          "files": ["tests/"],
+          "preconditions": ["plan locked"],
+          "expected_diff": ["a new failing test"],
+          "validation": ["unit-tests"],
+          "evidence_ids": []
+        },
+        {
+          "id": "P2",
+          "action": "TODO: implement the minimal code to pass the test",
+          "files": ["src/"],
+          "preconditions": ["P1 complete"],
+          "expected_diff": ["minimal implementation"],
+          "validation": ["unit-tests"],
+          "evidence_ids": [],
+          "depends_on": ["P1"]
+        }
+      ],
+      "evidence_ids": [],
+      "locked": false,
+      "locked_at": null
+    },
+    "secure": {
+      "schema_version": "0.3.0",
+      "objective": "TODO: describe the security-sensitive change",
+      "scope": ["src/", "tests/"],
+      "non_goals": ["No new runtime dependencies"],
+      "invariants": [
+        "Standard library only; no new runtime dependencies",
+        "Security-sensitive paths are reviewed and scanned"
+      ],
+      "allowed_files": ["src/", "tests/", ".agent/"],
+      "blocked_files": [],
+      "validation_gates": ["unit-tests", "security-scan"],
+      "rollback_plan": "Revert the branch with git restore . && git checkout .",
+      "risk_level": "high",
+      "drift_budget": {
+        "unrelated_edits": 0,
+        "new_dependencies": 0,
+        "formatting_drift": "minimal",
+        "architecture_drift": "requires_approval",
+        "test_weakening": 0
+      },
+      "steps": [
+        {
+          "id": "P1",
+          "action": "TODO: write the failing test that pins the security-sensitive behavior",
+          "files": ["tests/"],
+          "preconditions": ["plan locked"],
+          "expected_diff": ["a new failing test"],
+          "validation": ["unit-tests"],
+          "evidence_ids": []
+        },
+        {
+          "id": "P2",
+          "action": "TODO: implement the minimal change and run the security scan",
+          "files": ["src/"],
+          "preconditions": ["P1 complete"],
+          "expected_diff": ["minimal implementation"],
+          "validation": ["unit-tests", "security-scan"],
+          "evidence_ids": [],
+          "depends_on": ["P1"]
+        }
+      ],
+      "evidence_ids": [],
+      "locked": false,
+      "locked_at": null
+    }
+  },
+  "profiles": [
+    {
+      "id": "docs-only",
+      "review_depth": "none",
+      "required_capabilities": [],
+      "validation_policy": { "required_gates": [] },
+      "proof_policy": { "hunk_attribution": "observe", "require_review_run": false },
+      "plan_template": "docs"
+    },
+    {
+      "id": "small-bugfix",
+      "review_depth": "light",
+      "required_capabilities": [],
+      "validation_policy": { "required_gates": ["unit-tests"] },
+      "proof_policy": { "hunk_attribution": "enforce", "require_review_run": false },
+      "plan_template": "bugfix"
+    },
+    {
+      "id": "medium-feature",
+      "review_depth": "standard",
+      "required_capabilities": [],
+      "validation_policy": { "required_gates": ["unit-tests"] },
+      "proof_policy": { "hunk_attribution": "enforce", "require_review_run": false },
+      "plan_template": "feature"
+    },
+    {
+      "id": "large-feature",
+      "review_depth": "deep",
+      "required_capabilities": [],
+      "validation_policy": { "required_gates": ["unit-tests"] },
+      "proof_policy": { "hunk_attribution": "enforce", "require_review_run": true },
+      "plan_template": "feature"
+    },
+    {
+      "id": "high-risk",
+      "review_depth": "deep",
+      "required_capabilities": [{ "id": "security-review", "required": true }],
+      "validation_policy": { "required_gates": ["unit-tests", "security-scan"] },
+      "proof_policy": { "hunk_attribution": "enforce", "require_review_run": true },
+      "plan_template": "secure"
+    }
+  ]
+}

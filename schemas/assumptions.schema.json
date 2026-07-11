@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agentflow.dev/schemas/assumptions.schema.json",
+  "title": "Agentflow Assumptions",
+  "type": "object",
+  "required": ["schema_version", "assumptions"],
+  "properties": {
+    "schema_version": { "type": "string", "pattern": "^0\\.[0-2]\\.[0-9]+$" },
+    "assumptions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "assumption", "status"],
+        "properties": {
+          "id": { "type": "string", "minLength": 1 },
+          "assumption": { "type": "string", "minLength": 1 },
+          "status": { "enum": ["open", "verified", "rejected", "accepted_risk"] },
+          "evidence_id": { "type": "string" }
+        },
+        "additionalProperties": true
+      }
+    }
+  },
+  "additionalProperties": true
+}

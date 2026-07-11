@@ -1,0 +1,43 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agentflow.dev/schemas/command-receipts.schema.json",
+  "title": "Agentflow Command Receipt",
+  "type": "object",
+  "required": ["schema_version", "id", "step_id", "attempt_id", "provenance", "command", "cwd", "started_at", "finished_at", "exit_code", "truncated"],
+  "properties": {
+    "schema_version": { "type": "string", "pattern": "^0\\.[0-4]\\.[0-9]+$" },
+    "id": { "type": "string", "pattern": "^(WT[a-z0-9]{1,16}-)?CR[0-9]+$" },
+    "step_id": { "type": "string", "minLength": 1 },
+    "attempt_id": { "type": "string", "pattern": "^(WT[a-z0-9]{1,16}-)?A[0-9]+$" },
+    "provenance": { "enum": ["attested", "managed", "observed", "reconstructed"] },
+    "gate": { "type": "string" },
+    "command": { "type": "array", "items": { "type": "string" }, "minItems": 1 },
+    "shell": { "type": "boolean" },
+    "cwd": { "type": "string" },
+    "env_names": { "type": "array", "items": { "type": "string" } },
+    "started_at": { "type": "string" },
+    "finished_at": { "type": "string" },
+    "exit_code": { "type": ["integer", "null"] },
+    "decision": { "enum": ["allowed", "blocked", "timeout"] },
+    "timed_out": { "type": "boolean" },
+    "timeout_seconds": { "type": "integer", "minimum": 1 },
+    "risk": {
+      "type": "object",
+      "properties": {
+        "level": { "enum": ["low", "medium", "high"] },
+        "findings": { "type": "array", "items": { "type": "object" } }
+      }
+    },
+    "risk_policy": { "enum": ["block", "require-confirmation", "warn"] },
+    "confirmed": { "type": "boolean" },
+    "confirmation_source": { "enum": ["cli", "env"] },
+    "stdout_path": { "type": ["string", "null"] },
+    "stderr_path": { "type": ["string", "null"] },
+    "stdout_sha256": { "type": ["string", "null"], "pattern": "^[0-9a-f]{64}$" },
+    "stderr_sha256": { "type": ["string", "null"], "pattern": "^[0-9a-f]{64}$" },
+    "stdout_truncated": { "type": "boolean" },
+    "stderr_truncated": { "type": "boolean" },
+    "truncated": { "type": "boolean" }
+  },
+  "additionalProperties": true
+}

@@ -1,0 +1,6 @@
+# Codex CLI MCP discovery for Agentflow.
+# Codex merges this with ~/.codex/config.toml when run from the repository root.
+[mcp_servers.agentflow]
+command = "python3"
+args = ["-m", "agentflow.mcp_server"]
+env = { PYTHONPATH = "src" }

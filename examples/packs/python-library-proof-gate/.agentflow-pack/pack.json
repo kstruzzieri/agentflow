@@ -1,0 +1,64 @@
+{
+  "schema_version": "0.1.0",
+  "id": "python-library-proof-gate",
+  "name": "Python Library Proof Gate",
+  "description": "Stdlib-only Python library workflow with an enforced proof gate and a unit-test validation gate.",
+  "plan_templates": {
+    "python-library": {
+      "schema_version": "0.3.0",
+      "objective": "TODO: describe the change for this Python library task",
+      "scope": ["src/", "tests/"],
+      "non_goals": ["No new runtime dependencies"],
+      "invariants": [
+        "Standard library only; no new runtime dependencies",
+        "All changes covered by unit tests"
+      ],
+      "allowed_files": ["src/", "tests/", ".agent/"],
+      "blocked_files": [],
+      "validation_gates": ["unit-tests"],
+      "rollback_plan": "Revert the branch with git restore . and git checkout .",
+      "risk_level": "low",
+      "drift_budget": {
+        "unrelated_edits": 0,
+        "new_dependencies": 0,
+        "formatting_drift": "minimal",
+        "architecture_drift": "requires_approval",
+        "test_weakening": 0
+      },
+      "steps": [
+        {
+          "id": "P1",
+          "action": "TODO: write the failing unit test for the change",
+          "files": ["tests/"],
+          "preconditions": ["plan locked"],
+          "expected_diff": ["a new failing test"],
+          "validation": ["unit-tests"],
+          "evidence_ids": []
+        },
+        {
+          "id": "P2",
+          "action": "TODO: implement the minimal code to pass the test",
+          "files": ["src/"],
+          "preconditions": ["P1 complete"],
+          "expected_diff": ["minimal implementation"],
+          "validation": ["unit-tests"],
+          "evidence_ids": [],
+          "depends_on": ["P1"]
+        }
+      ],
+      "evidence_ids": [],
+      "locked": false,
+      "locked_at": null
+    }
+  },
+  "profiles": [
+    {
+      "id": "default",
+      "review_depth": "standard",
+      "required_capabilities": [{ "id": "python", "required": true }],
+      "validation_policy": { "required_gates": ["unit-tests"] },
+      "proof_policy": { "hunk_attribution": "enforce", "require_review_run": false },
+      "plan_template": "python-library"
+    }
+  ]
+}

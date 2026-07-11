@@ -1,0 +1,80 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agentflow.dev/schemas/workflow-pack.schema.json",
+  "title": "Agentflow Workflow Pack",
+  "type": "object",
+  "required": ["schema_version", "id", "name", "description", "plan_templates", "profiles"],
+  "properties": {
+    "schema_version": { "type": "string", "pattern": "^0\\.[0-1]\\.[0-9]+$" },
+    "id": { "type": "string", "minLength": 1 },
+    "name": { "type": "string", "minLength": 1 },
+    "description": { "type": "string", "minLength": 1 },
+    "plan_templates": {
+      "type": "object",
+      "minProperties": 1,
+      "additionalProperties": { "type": "object" }
+    },
+    "profiles": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/profile" }
+    },
+    "hook_templates": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/hook" }
+    },
+    "readme": { "type": "string", "minLength": 1 }
+  },
+  "$defs": {
+    "profile": {
+      "type": "object",
+      "required": ["id", "review_depth", "required_capabilities", "validation_policy", "proof_policy", "plan_template"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "review_depth": { "enum": ["deep", "light", "none", "spec_quality", "standard"] },
+        "required_capabilities": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["id", "required"],
+            "additionalProperties": false,
+            "properties": {
+              "id": { "type": "string", "minLength": 1 },
+              "required": { "type": "boolean" }
+            }
+          }
+        },
+        "validation_policy": {
+          "type": "object",
+          "required": ["required_gates"],
+          "additionalProperties": false,
+          "properties": {
+            "required_gates": { "type": "array", "items": { "type": "string", "minLength": 1 } }
+          }
+        },
+        "proof_policy": {
+          "type": "object",
+          "required": ["hunk_attribution", "require_review_run"],
+          "additionalProperties": false,
+          "properties": {
+            "hunk_attribution": { "enum": ["enforce", "observe", "off"] },
+            "require_review_run": { "type": "boolean" }
+          }
+        },
+        "plan_template": { "type": "string", "minLength": 1 }
+      }
+    },
+    "hook": {
+      "type": "object",
+      "required": ["id", "path"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "path": { "type": "string", "minLength": 1 },
+        "describe": { "type": "string", "minLength": 1 }
+      }
+    }
+  },
+  "additionalProperties": false
+}

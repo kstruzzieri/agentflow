@@ -1,0 +1,36 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "agentflow"
+version = "0.4.0"
+description = "A model-agnostic workflow runner for drift-resistant agentic development."
+readme = "README.md"
+requires-python = ">=3.11"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [
+  { name = "Agentflow contributors" }
+]
+keywords = ["agents", "audit", "cli", "proof", "workflow"]
+classifiers = [
+  "Development Status :: 4 - Beta",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+]
+dependencies = []
+
+[project.urls]
+Homepage = "https://github.com/kstruzzieri/agentflow"
+Documentation = "https://github.com/kstruzzieri/agentflow#readme"
+Issues = "https://github.com/kstruzzieri/agentflow/issues"
+Releases = "https://github.com/kstruzzieri/agentflow/releases"
+
+[project.scripts]
+agentflow = "agentflow.cli:main"
+agentflow-mcp = "agentflow.mcp_server:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
