@@ -64,3 +64,32 @@
 - [ ] Run `python3 -m unittest discover -s tests -v` through `agentflow run` and confirm zero failures.
 - [ ] Record both files, verify/complete P4, then run `verify-run`, `audit-drift`, `build-proof`, and `verify-proof`.
 - [ ] Update branch against current `main`, rerun the complete validation/proof chain, and report the final candidate commit while keeping the soak blocked on #14.
+
+### Task 5: PR #18 review and CI corrections
+
+**Files:** `src/agentflow/artifacts.py`, `tests/test_artifact_versioning.py`,
+`tests/test_stability_policy.py`, `docs/cli-contract.json`, and
+`.github/workflows/ci.yml`.
+
+**Interfaces:** ordinary `read_json` calls consume the existing
+`ARTIFACT_COMPATIBILITY_POLICIES["plan-lock"]`; the CLI manifest generator
+continues to produce `docs/cli-contract.json`; the CI matrix emits the six
+status contexts required by the active `protect-main` ruleset.
+
+- [ ] Add a failing artifact-reader test proving a `1.0.0` plan is rejected by
+  the current `0.3.0` reader, then remove only `"plan-lock"` from the generic
+  reader exclusions.
+- [ ] Add a clean-checkout complete-state `next-action` payload to the runtime
+  contract samples, change `args` to `array|null`, and confirm the focused test
+  changes from failure to pass.
+- [ ] Add a parser-contract assertion for positional requiredness, compute it as
+  `bool(action.option_strings and action.required) or (not action.option_strings
+  and action.nargs not in ("?", "*", argparse.REMAINDER))`, and regenerate the
+  manifest.
+- [ ] Change the workflow matrix to `os: [ubuntu-latest, macos-latest]` and
+  Python `3.11`, `3.12`, `3.13`; set `runs-on` to `matrix.os` and the job name to
+  `Tests and proof verification (<os>, Python <version>)`.
+- [ ] Run the focused suites, then the full suite and Agentflow `verify-run`,
+  `audit-drift`, `build-proof`, and `verify-proof`; commit and push.
+- [ ] Confirm all six required checks complete, reply to and resolve the three
+  addressed review threads, and leave no pending expected contexts.
