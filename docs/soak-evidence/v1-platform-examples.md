@@ -15,3 +15,16 @@ CI: [run 29177747344](https://github.com/kstruzzieri/agentflow/actions/runs/2917
 
 This is the #5 soak baseline for these workloads. Schema-affecting changes reset
 the release soak clock according to issue #11.
+
+## Review-fix revalidation
+
+Run date: 2026-07-12
+
+Validated commit: `d9e5737eb2b930cb3d903579ef9249e2cc8a9561` (review fixes:
+copytree ignore hardening, pinned copyable workflow, subprocess timeouts,
+physical-path git-root comparison, smoke-script copy-fallback test).
+CI: [run 29200067371](https://github.com/kstruzzieri/agentflow/actions/runs/29200067371),
+six jobs green on Linux/macOS × Python 3.11–3.13.
+All four packet workloads re-executed locally at this commit with the same
+commands and results as the baseline table above. No proof-schema change;
+the #5 soak clock is unaffected.
