@@ -6,6 +6,7 @@ from agentflow.versioning import (
     SchemaVersion,
     is_schema_version_compatible,
     parse_schema_version,
+    validate_historical_proof_schema_version,
     validate_schema_version,
 )
 
@@ -31,6 +32,30 @@ class SchemaVersionTests(unittest.TestCase):
         self.assertEqual(
             errors,
             ["plan-lock schema_version 1.0.0 is incompatible with supported 0.2.0"],
+        )
+
+    def test_exact_policy_rejects_an_older_minor(self) -> None:
+        self.assertEqual(
+            validate_schema_version(
+                "0.2.0", "0.3.0", "execution-contract", policy="exact"
+            ),
+            [
+                "execution-contract schema_version 0.2.0 is incompatible with "
+                "supported 0.3.0"
+            ],
+        )
+
+    def test_none_policy_deliberately_skips_version_validation(self) -> None:
+        self.assertEqual(
+            validate_schema_version("not-a-version", "0.9.0", "proof-pack", policy="none"),
+            [],
+        )
+
+    def test_agentflow_1_accepts_historical_proofs_from_0_4_onward(self) -> None:
+        self.assertEqual(validate_historical_proof_schema_version("0.4.0", "1.2.0"), [])
+        self.assertEqual(validate_historical_proof_schema_version("1.1.0", "1.2.0"), [])
+        self.assertNotEqual(
+            validate_historical_proof_schema_version("0.3.9", "1.2.0"), []
         )
 
     def test_invalid_schema_version_is_error(self) -> None:

@@ -2269,7 +2269,6 @@ class AggregationProvenanceProofTests(unittest.TestCase):
                 },
             ],
         }
-
     def test_proof_without_aggregation_file_is_unchanged(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = self._root(tmp)
@@ -2517,6 +2516,23 @@ class AggregationProvenanceProofTests(unittest.TestCase):
             self.assertIn("aggregation_valid", checks)
             self.assertEqual(checks["aggregation_valid"]["status"], "failed")
             self.assertIn("must be a JSON object", checks["aggregation_valid"]["message"])
+
+
+class ProofSchemaGateTests(unittest.TestCase):
+    def test_newer_proof_schema_requests_upgrade_without_tamper_diagnostic(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            create_initial_artifacts(root)
+            proof = build_proof(root, root / ".agent/plan.lock.json")
+            proof["schema_version"] = "0.10.0"
+            proof_path = write_proof_metadata(root, proof)
+
+            findings = verify_proof(root, proof_path)
+            messages = "\n".join(finding["message"] for finding in findings)
+
+            self.assertIn("newer", messages)
+            self.assertIn("upgrade Agentflow", messages)
+            self.assertNotIn("tamper", messages.lower())
 
 
 if __name__ == "__main__":

@@ -42,7 +42,11 @@ from .workflow_contract import (
 from .capabilities import capability_checks, capability_summary
 from .stuck import stuck_block
 from .validation import validate_requirement_traceability
-from .versioning import parse_schema_version, validate_schema_version
+from .versioning import (
+    parse_schema_version,
+    validate_historical_proof_schema_version,
+    validate_schema_version,
+)
 
 
 PROOF_METADATA_FIELDS = {
@@ -810,6 +814,11 @@ def verify_proof(
             )
     if findings:
         return findings
+    schema_errors = validate_historical_proof_schema_version(
+        proof.get("schema_version"), PROOF_PACK_SCHEMA_VERSION
+    )
+    if schema_errors:
+        return [{"severity": "error", "message": error} for error in schema_errors]
     resolved_root = root.resolve()
     generated_paths = set()
     for path in proof["generated_from"]:

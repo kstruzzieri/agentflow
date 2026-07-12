@@ -57,6 +57,15 @@ EXECUTION_ARTIFACT_SCHEMA_VERSIONS = {
     "verification-runs": VERIFICATION_RUNS_SCHEMA_VERSION,
 }
 
+# Working-state ingestion policy. Historical cross-major proof compatibility is
+# handled only by verify-proof; no generic reader inherits that promise.
+ARTIFACT_COMPATIBILITY_POLICIES = {
+    **{name: "same_major" for name in ARTIFACT_SCHEMA_VERSIONS},
+    **{name: "same_major" for name in EXECUTION_ARTIFACT_SCHEMA_VERSIONS},
+    "execution-contract": "exact",
+    "proof-pack": "none",
+}
+
 # Derived summaries and transient intake files are intentionally excluded.
 BASE_ARTIFACT_PATHS = {
     "plan-lock": ".agent/plan.lock.json",

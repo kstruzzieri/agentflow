@@ -9,6 +9,9 @@ from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 from .contracts import (
+    ARTIFACT_COMPATIBILITY_POLICIES,
+    ARTIFACT_PATHS,
+    ARTIFACT_SCHEMA_VERSIONS,
     ASSUMPTIONS_SCHEMA_VERSION,
     CONTEXT_RECEIPTS_SCHEMA_VERSION,
     DRIFT_REPORT_SCHEMA_VERSION,
@@ -16,7 +19,9 @@ from .contracts import (
     FAILURES_SCHEMA_VERSION,
     PLAN_SCHEMA_VERSION,
     PROOF_PACK_SCHEMA_VERSION,
+    EXECUTION_ARTIFACT_SCHEMA_VERSIONS,
 )
+from .versioning import validate_schema_version_policy
 
 
 SCHEMA_VERSION = PLAN_SCHEMA_VERSION
@@ -181,16 +186,65 @@ def initial_files() -> List[Tuple[str, str]]:
     ]
 
 
+def _artifact_name(path: Path) -> Optional[str]:
+    candidate = path.as_posix()
+    paths = {**ARTIFACT_PATHS, "proof-pack": ".agent/proof-pack.json"}
+    return next(
+        (
+            name
+            for name, relative in paths.items()
+            if candidate == relative or candidate.endswith("/" + relative)
+        ),
+        None,
+    )
+
+
+def _validate_artifact_version(
+    path: Path, data: Any, line_number: Optional[int] = None
+) -> None:
+    artifact = _artifact_name(path)
+    reader_gated = {
+        "execution-contract",
+        "step-runs",
+        "command-receipts",
+        "file-receipts",
+        "verification-runs",
+        "drift-report",
+    }
+    if (
+        artifact not in reader_gated
+        or not isinstance(data, dict)
+        or "schema_version" not in data
+    ):
+        return
+    supported = EXECUTION_ARTIFACT_SCHEMA_VERSIONS.get(
+        artifact, ARTIFACT_SCHEMA_VERSIONS.get(artifact)
+    )
+    if supported is None:
+        return
+    errors = validate_schema_version_policy(
+        data.get("schema_version"),
+        supported,
+        artifact,
+        ARTIFACT_COMPATIBILITY_POLICIES[artifact],
+    )
+    if errors:
+        location = f"{path}:{line_number}" if line_number is not None else str(path)
+        raise ValueError(f"{location}: {errors[0]}")
+
+
 def read_json(path: Path) -> Dict[str, Any]:
     with path.open("r", encoding="utf-8") as handle:
-        return json.load(handle)
+        data = json.load(handle)
+    _validate_artifact_version(path, data)
+    return data
 
 
 def try_read_json(path: Path) -> Tuple[Optional[Dict[str, Any]], Optional[str]]:
     """Read a JSON object without raising for malformed or non-object JSON."""
     try:
         data = read_json(path)
-    except json.JSONDecodeError as exc:
+    except (json.JSONDecodeError, ValueError) as exc:
         return None, f"malformed JSON in {path.name}: {exc}"
     if not isinstance(data, dict):
         return None, f"{path.name} top-level value must be a JSON object"
@@ -219,7 +273,9 @@ def read_jsonl(path: Path) -> List[Dict[str, Any]]:
             if not stripped:
                 continue
             try:
-                items.append(json.loads(stripped))
+                item = json.loads(stripped)
+                _validate_artifact_version(path, item, line_number)
+                items.append(item)
             except json.JSONDecodeError as exc:
                 raise ValueError(f"{path}:{line_number}: invalid JSONL: {exc}") from exc
     return items
