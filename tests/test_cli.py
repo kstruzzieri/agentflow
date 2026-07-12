@@ -1885,6 +1885,7 @@ class EventsCommandTests(unittest.TestCase):
         (cwd / ".agent" / "step-runs.jsonl").write_text(
             json.dumps(
                 {
+                    "schema_version": "0.5.0",
                     "event": "claimed",
                     "step_id": "P1",
                     "attempt_id": "A1",

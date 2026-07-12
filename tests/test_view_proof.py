@@ -211,7 +211,10 @@ def _write_fixture(root: Path, with_execution: bool = True) -> None:
             "checks": [{"id": "drift_audit", "status": "passed"}],
         },
     )
-    write_json(root / ".agent/drift-report.json", {"status": "pass", "notes": []})
+    write_json(
+        root / ".agent/drift-report.json",
+        {"schema_version": "0.2.0", "status": "pass", "notes": []},
+    )
     if not with_execution:
         return
     write_json(root / ".agent/execution.contract.json", {"schema_version": "0.3.0"})

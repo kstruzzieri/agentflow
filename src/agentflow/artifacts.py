@@ -218,7 +218,6 @@ def _validate_artifact_version(
     if (
         artifact not in reader_gated
         or not isinstance(data, dict)
-        or "schema_version" not in data
     ):
         return
     supported = EXECUTION_ARTIFACT_SCHEMA_VERSIONS.get(
@@ -271,6 +270,16 @@ def write_json(path: Path, data: Dict[str, Any]) -> None:
 
 
 def append_jsonl(path: Path, item: Dict[str, Any]) -> None:
+    artifact = _artifact_name(path)
+    supported = (
+        EXECUTION_ARTIFACT_SCHEMA_VERSIONS.get(
+            artifact, ARTIFACT_SCHEMA_VERSIONS.get(artifact)
+        )
+        if artifact is not None
+        else None
+    )
+    if supported is not None and "schema_version" not in item:
+        item = {"schema_version": supported, **item}
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("a", encoding="utf-8") as handle:
         handle.write(json.dumps(item, sort_keys=True) + "\n")

@@ -7,10 +7,20 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 
 from agentflow.artifacts import append_jsonl
+from agentflow.contracts import ARTIFACT_SCHEMA_VERSIONS, EXECUTION_ARTIFACT_SCHEMA_VERSIONS
 from agentflow.events import filter_events_since, project_events, valid_since
 
 
 def _write(root: Path, name: str, records: list) -> None:
+    schema_version = EXECUTION_ARTIFACT_SCHEMA_VERSIONS.get(
+        name, ARTIFACT_SCHEMA_VERSIONS.get(name)
+    )
+    records = [
+        {"schema_version": schema_version, **record}
+        if schema_version is not None
+        else record
+        for record in records
+    ]
     path = root / ".agent" / f"{name}.jsonl"
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(

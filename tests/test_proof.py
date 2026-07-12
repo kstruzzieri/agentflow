@@ -136,6 +136,7 @@ class CoverageTests(unittest.TestCase):
             append_jsonl(
                 root / ".agent/command-receipts.jsonl",
                 {
+                    "schema_version": "0.4.0",
                     "id": "CR1",
                     "step_id": "P1",
                     "command": ["check", "criterion"],
@@ -456,6 +457,7 @@ class CoverageTests(unittest.TestCase):
             append_jsonl(
                 root / ".agent/command-receipts.jsonl",
                 {
+                    "schema_version": "0.4.0",
                     "id": "CR1",
                     "step_id": "P1",
                     "command": ["python3", "-m", "unittest"],
@@ -627,6 +629,7 @@ class CoverageTests(unittest.TestCase):
                 append_jsonl(
                     root / ".agent/command-receipts.jsonl",
                     {
+                        "schema_version": "0.4.0",
                         "id": receipt_id,
                         "step_id": step_id,
                         "command": command,
@@ -713,7 +716,10 @@ class CoverageTests(unittest.TestCase):
                 ],
             }
             write_json(root / ".agent/plan.lock.json", plan)
-            append_jsonl(root / ".agent/evidence.jsonl", {"id": "E1"})
+            append_jsonl(
+                root / ".agent/evidence.jsonl",
+                {"schema_version": "0.2.0", "id": "E1"},
+            )
 
             proof = build_proof(root, root / ".agent/plan.lock.json")
 
@@ -1133,7 +1139,12 @@ class CoverageTests(unittest.TestCase):
         }
         path = root / ".agent/runtime-snapshots.jsonl"
         with path.open("a", encoding="utf-8") as handle:
-            handle.write(json.dumps({"id": "R2", "runtimes": []}) + "\n")
+            handle.write(
+                json.dumps(
+                    {"schema_version": "0.3.0", "id": "R2", "runtimes": []}
+                )
+                + "\n"
+            )
             handle.write(json.dumps(snapshot) + "\n")
 
     def test_proof_runtime_block_from_latest_snapshot(self) -> None:

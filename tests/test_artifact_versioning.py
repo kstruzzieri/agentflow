@@ -15,6 +15,23 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class ArtifactReaderVersionTests(unittest.TestCase):
+    def test_version_gated_json_rejects_missing_schema_version(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / ".agent/execution.contract.json"
+            write_json(path, {"contract_type": "agentflow_execution_contract"})
+
+            with self.assertRaisesRegex(ValueError, "schema_version must be"):
+                read_json(path)
+
+    def test_version_gated_jsonl_rejects_missing_schema_version(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / ".agent/step-runs.jsonl"
+            path.parent.mkdir(parents=True)
+            path.write_text('{"event":"claimed"}\n', encoding="utf-8")
+
+            with self.assertRaisesRegex(ValueError, "schema_version must be"):
+                read_jsonl(path)
+
     def test_execution_contract_reader_enforces_exact_policy(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / ".agent/execution.contract.json"
