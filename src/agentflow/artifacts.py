@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import hashlib
 import json
+from contextlib import contextmanager
+from contextvars import ContextVar
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Tuple
@@ -25,6 +27,9 @@ from .versioning import validate_schema_version_policy
 
 
 SCHEMA_VERSION = PLAN_SCHEMA_VERSION
+_VALIDATE_ARTIFACT_VERSIONS = ContextVar(
+    "agentflow_validate_artifact_versions", default=True
+)
 
 
 def utc_now() -> str:
@@ -202,14 +207,13 @@ def _artifact_name(path: Path) -> Optional[str]:
 def _validate_artifact_version(
     path: Path, data: Any, line_number: Optional[int] = None
 ) -> None:
+    if not _VALIDATE_ARTIFACT_VERSIONS.get():
+        return
     artifact = _artifact_name(path)
-    reader_gated = {
-        "execution-contract",
-        "step-runs",
-        "command-receipts",
-        "file-receipts",
-        "verification-runs",
-        "drift-report",
+    reader_gated = set(ARTIFACT_COMPATIBILITY_POLICIES) - {
+        "aggregation",
+        "plan-lock",
+        "proof-pack",
     }
     if (
         artifact not in reader_gated
@@ -231,6 +235,16 @@ def _validate_artifact_version(
     if errors:
         location = f"{path}:{line_number}" if line_number is not None else str(path)
         raise ValueError(f"{location}: {errors[0]}")
+
+
+@contextmanager
+def historical_proof_reads() -> Iterable[None]:
+    """Let verify-proof read its hash-bound historical source artifacts."""
+    token = _VALIDATE_ARTIFACT_VERSIONS.set(False)
+    try:
+        yield
+    finally:
+        _VALIDATE_ARTIFACT_VERSIONS.reset(token)
 
 
 def read_json(path: Path) -> Dict[str, Any]:

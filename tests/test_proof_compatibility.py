@@ -2,10 +2,14 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import subprocess
 import sys
+import tempfile
 import unittest
 from pathlib import Path
+
+from agentflow.proof import core_sha256
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -25,6 +29,19 @@ def verify_fixture(root: Path) -> subprocess.CompletedProcess[str]:
         stderr=subprocess.PIPE,
         check=False,
     )
+
+
+def mutated_current_fixture(tmp: str, schema_version: str, drop_meta: bool = False) -> Path:
+    root = Path(tmp) / "fixture"
+    shutil.copytree(FIXTURES / "current-full", root)
+    proof_path = root / ".agent/proof-pack.json"
+    proof = json.loads(proof_path.read_text(encoding="utf-8"))
+    proof["schema_version"] = schema_version
+    if drop_meta:
+        del proof["meta"]
+    proof["core_sha256"] = core_sha256(proof)
+    proof_path.write_text(json.dumps(proof, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    return root
 
 
 class ProofCompatibilityMatrixTests(unittest.TestCase):
@@ -72,6 +89,25 @@ class ProofCompatibilityMatrixTests(unittest.TestCase):
         self.assertTrue(
             all(source["namespaced_prefix"].startswith("WT") for source in aggregation["sources"])
         )
+
+    def test_newer_schema_rejection_is_upgrade_not_tamper_or_shape(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            result = verify_fixture(mutated_current_fixture(tmp, "0.10.0", drop_meta=True))
+
+        output = result.stdout + result.stderr
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("newer schema", output)
+        self.assertIn("upgrade Agentflow", output)
+        self.assertNotIn("tamper", output.lower())
+        self.assertNotIn("missing required field meta", output)
+
+    def test_malformed_schema_is_rejected_even_with_recomputed_core(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            result = verify_fixture(mutated_current_fixture(tmp, "garbage"))
+
+        output = result.stdout + result.stderr
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("MAJOR.MINOR.PATCH", output)
 
 
 if __name__ == "__main__":

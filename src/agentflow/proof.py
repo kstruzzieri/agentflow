@@ -11,6 +11,7 @@ from typing import Any, Dict, List, Optional, Tuple
 from . import __version__
 from .artifacts import (
     plan_binding_sha256,
+    historical_proof_reads,
     read_json,
     read_jsonl,
     try_read_json,
@@ -795,12 +796,18 @@ def render_markdown(
     )
 
 
-def verify_proof(
+def _verify_proof(
     root: Path, proof_path: Path, replay: bool = False, strict: bool = False
 ) -> List[Dict[str, Any]]:
     proof, read_error = try_read_json(proof_path)
     if proof is None:
         return [{"severity": "error", "message": read_error}]
+    if "schema_version" in proof:
+        schema_errors = validate_historical_proof_schema_version(
+            proof.get("schema_version"), PROOF_PACK_SCHEMA_VERSION
+        )
+        if schema_errors:
+            return [{"severity": "error", "message": error} for error in schema_errors]
     findings: List[Dict[str, Any]] = []
     for field, expected_type in PROOF_METADATA_FIELDS.items():
         value = proof.get(field)
@@ -814,11 +821,6 @@ def verify_proof(
             )
     if findings:
         return findings
-    schema_errors = validate_historical_proof_schema_version(
-        proof.get("schema_version"), PROOF_PACK_SCHEMA_VERSION
-    )
-    if schema_errors:
-        return [{"severity": "error", "message": error} for error in schema_errors]
     resolved_root = root.resolve()
     generated_paths = set()
     for path in proof["generated_from"]:
@@ -903,3 +905,10 @@ def verify_proof(
             replay_result = replay_gates(root, read_json(plan_path), record=False)
             findings.extend(replay_result["errors"])
     return findings
+
+
+def verify_proof(
+    root: Path, proof_path: Path, replay: bool = False, strict: bool = False
+) -> List[Dict[str, Any]]:
+    with historical_proof_reads():
+        return _verify_proof(root, proof_path, replay=replay, strict=strict)

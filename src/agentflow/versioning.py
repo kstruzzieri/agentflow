@@ -83,9 +83,7 @@ def validate_historical_proof_schema_version(
             actual_version = parse_schema_version(actual)
             supported_version = parse_schema_version(supported)
         except ValueError:
-            # An unreadable proof version cannot establish an expected version
-            # mismatch; let integrity verification classify the artifact.
-            return []
+            return ["proof-pack schema_version must be MAJOR.MINOR.PATCH"]
         else:
             if (
                 supported_version.major == 1

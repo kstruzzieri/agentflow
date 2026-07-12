@@ -6,7 +6,7 @@
 
 **Architecture:** Public promises live in two policy documents and an auditable schema inventory. Runtime ingestion policy is centralized at the existing artifact/version boundary; `verify-proof` alone adds the historical exception. A table-driven CLI harness treats committed generated fixtures as black-box compatibility inputs.
 
-**Tech Stack:** Python 3.9+ standard library, `unittest`, JSON/JSONL artifacts, Agentflow CLI, GitHub release pyz.
+**Tech Stack:** Python 3.11+ standard library, `unittest`, JSON/JSONL artifacts, Agentflow CLI, GitHub release pyz.
 
 ## Global Constraints
 
