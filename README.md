@@ -47,6 +47,16 @@ development you install from this source repository.
 `pyproject.toml`). Agentflow has no runtime dependencies — only the standard
 library.
 
+### Platform support
+
+Linux and macOS are supported and tested in release-blocking CI on Python 3.11,
+3.12, and 3.13. Windows is **best effort**: the Python CLI may work, but Windows
+has no release-blocking CI leg and no compatibility guarantee until this support
+tier changes. The POSIX `sh` stop hook (`hooks/stop-gate.sh`) and shell-dependent
+examples are POSIX-only; use a POSIX shell on Windows or do not use those parts.
+A future supported Windows tier requires Windows CI plus adapted or replaced
+POSIX-only hooks and tests.
+
 ### Install from source
 
 Use an editable install when you want command-line access to the local checkout.
