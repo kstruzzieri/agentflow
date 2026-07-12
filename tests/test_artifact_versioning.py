@@ -40,6 +40,14 @@ class ArtifactReaderVersionTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "execution-contract.*incompatible"):
                 read_json(path)
 
+    def test_plan_reader_rejects_newer_major(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / ".agent/plan.lock.json"
+            write_json(path, {"schema_version": "1.0.0"})
+
+            with self.assertRaisesRegex(ValueError, "plan-lock.*incompatible"):
+                read_json(path)
+
     def test_step_ledger_reader_accepts_older_minor_in_same_major(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / ".agent/step-runs.jsonl"

@@ -70,7 +70,7 @@ JSON_OUTPUTS = {
     "replay-gates": [{"type": "object", "keys": {"status": "string", "errors": "array", "warnings": "array", "receipts": "array", "recorded": "boolean"}}],
     "runtime-status": [{"type": "object", "keys": {"schema_version": "string|null", "id": "string|null", "status": "string|null", "runtimes": "array|null", "mcp_servers": "array|null", "routes": "array|null", "findings": "array", "runtime_config_sha256": "string|null", "created_at": "string|null"}}],
     "events": [{"type": "array", "items": {"type": "object", "keys": {"timestamp": "string", "type": "string", "step_id": "string|null", "attempt_id": "string|null", "source": "object", "data": "object"}}}],
-    "next-action": [{"type": "object", "keys": {"state": "string", "reason": "string", "blocking": "boolean", "command": "string|null", "args": "array", "step_id": "string|null", "diagnostics": "array"}}],
+    "next-action": [{"type": "object", "keys": {"state": "string", "reason": "string", "blocking": "boolean", "command": "string|null", "args": "array|null", "step_id": "string|null", "diagnostics": "array"}}],
     "finish-step": [{"type": "object", "keys": {"verification_status": "string", "verified": "boolean", "completed": "boolean", "diagnostics": "array"}}],
     "finish-run": [{"type": "object", "keys": {"ok": "boolean", "gates": "array", "stopped_at": "string|null", "diagnostics": "array"}}],
 }
@@ -85,9 +85,13 @@ def build_cli_contract() -> dict[str, object]:
             default = action.default
             if default is argparse.SUPPRESS or callable(default):
                 default = None
+            required = bool(action.option_strings and action.required) or (
+                not action.option_strings
+                and action.nargs not in ("?", "*", argparse.REMAINDER)
+            )
             result.append({
                 "names": action.option_strings or [action.dest],
-                "required": bool(action.required), "nargs": action.nargs, "default": default,
+                "required": required, "nargs": action.nargs, "default": default,
                 "choices": list(action.choices) if action.choices is not None else None,
                 "type": getattr(action.type, "__name__", None), "action": type(action).__name__,
             })
@@ -167,6 +171,25 @@ class StabilityPolicyTests(unittest.TestCase):
     def test_cli_contract_manifest_matches_parser_and_covers_json_modes(self) -> None:
         manifest = json.loads((ROOT / "docs/cli-contract.json").read_text(encoding="utf-8"))
         self.assertEqual(manifest, build_cli_contract())
+
+        pack_path = next(
+            argument
+            for argument in manifest["commands"]["pack inspect"]
+            if argument["names"] == ["path"]
+        )
+        optional_plan = next(
+            argument
+            for argument in manifest["commands"]["lock-plan"]
+            if argument["names"] == ["plan"]
+        )
+        remainder = next(
+            argument
+            for argument in manifest["commands"]["run"]
+            if argument["names"] == ["command"]
+        )
+        self.assertTrue(pack_path["required"])
+        self.assertFalse(optional_plan["required"])
+        self.assertFalse(remainder["required"])
 
         json_commands = {
             command

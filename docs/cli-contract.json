@@ -1580,7 +1580,7 @@
           "command"
         ],
         "nargs": "...",
-        "required": true,
+        "required": false,
         "type": null
       }
     ],
@@ -2244,7 +2244,7 @@
           "command"
         ],
         "nargs": "...",
-        "required": true,
+        "required": false,
         "type": null
       }
     ],
@@ -2883,7 +2883,7 @@
     "next-action": [
       {
         "keys": {
-          "args": "array",
+          "args": "array|null",
           "blocking": "boolean",
           "command": "string|null",
           "diagnostics": "array",

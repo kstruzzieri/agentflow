@@ -10,11 +10,12 @@ permissions:
 
 jobs:
   verify:
-    name: Tests and proof verification (${{ matrix.python-version }})
-    runs-on: ubuntu-latest
+    name: Tests and proof verification (${{ matrix.os }}, Python ${{ matrix.python-version }})
+    runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
+        os: [ubuntu-latest, macos-latest]
         python-version: ["3.11", "3.12", "3.13"]
     env:
       AGENTFLOW_PROOF_ROOT: tests/fixtures/proof-bundle

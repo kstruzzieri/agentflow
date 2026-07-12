@@ -212,7 +212,6 @@ def _validate_artifact_version(
     artifact = _artifact_name(path)
     reader_gated = set(ARTIFACT_COMPATIBILITY_POLICIES) - {
         "aggregation",
-        "plan-lock",
         "proof-pack",
     }
     if (
