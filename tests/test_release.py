@@ -181,6 +181,94 @@ class ReleaseGuardTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(notes.read_text(encoding="utf-8"), "- Released.\n")
 
+    def test_release_check_keeps_notes_after_fenced_hash_heading(self) -> None:
+        # A ``## `` line inside a fenced code block must not be mistaken for a
+        # section boundary and silently truncate the extracted notes.
+        self._write_fixture(
+            changelog=(
+                "# Changelog\n\n"
+                "## [Unreleased]\n\n"
+                "## [0.4.0] - 2026-07-10\n\n"
+                "### Added\n\n"
+                "- Config example:\n\n"
+                "```ini\n"
+                "## legacy header\n"
+                "key = value\n"
+                "```\n\n"
+                "- Second real note.\n\n"
+                "## [0.3.0] - 2026-07-03\n\n- Older.\n"
+            )
+        )
+        notes = self.root / "notes.md"
+
+        result = self._run("--tag", "v0.4.0", "--notes-file", str(notes))
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        body = notes.read_text(encoding="utf-8")
+        self.assertIn("## legacy header", body)
+        self.assertIn("- Second real note.", body)
+        self.assertNotIn("Older.", body)
+
+    def test_release_check_rejects_notes_left_in_unreleased(self) -> None:
+        self._write_fixture(
+            changelog=(
+                "# Changelog\n\n"
+                "## [Unreleased]\n\n"
+                "### Added\n\n- Still pending here.\n\n"
+                "## [0.4.0] - 2026-07-10\n\n"
+                "### Added\n\n- Released note.\n"
+            )
+        )
+
+        result = self._run("--tag", "v0.4.0")
+
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("Unreleased", result.stderr)
+        self.assertIn("must be empty", result.stderr)
+
+    def test_version_check_rejects_missing_package_version(self) -> None:
+        self._write_fixture()
+        (self.root / "src" / "agentflow" / "__init__.py").write_text(
+            "__all__ = ['__version__']\n", encoding="utf-8"
+        )
+
+        result = self._run()
+
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("exactly one literal", result.stderr)
+
+    def test_version_check_rejects_multiple_package_versions(self) -> None:
+        self._write_fixture()
+        (self.root / "src" / "agentflow" / "__init__.py").write_text(
+            '__version__ = "0.4.0"\n__version__ = "0.4.0"\n', encoding="utf-8"
+        )
+
+        result = self._run()
+
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("exactly one literal", result.stderr)
+
+    def test_version_check_rejects_missing_project_table(self) -> None:
+        self._write_fixture()
+        (self.root / "pyproject.toml").write_text(
+            '[build-system]\nrequires = ["setuptools"]\n', encoding="utf-8"
+        )
+
+        result = self._run()
+
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("no [project] version declaration", result.stderr)
+
+    def test_release_check_reports_missing_changelog_file(self) -> None:
+        self._write_fixture()
+        (self.root / "CHANGELOG.md").unlink()
+
+        result = self._run("--tag", "v0.4.0")
+
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("cannot read", result.stderr)
+        self.assertIn("CHANGELOG.md", result.stderr)
+
     def test_notes_file_write_failure_is_concise(self) -> None:
         self._write_fixture()
 

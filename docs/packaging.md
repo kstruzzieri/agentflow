@@ -53,7 +53,11 @@ The release guard requires Python 3.11 or newer because it reads
 2. Update the same version in `src/agentflow/__init__.py`.
 3. Move the relevant notes under `CHANGELOG.md`'s `Unreleased` heading into
    a dated `## [X.Y.Z] - YYYY-MM-DD` release heading, leaving an empty
-   `Unreleased` heading for future changes.
+   `Unreleased` heading for future changes. Move the notes rather than copying
+   them: the guard fails the release if the `Unreleased` section is not empty at
+   tag time. In the same edit, update the CHANGELOG footer reference links —
+   point the `[Unreleased]` link at `vX.Y.Z...HEAD` and add a `[X.Y.Z]` link for
+   the new release tag.
 4. Run the version check and full suite:
 
    ```bash
@@ -83,6 +87,12 @@ The release guard requires Python 3.11 or newer because it reads
 9. Download `agentflow.pyz`, `agentflow-mcp.pyz`, and `SHA256SUMS` from the
    release; run `sha256sum -c SHA256SUMS`, then
    `python3 agentflow.pyz --version`.
+
+> **Do not bump the version ahead of a release.** CI validates the declared
+> version against a dated `## [X.Y.Z] - YYYY-MM-DD` CHANGELOG heading on every
+> run, so raising the version declarations before that dated section exists
+> turns the whole suite red. Change the version only in the release pull
+> request, together with the CHANGELOG move in step 3.
 
 ## Phase 2: standalone binaries (PyInstaller)
 

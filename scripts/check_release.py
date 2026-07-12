@@ -27,7 +27,11 @@ RELEASE_HEADING_RE = re.compile(
     rf"[0-9]{{4}}-[0-9]{{2}}-[0-9]{{2}}\s*$",
     re.MULTILINE,
 )
-SECTION_HEADING_RE = re.compile(r"^## ", re.MULTILINE)
+UNRELEASED_HEADING_RE = re.compile(r"^## \[Unreleased\]\s*$", re.MULTILINE)
+# Section boundary anchors on the ``## [`` bracket, not a bare ``## ``, so an
+# arbitrary ``## ...`` line inside a release body (e.g. inside a fenced code
+# block) cannot silently truncate the extracted notes.
+SECTION_HEADING_RE = re.compile(r"^## \[", re.MULTILINE)
 FOOTER_LINK_RE = re.compile(
     rf"^\[(?:Unreleased|{VERSION_PATTERN})\]:[ \t]+", re.MULTILINE
 )
@@ -44,7 +48,11 @@ def _project_version(root: Path) -> str:
     except (OSError, tomllib.TOMLDecodeError) as exc:
         raise ReleaseCheckError(f"cannot read {path}: {exc}") from exc
     project = data.get("project")
-    version = project.get("version") if isinstance(project, dict) else None
+    if not isinstance(project, dict) or "version" not in project:
+        raise ReleaseCheckError(
+            "pyproject.toml has no [project] version declaration"
+        )
+    version = project["version"]
     if not isinstance(version, str) or not VERSION_RE.fullmatch(version):
         raise ReleaseCheckError(
             "pyproject.toml project.version must be a literal MAJOR.MINOR.PATCH"
@@ -83,6 +91,33 @@ def check_versions(root: Path) -> str:
     return project
 
 
+def _section_body(text: str, start: int) -> str:
+    """Return the stripped body from ``start`` up to the next section or footer."""
+    boundaries = [len(text)]
+    next_heading = SECTION_HEADING_RE.search(text, start)
+    if next_heading:
+        boundaries.append(next_heading.start())
+    footer = FOOTER_LINK_RE.search(text, start)
+    if footer:
+        boundaries.append(footer.start())
+    return text[start : min(boundaries)].strip()
+
+
+def _require_empty_unreleased(text: str) -> None:
+    """Fail if a present ``## [Unreleased]`` section still carries notes.
+
+    A missing Unreleased heading is left to other structural checks; this guard
+    only enforces that release notes were *moved* out of Unreleased rather than
+    copied, so the same entries cannot ship under two headings.
+    """
+    match = UNRELEASED_HEADING_RE.search(text)
+    if match is not None and _section_body(text, match.end()):
+        raise ReleaseCheckError(
+            "CHANGELOG '## [Unreleased]' section must be empty at release "
+            "time; move its notes into the release heading"
+        )
+
+
 def _release_notes(root: Path, version: str) -> str:
     path = root / "CHANGELOG.md"
     try:
@@ -98,18 +133,10 @@ def _release_notes(root: Path, version: str) -> str:
         raise ReleaseCheckError(
             f"found {len(matches)} release headings for {version}; expected 1"
         )
-    start = matches[0].end()
-    next_heading = SECTION_HEADING_RE.search(text, start)
-    footer = FOOTER_LINK_RE.search(text, start)
-    boundaries = [len(text)]
-    if next_heading:
-        boundaries.append(next_heading.start())
-    if footer:
-        boundaries.append(footer.start())
-    end = min(boundaries)
-    notes = text[start:end].strip()
+    notes = _section_body(text, matches[0].end())
     if not notes:
         raise ReleaseCheckError(f"CHANGELOG release {version} has no notes")
+    _require_empty_unreleased(text)
     return notes + "\n"
 
 
