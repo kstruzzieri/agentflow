@@ -77,6 +77,9 @@ jobs:
             copy_tree "$proof_root" "$bundle"
           fi
 
+      - name: Run CI proof example
+        run: PYTHONPATH=src PYTHON=python3 sh examples/ci-proof/smoke.sh "$RUNNER_TEMP/proof-bundle"
+
       - name: verify-run
         run: PYTHONPATH=src python3 -m agentflow verify-run --no-record --root "$RUNNER_TEMP/proof-bundle"
 
