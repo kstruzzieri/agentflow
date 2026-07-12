@@ -70,7 +70,10 @@ PR1 changes:
   competing set of notes.
 - Update `docs/packaging.md` with the exact release order: update both literal
   versions, move `Unreleased` entries into the dated release heading, commit,
-  tag, push, validate, and post-release smoke.
+  tag, push, validate, and post-release smoke. The documentation states that
+  the guard requires Python 3.11 or newer (it reads `pyproject.toml` with
+  `tomllib`), because local machines may default to an older interpreter even
+  though CI always satisfies the floor.
 
 The release workflow still builds only the existing zipapps in PR1. Wheel,
 sdist, artifact handoff, and PyPI permissions are intentionally absent until
@@ -89,25 +92,36 @@ PR2 restructures the release workflow into this data flow:
 
 1. `guard` validates the tag and CHANGELOG before tests or builds.
 2. `build` depends on `guard`, runs the full source suite, builds both zipapps,
-   one wheel, and one sdist from the tagged checkout, inspects their contents and
+   one wheel, and one sdist from the tagged checkout, keeps the existing zipapp
+   runtime smoke tests (`agentflow.pyz --version` and an MCP `initialize`
+   request against `agentflow-mcp.pyz`), inspects wheel and sdist contents and
    metadata, and uploads exactly those bytes as one workflow artifact.
 3. `clean-install-wheel` downloads that artifact and installs the wheel by
    explicit path with `--no-index` on Python 3.11, 3.12, and 3.13. Each matrix
    leg runs `agentflow --version`, `agentflow --help`, and an MCP `initialize`
    request over stdio.
-4. `clean-install-sdist` downloads the same artifact, installs the sdist by
-   explicit path with `--no-index` on Python 3.11, and runs the CLI version
-   smoke. This catches missing source files independently of wheel coverage.
+4. `clean-install-sdist` downloads the same artifact and installs the sdist by
+   explicit path on Python 3.11. A bare `--no-index` sdist install fails in a
+   clean environment because PEP 517 build isolation fetches the build backend
+   from an index, so the job keeps `--no-index` and satisfies the backend
+   locally: either a small wheelhouse containing the pinned `setuptools` wheel
+   passed via `--find-links`, or the pinned backend preinstalled with
+   `--no-build-isolation`. It then runs the CLI version smoke. This catches
+   missing source files independently of wheel coverage.
 5. `github-release` depends on the guard and both install jobs, downloads the
    original workflow artifact, generates `SHA256SUMS` covering both zipapps,
    the wheel, and the sdist, and attaches those exact files with the extracted
    CHANGELOG notes.
 6. `publish-pypi` is present but statically disabled with `if: false` and a
    comment naming the Issue #5 compatibility freeze as the enablement gate. It
-   downloads the same workflow artifact and uses PyPI trusted publishing. Its
-   `needs:` list includes `guard`, `clean-install-wheel`, and
-   `clean-install-sdist`, so enabling it cannot bypass a failed guard or install
-   test.
+   downloads the same workflow artifact and stages only the wheel and sdist
+   into the directory handed to the trusted-publishing action, because the
+   zipapps are GitHub-release-only files and a stray `.pyz` in the upload
+   directory fails the PyPI upload. Its `needs:` list includes `guard`,
+   `clean-install-wheel`, `clean-install-sdist`, and `github-release`, so
+   enabling it cannot bypass a failed guard or install test, and the
+   irreversible PyPI upload (a released version can never be re-uploaded) runs
+   only after the correctable GitHub release has succeeded.
 
 There is no rebuild in either publication job. Tests, GitHub release creation,
 and eventual PyPI publication all consume the bytes produced by `build`.
@@ -150,11 +164,16 @@ the former prevents all execution before Issue #5 completes, while the latter
 requires the configured environment policy after the static gate is removed.
 No long-lived PyPI token is created or stored.
 
-The manual setup documentation covers PyPI pending trusted publishers for the
-not-yet-existing `agentflow-proof` and `agentflow-mcp` projects. It states that
-pending-publisher setup is configuration, not proof that a name has been
-claimed or a distribution published. `agentflow-mcp` may only be claimed with
-a legitimate companion release; an empty placeholder upload is prohibited.
+The manual setup documentation covers both sides of the trust configuration:
+PyPI pending trusted publishers for the not-yet-existing `agentflow-proof` and
+`agentflow-mcp` projects, and creation of the `pypi` GitHub environment in
+repository settings with its protection rules (required reviewers) — the
+environment does not exist until an administrator creates it, and an
+`environment:` reference in the workflow alone provides no protection. It
+states that pending-publisher setup is configuration, not proof that a name
+has been claimed or a distribution published. `agentflow-mcp` may only be
+claimed with a legitimate companion release; an empty placeholder upload is
+prohibited.
 
 ## Compatibility seam
 
@@ -222,7 +241,10 @@ PR2 validation includes:
   GitHub Actions providing the authoritative matrix;
 - wheel CLI and MCP stdio smokes plus the sdist CLI smoke;
 - focused workflow tests proving permissions, static publication disablement,
-  complete `needs:` dependencies, artifact handoff, and no index-based install;
+  complete `needs:` dependencies (including `github-release` ahead of
+  `publish-pypi`), artifact handoff, no index-based install, offline backend
+  satisfaction for the sdist install, and a PyPI staging step that excludes
+  the zipapps;
 - full suite and Agentflow proof chain.
 
 Before either pull request is integrated, its branch is updated against current
