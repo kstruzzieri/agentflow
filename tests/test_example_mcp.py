@@ -15,7 +15,7 @@ class McpExampleTests(unittest.TestCase):
         result = subprocess.run(
             [sys.executable, "examples/mcp-clients/initialize_smoke.py"], cwd=ROOT,
             env={**os.environ, "PYTHONPATH": str(ROOT / "src")}, text=True,
-            stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False,
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False, timeout=120,
         )
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(json.loads(result.stdout)["result"]["serverInfo"]["name"], "agentflow")

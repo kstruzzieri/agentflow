@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-import unittest
 import os
 import subprocess
 import sys
+import unittest
 from pathlib import Path
 
 
@@ -13,7 +13,7 @@ class AggregationExampleTests(unittest.TestCase):
         result = subprocess.run(
             [sys.executable, "examples/aggregation/run.py"], cwd=root,
             env={**os.environ, "PYTHONPATH": str(root / "src")}, text=True,
-            stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False,
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False, timeout=600,
         )
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn("aggregation example passed", result.stdout)

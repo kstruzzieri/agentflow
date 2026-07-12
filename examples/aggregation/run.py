@@ -31,20 +31,20 @@ def writer(root: Path, name: str, step: str, plan_source: Path | None = None) ->
     else:
         plan = json.loads(plan_path.read_text())
         plan.update({
-        "objective": "Two-writer aggregation example",
-        "scope": ["Create each writer output"],
-        "invariants": ["One writer owns one worktree."],
-        "allowed_files": ["src/", ".agent/"],
-        "validation_gates": ["python3 -c pass"],
-        "rollback_plan": f"Delete {path}.",
-        "steps": [
-            {"id": "P1", "action": "Create src/writer-a.txt.", "files": ["src/writer-a.txt"],
-             "preconditions": ["worktree initialized"], "expected_diff": ["src/writer-a.txt"],
-             "validation": ["python3 -c pass"], "evidence_ids": []},
-            {"id": "P2", "action": "Create src/writer-b.txt.", "files": ["src/writer-b.txt"],
-             "preconditions": ["worktree initialized"], "expected_diff": ["src/writer-b.txt"],
-             "validation": ["python3 -c pass"], "evidence_ids": []},
-        ],
+            "objective": "Two-writer aggregation example",
+            "scope": ["Create each writer output"],
+            "invariants": ["One writer owns one worktree."],
+            "allowed_files": ["src/", ".agent/"],
+            "validation_gates": ["python3 -c pass"],
+            "rollback_plan": f"Delete {path}.",
+            "steps": [
+                {"id": "P1", "action": "Create src/writer-a.txt.", "files": ["src/writer-a.txt"],
+                 "preconditions": ["worktree initialized"], "expected_diff": ["src/writer-a.txt"],
+                 "validation": ["python3 -c pass"], "evidence_ids": []},
+                {"id": "P2", "action": "Create src/writer-b.txt.", "files": ["src/writer-b.txt"],
+                 "preconditions": ["worktree initialized"], "expected_diff": ["src/writer-b.txt"],
+                 "validation": ["python3 -c pass"], "evidence_ids": []},
+            ],
         })
         plan_path.write_text(json.dumps(plan, indent=2) + "\n")
         agentflow(root, "lock-plan", ".agent/plan.lock.json")
@@ -71,6 +71,9 @@ def main() -> None:
         a, b = Path(temp) / "writer-a", Path(temp) / "writer-b"
         run(base, "git", "worktree", "add", "-q", "-b", "writer-a", str(a), "HEAD")
         run(base, "git", "worktree", "add", "-q", "-b", "writer-b", str(b), "HEAD")
+        # The canonical root must already hold the writers' final file state:
+        # aggregation merges ledgers, not file contents. Keep these bytes in
+        # sync with what writer() writes (f"{name}\n").
         (base / "src").mkdir()
         (base / "src/writer-a.txt").write_text("writer-a\n")
         (base / "src/writer-b.txt").write_text("writer-b\n")

@@ -33,6 +33,7 @@ class CiProofExampleTests(unittest.TestCase):
                 cwd=REPO_ROOT,
                 env={**os.environ, "PYTHONPATH": str(REPO_ROOT / "src"), "PYTHON": sys.executable},
                 text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False,
+                timeout=600,
             )
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 

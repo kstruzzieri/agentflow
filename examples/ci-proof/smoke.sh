@@ -9,7 +9,9 @@ case "${PYTHONPATH:-}" in
   *) PYTHONPATH="$repo/$PYTHONPATH" ;;
 esac
 export PYTHONPATH
-root=$(CDPATH= cd -- "$root" && pwd)
+# Physical path (-P) so the comparison with git's resolved toplevel holds
+# where TMPDIR is a symlink (macOS /var -> /private/var).
+root=$(CDPATH= cd -- "$root" && pwd -P)
 git_root=$(git -C "$root" rev-parse --show-toplevel 2>/dev/null || true)
 if [ "$git_root" != "$root" ]; then
   bundle=$(mktemp -d "${TMPDIR:-/tmp}/agentflow-proof.XXXXXX")

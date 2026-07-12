@@ -20,7 +20,16 @@ def af(cwd: Path, *args: str) -> None:
 def main() -> None:
     with tempfile.TemporaryDirectory(prefix="agentflow-workflow-pack-") as temp:
         root = Path(temp) / "checkout"
-        shutil.copytree(REPO, root, ignore=shutil.ignore_patterns(".git", ".agent", ".claude", "__pycache__"))
+        shutil.copytree(
+            REPO,
+            root,
+            ignore=shutil.ignore_patterns(
+                ".git", ".agent", ".agent.*", ".claude", "__pycache__",
+                # Untracked development directories can be huge or contain
+                # dangling symlinks; the workload only needs shipped files.
+                ".worktrees", ".venv", "venv", "node_modules",
+            ),
+        )
         run(root, "git", "init", "-q")
         run(root, "git", "config", "user.email", "example@agentflow.invalid")
         run(root, "git", "config", "user.name", "agentflow-example")
