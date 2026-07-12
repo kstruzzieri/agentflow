@@ -445,6 +445,7 @@ The next priorities are tracked in [docs/roadmap.md](docs/roadmap.md).
 - [Command risk screening](docs/command-risk.md) — deterministic command classification and limits
 - [MCP server](docs/mcp.md) — stdio and local HTTP transports
 - [Workflow packs](docs/workflow-packs.md) — reusable workflow policy and planning profiles
+- [Executable examples](examples/) — CI proof, MCP, workflow-pack, and aggregation walkthroughs
 - [Packaging and releases](docs/packaging.md) — build and verify single-file artifacts
 - [Roadmap](docs/roadmap.md) — current status and near-term priorities
 
