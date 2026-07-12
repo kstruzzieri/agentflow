@@ -179,6 +179,7 @@ Run:
 PYTHONPATH=src python3.11 -m agentflow lock-plan .agent/plan.lock.json
 PYTHONPATH=src python3.11 -m agentflow init-execution
 PYTHONPATH=src python3.11 -m agentflow validate-plan .agent/plan.lock.json
+PYTHONPATH=src python3.11 -m agentflow next-step
 ~~~
 
 Expected: all commands exit 0 and `next-step` reports `P1`.
@@ -606,7 +607,15 @@ Insert before the `if __name__ == "__main__"` block in `tests/test_release.py`:
     sys.version_info < (3, 11), "release guard requires Python 3.11+"
 )
 class RepositoryReleaseDisciplineTests(unittest.TestCase):
-    def test_repository_release_guard_accepts_v040_and_extracts_notes(self) -> None:
+    def test_repository_release_guard_accepts_declared_version(self) -> None:
+        # Derive the tag from the declared version so this contract survives
+        # every future bump: the documented procedure moves Unreleased notes
+        # into a dated heading in the same commit that changes the version.
+        import tomllib
+
+        declared = tomllib.loads(
+            (REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8")
+        )["project"]["version"]
         with tempfile.TemporaryDirectory() as tmp:
             notes = Path(tmp) / "notes.md"
             result = subprocess.run(
@@ -616,7 +625,7 @@ class RepositoryReleaseDisciplineTests(unittest.TestCase):
                     "--root",
                     str(REPO_ROOT),
                     "--tag",
-                    "v0.4.0",
+                    f"v{declared}",
                     "--notes-file",
                     str(notes),
                 ],
@@ -626,8 +635,8 @@ class RepositoryReleaseDisciplineTests(unittest.TestCase):
 
             self.assertEqual(result.returncode, 0, result.stderr)
             text = notes.read_text(encoding="utf-8")
-            self.assertIn("runtime and MCP status", text)
-            self.assertNotIn("## [0.3.0]", text)
+            self.assertTrue(text.strip(), "release notes must not be empty")
+            self.assertNotIn("## [", text)
 
     def test_changelog_contains_unreleased_and_backfilled_releases(self) -> None:
         text = (REPO_ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
@@ -712,6 +721,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - A public gate/ledger brand kit for the project and release artifacts.
 
 ## [0.3.0] - 2026-07-03
+
+_Released from the pre-public repository history; no tag exists in this
+repository, so this heading is intentionally unlinked._
 
 ### Added
 
@@ -878,7 +890,7 @@ Run the focused and full gates as durable receipts:
 
 ~~~bash
 PYTHONPATH=src python3.11 -m agentflow run --step P2 --gate "python3.11 -m unittest tests.test_release -v" --agent "$USER" -- python3.11 -m unittest tests.test_release -v
-PYTHONPATH=src python3.11 -m agentflow run --step P2 --gate "PYTHONPATH=src python3.11 -m unittest discover -s tests -v" --agent "$USER" -- /bin/zsh -lc "PYTHONPATH=src python3.11 -m unittest discover -s tests -v"
+PYTHONPATH=src python3.11 -m agentflow run --step P2 --gate "PYTHONPATH=src python3.11 -m unittest discover -s tests -v" --agent "$USER" -- env PYTHONPATH=src python3.11 -m unittest discover -s tests -v
 ~~~
 
 Expected: focused release tests pass; the full suite passes with only the existing intentional skips.
@@ -949,7 +961,7 @@ Run:
 ~~~bash
 python3.11 -m unittest tests.test_release -v
 PYTHONPATH=src python3.11 -m unittest discover -s tests -v
-python3.11 scripts/check_release.py --tag v0.4.0
+python3.11 scripts/check_release.py --tag v0.4.0  # matches the declared version while it remains 0.4.0
 git diff --check
 git status --short
 git rev-parse HEAD
