@@ -20,3 +20,8 @@ Agentflow records commands, paths, and command output in local proof artifacts.
 Review [docs/agent-artifacts.md](docs/agent-artifacts.md) before publishing
 anything under `.agent/`. Command-risk screening is a policy aid, not a process
 sandbox or substitute for host-level isolation.
+
+For the supported guarantees, non-guarantees, threat assumptions, and residual
+operator responsibilities across command execution, artifact publication, MCP
+transport, and proof integrity, see
+[docs/security-model.md](docs/security-model.md).
