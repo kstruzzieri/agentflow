@@ -13,6 +13,10 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 
 
 class CiProofExampleTests(unittest.TestCase):
+    def test_copyable_workflow_defines_proof_root(self) -> None:
+        workflow = (REPO_ROOT / "examples/ci-proof/workflow.yml").read_text(encoding="utf-8")
+        self.assertIn("PROOF_ROOT: tests/fixtures/proof-bundle", workflow)
+
     def test_ci_proof_smoke_script_verifies_fixture_in_read_only_mode(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp) / "proof-bundle"

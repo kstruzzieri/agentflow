@@ -5,6 +5,8 @@ on: [push, pull_request]
 jobs:
   proof:
     runs-on: ubuntu-latest
+    env:
+      PROOF_ROOT: tests/fixtures/proof-bundle
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
