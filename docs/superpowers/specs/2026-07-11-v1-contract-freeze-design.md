@@ -43,3 +43,21 @@ Behavior changes use red-green tests. Focused suites cover policy text,
 versioning, artifact readers, proof diagnostics, schemas, and the compatibility
 matrix. The full 1,108-test baseline is rerun, followed by `verify-run`,
 `audit-drift`, `build-proof`, and `verify-proof` through Agentflow.
+
+## PR #18 review follow-up
+
+The contract-freeze boundary must fail closed for ordinary plan reads, while
+the existing `historical_proof_reads` context remains the only escape hatch
+for hash-bound historical proof verification. Generic JSON readers therefore
+apply the declared `same_major` policy to `plan-lock` artifacts.
+
+The generated CLI contract must be stable across supported Python versions and
+match every valid `next-action` variant. Positional requiredness is derived from
+the public argparse shape (`option_strings` and `nargs`), not the version-sensitive
+private `required` value. Conditionally omitted `next-action` fields are nullable
+in the manifest, and a clean-checkout complete-state payload is a regression case.
+
+CI preserves the active ruleset's intended six-job coverage: Ubuntu and macOS,
+each on Python 3.11, 3.12, and 3.13. Workflow job names exactly match the six
+required status contexts so GitHub can satisfy, rather than indefinitely await,
+the ruleset.
