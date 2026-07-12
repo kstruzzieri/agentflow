@@ -11,7 +11,11 @@ from pathlib import Path
 from typing import Sequence
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-VERSION_PATTERN = r"(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)"
+VERSION_PATTERN = (
+    r"(?:0|[1-9][0-9]*)\."
+    r"(?:0|[1-9][0-9]*)\."
+    r"(?:0|[1-9][0-9]*)"
+)
 VERSION_RE = re.compile(rf"^{VERSION_PATTERN}$")
 TAG_RE = re.compile(rf"^v(?P<version>{VERSION_PATTERN})$")
 PACKAGE_VERSION_RE = re.compile(
@@ -19,10 +23,14 @@ PACKAGE_VERSION_RE = re.compile(
     re.MULTILINE,
 )
 RELEASE_HEADING_RE = re.compile(
-    rf"^## \[(?P<version>{VERSION_PATTERN})\] - \d{{4}}-\d{{2}}-\d{{2}}\s*$",
+    rf"^## \[(?P<version>{VERSION_PATTERN})\] - "
+    rf"[0-9]{{4}}-[0-9]{{2}}-[0-9]{{2}}\s*$",
     re.MULTILINE,
 )
 SECTION_HEADING_RE = re.compile(r"^## ", re.MULTILINE)
+FOOTER_LINK_RE = re.compile(
+    rf"^\[(?:Unreleased|{VERSION_PATTERN})\]:[ \t]+", re.MULTILINE
+)
 
 
 class ReleaseCheckError(ValueError):
@@ -92,7 +100,13 @@ def _release_notes(root: Path, version: str) -> str:
         )
     start = matches[0].end()
     next_heading = SECTION_HEADING_RE.search(text, start)
-    end = next_heading.start() if next_heading else len(text)
+    footer = FOOTER_LINK_RE.search(text, start)
+    boundaries = [len(text)]
+    if next_heading:
+        boundaries.append(next_heading.start())
+    if footer:
+        boundaries.append(footer.start())
+    end = min(boundaries)
     notes = text[start:end].strip()
     if not notes:
         raise ReleaseCheckError(f"CHANGELOG release {version} has no notes")
@@ -134,7 +148,12 @@ def main(argv: Sequence[str] | None = None) -> int:
         else:
             version, notes = check_release(args.root, args.tag)
             if args.notes_file is not None:
-                args.notes_file.write_text(notes, encoding="utf-8")
+                try:
+                    args.notes_file.write_text(notes, encoding="utf-8")
+                except OSError as exc:
+                    raise ReleaseCheckError(
+                        f"cannot write {args.notes_file}: {exc}"
+                    ) from exc
             message = f"release guard passed: v{version}"
     except ReleaseCheckError as exc:
         sys.stderr.write(f"release check failed: {exc}\n")

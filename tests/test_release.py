@@ -99,6 +99,14 @@ class ReleaseGuardTests(unittest.TestCase):
         self.assertEqual(result.returncode, 1)
         self.assertIn("expected vMAJOR.MINOR.PATCH", result.stderr)
 
+    def test_release_check_rejects_non_ascii_digit_tag(self) -> None:
+        self._write_fixture()
+
+        result = self._run("--tag", "v1.2\u0662.3")
+
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("expected vMAJOR.MINOR.PATCH", result.stderr)
+
     def test_release_check_rejects_tag_version_mismatch(self) -> None:
         self._write_fixture()
 
@@ -153,6 +161,36 @@ class ReleaseGuardTests(unittest.TestCase):
             notes.read_text(encoding="utf-8"),
             "### Added\n\n- Initial public release.\n",
         )
+
+    def test_release_check_stops_notes_before_footer_links(self) -> None:
+        self._write_fixture(
+            changelog=(
+                "# Changelog\n\n"
+                "## [0.4.0] - 2026-07-10\n\n"
+                "- Released.\n\n"
+                "[Unreleased]: https://example.test/compare\n"
+                "[0.4.0]: https://example.test/release\n"
+            )
+        )
+        notes = self.root / "notes.md"
+
+        result = self._run(
+            "--tag", "v0.4.0", "--notes-file", str(notes)
+        )
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(notes.read_text(encoding="utf-8"), "- Released.\n")
+
+    def test_notes_file_write_failure_is_concise(self) -> None:
+        self._write_fixture()
+
+        result = self._run(
+            "--tag", "v0.4.0", "--notes-file", str(self.root)
+        )
+
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("release check failed: cannot write", result.stderr)
+        self.assertNotIn("Traceback", result.stderr)
 
     def test_notes_file_requires_tag(self) -> None:
         self._write_fixture()
