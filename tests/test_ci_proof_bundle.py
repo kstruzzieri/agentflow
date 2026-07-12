@@ -72,6 +72,12 @@ def workflow_run_script(name: str) -> str:
 
 
 class CommittedProofBundleTests(unittest.TestCase):
+    def test_workflow_supports_linux_and_macos_on_all_supported_pythons(self) -> None:
+        workflow = WORKFLOW_PATH.read_text(encoding="utf-8")
+        self.assertIn('os: ["ubuntu-latest", "macos-latest"]', workflow)
+        for version in ('"3.11"', '"3.12"', '"3.13"'):
+            self.assertIn(version, workflow)
+
     def test_fixture_proof_verifies(self) -> None:
         proof_path = FIXTURE_ROOT / ".agent" / "proof-pack.json"
         self.assertTrue(proof_path.exists(), "committed proof bundle is missing")

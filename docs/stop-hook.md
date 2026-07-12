@@ -22,7 +22,7 @@ The script speaks one runtime-neutral contract:
 | `0` | proof satisfied, **or** repo is not under Agentflow governance | allow the agent to stop |
 | non-zero | a proof gate failed | block completion / keep the agent working |
 
-It is POSIX `sh`, pulls in **no third-party tools** (matching Agentflow's
+It is **POSIX-only** `sh` (including on Windows), pulls in **no third-party tools** (matching Agentflow's
 stdlib-only invariant — no `jq`, no stdin parsing), and writes all human-facing
 notes to **stderr** so stdout stays empty for runtimes that parse stdout JSON.
 
