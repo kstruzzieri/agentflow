@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import hashlib
 import os
 import shutil
 import subprocess
@@ -62,9 +63,18 @@ class ProofCompatibilityMatrixTests(unittest.TestCase):
         root = FIXTURES / "released-v0.4.0"
         provenance = (root / "PROVENANCE.md").read_text(encoding="utf-8")
         proof = json.loads((root / ".agent/proof-pack.json").read_text(encoding="utf-8"))
+        manifest = json.loads((root / "MANIFEST.json").read_text(encoding="utf-8"))
 
         self.assertIn(RELEASE_SHA256, provenance)
         self.assertIn("releases/download/v0.4.0/agentflow.pyz", provenance)
+        self.assertEqual(manifest["release_asset"]["sha256"], RELEASE_SHA256)
+        self.assertEqual(
+            manifest["release_asset"]["url"],
+            "https://github.com/kstruzzieri/agentflow/releases/download/v0.4.0/agentflow.pyz",
+        )
+        for path, expected in manifest["artifacts"].items():
+            actual = hashlib.sha256((root / path).read_bytes()).hexdigest()
+            self.assertEqual(actual, expected, path)
         self.assertEqual(proof["meta"]["tool_version"], "0.4.0")
 
     def test_current_full_fixture_exercises_load_bearing_optional_blocks(self) -> None:

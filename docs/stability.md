@@ -36,16 +36,20 @@ The supported command names are:
 `replay-gates`, `runtime-status`, `build-proof`, `verify-proof`, `view-proof`,
 `events`, `next-action`, `finish-step`, `finish-run`, and `status`.
 
-All positional arguments and flags displayed by the corresponding `--help`
-page are part of the same supported surface. An incompatible rename, removal,
-default change, or meaning change requires a major release after the deprecation
-process below.
+The machine-readable [CLI contract manifest](cli-contract.json) enumerates every
+command path, positional argument, flag, alias, choice, default, and action.
+Its contract test derives the same inventory from the argument parser, so an
+unreviewed surface change fails CI. An incompatible rename, removal, default
+change, or meaning change requires a major release after the deprecation process
+below.
 
-For `--json` modes, removing a documented key, changing its type, or changing
-its meaning incompatibly requires a major release. Additive keys are allowed in
-a minor release. When a JSON-facing feature is deprecated, its output includes
-a machine-readable top-level `deprecations` array; stderr prose alone is not a
-deprecation signal.
+The same manifest enumerates each `--json`/`--jsonl` result variant and its
+top-level keys and JSON types. A `null` suffix marks a nullable or conditionally
+present key; nested artifact records follow their declared artifact schemas.
+Removing a key, changing its type, or changing its meaning incompatibly requires
+a major release. Additive keys are allowed in a minor release. When a JSON-facing
+feature is deprecated, its output includes a machine-readable top-level
+`deprecations` array; stderr prose alone is not a deprecation signal.
 
 ## MCP contract
 

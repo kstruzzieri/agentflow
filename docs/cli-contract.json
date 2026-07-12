@@ -1,0 +1,3157 @@
+{
+  "commands": {
+    "aggregate-ledgers": [
+      {
+        "action": "_AppendAction",
+        "choices": null,
+        "default": null,
+        "names": [
+          "--input"
+        ],
+        "nargs": null,
+        "required": false,
+        "type": null
+      },
+      {
+        "action": "_AppendAction",
+        "choices": null,
+        "default": null,
+        "names": [
+          "--source-id"
+        ],
+        "nargs": null,
+        "required": false,
+        "type": null
+      },
+      {
+        "action": "_AppendAction",
+        "choices": null,
+        "default": null,
+        "names": [
+          "--label"
+        ],
+        "nargs": null,
+        "required": false,
+        "type": null
+      },
+      {
+        "action": "_StoreAction",
+        "choices": null,
+        "default": ".",
+        "names": [
+          "--output"
+        ],
+        "nargs": null,
+        "required": false,
+        "type": null
+      },
+      {
+        "action": "_StoreAction",
+        "choices": null,
+        "default": null,
+        "names": [
+          "--base"
+        ],
+        "nargs": null,
+        "required": false,
+        "type": null
+      },
+      {
+        "action": "_StoreTrueAction",
+        "choices": null,
+        "default": false,
+        "names": [
+          "--dry-run"
+        ],
+        "nargs": 0,
+        "required": false,
+        "type": null
+      },
+      {
+        "action": "_StoreTrueAction",
+        "choices": null,
+        "default": false,
+        "names": [
+          "--json"
+        ],
+        "nargs": 0,
+        "required": false,
+        "type": null
+      }
+    ],
+    "amend-plan": [
+      {
+        "action": "_StoreAction",
+        "choices": null,
+        "default": ".",
+        "names": [
+          "--root"
+        ],
+        "nargs": null,
+        "required": false,
+        "type": null
+      },
+      {
+        "action": "_StoreAction",
+        "choices": null,
+        "default": null,
+        "names": [
+          "--id"
+        ],
+        "nargs": null,
+        "required": true,
+        "type": null
+      },
+      {
+        "action": "_StoreAction",
+        "choices": null,
+        "default": null,
+        "names": [
+          "--reason"
+        ],
+        "nargs": null,
+        "required": true,
+        "type": null
+      },
+      {
+        "action": "_AppendAction",
+        "choices": null,
+        "default": null,
+        "names": [
+          "--evidence"
+        ],
+        "nargs": null,
+        "required": false,
+        "type": null
+      },
+      {
+        "action": "_AppendAction",
+        "choices": null,
+        "default": null,
+        "names": [
+          "--changed-scope"
+        ],
+        "nargs": null,
+        "required": false,
+        "type": null
+      },
+      {
+        "action": "_AppendAction",
+        "choices": null,
+        "default": null,
+        "names": [
+          "--changed-steps"
+        ],
+        "nargs": null,
+        "required": false,
+        "type": null
+      },
+      {
+        "action": "_StoreAction",
+        "choices": null,
+        "default": null,
+        "names": [
+          "--changed-risk"
+        ],
+        "nargs": null,
+        "required": false,
+        "type": null
+      },
+      {
+        "action": "_StoreTrueAction",
+        "choices": null,
+        "default": false,
+        "names": [
+          "--requires-approval"
+        ],
+        "nargs": 0,
+        "required": false,
+        "type": null
+      }
+    ],
+    "amend-step": [
+      {
+        "action": "_StoreAction",
+        "choices": null,
+        "default": null,
+        "names": [
+          "step"
+        ],
+        "nargs": null,
+        "required": true,
+        "type": null
+      },
+      {
+        "action": "_StoreAction",
+        "choices": null,
+        "default": ".",
+        "names": [
+          "--root"
+        ],
+        "nargs": null,
+        "required": false,
+        "type": null
+      },
+      {
+        "action": "_StoreAction",
+        "choices": null,
+        "default": null,
+        "names": [
+          "--agent"
+        ],
+        "nargs": null,
+        "required": true,
+        "type": null
+      },
+      {
+        "action": "_StoreAction",
+        "choices": null,
+        "default": null,
+        "names": [
+          "--reason"
+        ],
+        "nargs": null,
+        "required": true,
+        "type": null
+      },
+      {
+        "action": "_StoreAction",
+        "choices": [
+          "operator_correction",
+          "other",
+          "review_feedback",
+          "validation_followup"
+        ],
+        "default": null,
+        "names": [
+          "--reason-code"
+        ],
+        "nargs": null,
+        "required": false,
+        "type": null
+      },
+      {
+        "action": "_AppendAction",
+        "choices": null,
+        "default": null,
+        "names": [
+          "--finding"
+        ],
+        "nargs": null,
+        "required": false,
+        "type": null
+      },
+      {
+        "action": "_StoreAction",
+        "choices": null,
+        "default": null,
+        "names": [
+          "--lease-minutes"
+        ],
+        "nargs": null,
+        "required": false,
+        "type": "int"
+      },
+      {
+        "action": "_StoreTrueAction",
+        "choices": null,
+        "default": false,
+        "names": [
+          "--json"
+        ],
+        "nargs": 0,
+        "required": false,
+        "type": null
+      }
+    ],
+    "audit-drift": [
+      {
+        "action": "_StoreAction",
+        "choices": null,
+        "default": ".",
+        "names": [
+          "--root"
+        ],
+        "nargs": null,
+        "required": false,
+        "type": null
+      },
+      {
+        "action": "_StoreAction",
+        "choices": null,
+        "default": ".agent/plan.lock.json",
+        "names": [
+          "--plan"
+        ],
+        "nargs": null,
+        "required": false,
+        "type": null
+      }
+    ],
+    "block-step": [
+      {
+        "action": "_StoreAction",
+        "choices": null,
+        "default": null,
+        "names": [
+          "step"
+        ],
+        "nargs": null,
+        "required": true,
+        "type": null
+      },
+      {
+        "action": "_StoreAction",
+        "choices": null,
+        "default": ".",
+        "names": [
+          "--root"
+        ],
+        "nargs": null,
+        "required": false,
+        "type": null
+      },
+      {
+        "action": "_StoreAction",
+        "choices": null,
+        "default": null,
+        "names": [
+          "--attempt"
+        ],
+        "nargs": null,
+        "required": false,
+        "type": null
+      },
+      {
+        "action": "_StoreAction",
+        "choices": null,
+        "default": null,
+        "names": [
+          "--reason"
+        ],
+        "nargs": null,
+        "required": true,
+        "type": null
+      },
+      {
+        "action": "_StoreAction",
+        "choices": null,
+        "default": null,
+        "names": [
+          "--agent"
+        ],
+        "nargs": null,
+        "required": false,
+        "type": null
+      },
+      {
+        "action": "_StoreTrueAction",
+        "choices": null,
+        "default": false,
+        "names": [
+          "--json"
+        ],
+        "nargs": 0,
+        "required": false,
+        "type": null
+      }
+    ],
+    "build-proof": [
+      {
+        "action": "_StoreAction",
+        "choices": null,
+        "default": ".",
+        "names": [
+          "--root"
+        ],
+        "nargs": null,
+        "required": false,
+        "type": null
+      },
+      {
+        "action": "_StoreAction",
+        "choices": null,
+        "default": ".agent/plan.lock.json",
+        "names": [
+          "--plan"
+        ],
+        "nargs": null,
+        "required": false,
+        "type": null
+      },
+      {
+        "action": "_StoreAction",
+        "choices": null,
+        "default": ".agent/proof-pack.md",
+        "names": [
+          "--output"
+        ],
+        "nargs": null,
+        "required": false,
+        "type": null
+      },
+      {
+        "action": "_StoreTrueAction",
+        "choices": null,
+        "default": false,
+        "names": [
+          "--strict"
+        ],
+        "nargs": 0,
+        "required": false,
+        "type": null
+      }
+    ],
+    "claim-step": [
+      {
+        "action": "_StoreAction",
+        "choices": null,
+        "default": null,
+        "names": [
+          "step"
+        ],
+        "nargs": null,
+        "required": true,
+        "type": null
+      },
+      {
+        "action": "_StoreAction",
+        "choices": null,
+        "default": ".",
+        "names": [
+          "--root"
+        ],
+        "nargs": null,
+        "required": false,
+        "type": null
+      },
+      {
+        "action": "_StoreAction",
+        "choices": null,
+        "default": null,
+        "names": [
+          "--agent"
+        ],
+        "nargs": null,
+        "required": true,
+        "type": null
+      },
+      {
+        "action": "_StoreAction",
+        "choices": null,
+        "default": null,
+        "names": [
+          "--lease-minutes"
+        ],
+        "nargs": null,
+        "required": false,
+        "type": "int"
+      },
+      {
+        "action": "_StoreTrueAction",
+        "choices": null,
+        "default": false,
+        "names": [
+          "--json"
+        ],
+        "nargs": 0,
+        "required": false,
+        "type": null
+      }
+    ],
+    "complete-step": [
+      {
+        "action": "_StoreAction",
+        "choices": null,
+        "default": null,
+        "names": [
+          "step"
+        ],
+        "nargs": null,
+        "required": true,
+        "type": null
+      },
+      {
+        "action": "_StoreAction",
+        "choices": null,
+        "default": ".",
+        "names": [
+          "--root"
+        ],
+        "nargs": null,
+        "required": false,
+        "type": null
+      },
+      {
+        "action": "_StoreAction",
+        "choices": null,
+        "default": null,
+        "names": [
+          "--attempt"
+        ],
+        "nargs": null,
+        "required": false,
+        "type": null
+      },
+      {
+        "action": "_StoreAction",
+        "choices": null,
+        "default": null,
+        "names": [
+          "--agent"
+        ],
+        "nargs": null,
+        "required": false,
+        "type": null
+      },
+      {
+        "action": "_StoreTrueAction",
+        "choices": null,
+        "default": false,
+        "names": [
+          "--json"
+        ],
+        "nargs": 0,
+        "required": false,
+        "type": null
+      }
+    ],
+    "detect-stuck": [
+      {
+        "action": "_StoreAction",
+        "choices": null,
+        "default": ".",
+        "names": [
+          "--root"
+        ],
+        "nargs": null,
+        "required": false,
+        "type": null
+      },
+      {
+        "action": "_StoreAction",
+        "choices": null,
+        "default": ".agent/plan.lock.json",
+        "names": [
+          "--plan"
+        ],
+        "nargs": null,
+        "required": false,
+        "type": null
+      },
+      {
+        "action": "_StoreTrueAction",
+        "choices": null,
+        "default": false,
+        "names": [
+          "--strict"
+        ],
+        "nargs": 0,
+        "required": false,
+        "type": null
+      },
+      {
+        "action": "_StoreTrueAction",
+        "choices": null,
+        "default": false,
+        "names": [
+          "--json"
+        ],
+        "nargs": 0,
+        "required": false,
+        "type": null
+      },
+      {
+        "action": "_StoreAction",
+        "choices": null,
+        "default": 3,
+        "names": [
+          "--min-command-failures"
+        ],
+        "nargs": null,
+        "required": false,
+        "type": "_positive_int"
+      },
+      {
+        "action": "_StoreAction",
+        "choices": null,
+        "default": 2,
+        "names": [
+          "--min-verify-failures"
+        ],
+        "nargs": null,
+        "required": false,
+        "type": "_positive_int"
+      },
+      {
+        "action": "_StoreAction",
+        "choices": null,
+        "default": 3,
+        "names": [
+          "--min-cycle-repeats"
+        ],
+        "nargs": null,
+        "required": false,
+        "type": "_positive_int"
+      }
+    ],
+    "doctor": [
+      {
+        "action": "_StoreAction",
+        "choices": null,
+        "default": ".",
+        "names": [
+          "--root"
+        ],
+        "nargs": null,
+        "required": false,
+        "type": null
+      },
+      {
+        "action": "_StoreTrueAction",
+        "choices": null,
+        "default": false,
+        "names": [
+          "--json"
+        ],
+        "nargs": 0,
+        "required": false,
+        "type": null
+      }
+    ],
+    "draft-plan": [
+      {
+        "action": "_StoreAction",
+        "choices": null,
+        "default": ".",
+        "names": [
+          "--root"
+        ],
+        "nargs": null,
+        "required": false,
+        "type": null
+      },
+      {
+        "action": "_StoreAction",
+        "choices": null,
+        "default": null,
+        "names": [
+          "--brief"
+        ],
+        "nargs": null,
+        "required": false,
+        "type": null
+      },
+      {
+        "action": "_StoreTrueAction",
+        "choices": null,
+        "default": false,
+        "names": [
+          "--stdin"
+        ],
+        "nargs": 0,
+        "required": false,
+        "type": null
+      },
+      {
+        "action": "_StoreAction",
+        "choices": null,
+        "default": null,
+        "names": [
+          "--workflow"
+        ],
+        "nargs": null,
+        "required": true,
+        "type": null
+      },
+      {
+        "action": "_StoreAction",
+        "choices": null,
+        "default": null,
+        "names": [
+          "--objective"
+        ],
+        "nargs": null,
+        "required": false,
+        "type": null
+      },
+      {
+        "action": "_StoreAction",
+        "choices": null,
+        "default": null,
+        "names": [
+          "--profile"
+        ],
+        "nargs": null,
+        "required": false,
+        "type": null
+      },
+      {
+        "action": "_StoreAction",
+        "choices": null,
+        "default": null,
+        "names": [
+          "--reason"
+        ],
+        "nargs": null,
+        "required": false,
+        "type": null
+      },
+      {
+        "action": "_StoreTrueAction",
+        "choices": null,
+        "default": false,
+        "names": [
+          "--allow-missing-candidates",
+          "--greenfield"
+        ],
+        "nargs": 0,
+        "required": false,
+        "type": null
+      },
+      {
+        "action": "_StoreTrueAction",
+        "choices": null,
+        "default": false,
+        "names": [
+          "--write"
+        ],
+        "nargs": 0,
+        "required": false,
+        "type": null
+      },
+      {
+        "action": "_StoreTrueAction",
+        "choices": null,
+        "default": false,
+        "names": [
+          "--force"
+        ],
+        "nargs": 0,
+        "required": false,
+        "type": null
+      },
+      {
+        "action": "_StoreTrueAction",
+        "choices": null,
+        "default": false,
+        "names": [
+          "--json"
+        ],
+        "nargs": 0,
+        "required": false,
+        "type": null
+      }
+    ],
+    "events": [
+      {
+        "action": "_StoreAction",
+        "choices": null,
+        "default": ".",
+        "names": [
+          "--root"
+        ],
+        "nargs": null,
+        "required": false,
+        "type": null
+      },
+      {
+        "action": "_StoreAction",
+        "choices": null,
+        "default": null,
+        "names": [
+          "--since"
+        ],
+        "nargs": null,
+        "required": false,
+        "type": null
+      },
+      {
+        "action": "_StoreTrueAction",
+        "choices": null,
+        "default": false,
+        "names": [
+          "--jsonl"
+        ],
+        "nargs": 0,
+        "required": false,
+        "type": null
+      },
+      {
+        "action": "_StoreTrueAction",
+        "choices": null,
+        "default": false,
+        "names": [
+          "--json"
+        ],
+        "nargs": 0,
+        "required": false,
+        "type": null
+      }
+    ],
+    "export-handoff": [
+      {
+        "action": "_StoreAction",
+        "choices": null,
+        "default": ".",
+        "names": [
+          "--root"
+        ],
+        "nargs": null,
+        "required": false,
+        "type": null
+      },
+      {
+        "action": "_StoreAction",
+        "choices": null,
+        "default": null,
+        "names": [
+          "--step"
+        ],
+        "nargs": null,
+        "required": true,
+        "type": null
+      },
+      {
+        "action": "_StoreAction",
+        "choices": [
+          "json",
+          "markdown"
+        ],
+        "default": "json",
+        "names": [
+          "--format"
+        ],
+        "nargs": null,
+        "required": false,
+        "type": null
+      },
+      {
+        "action": "_StoreAction",
+        "choices": null,
+        "default": null,
+        "names": [
+          "--output"
+        ],
+        "nargs": null,
+        "required": false,
+        "type": null
+      }
+    ],
+    "fail-step": [
+      {
+        "action": "_StoreAction",
+        "choices": null,
+        "default": null,
+        "names": [
+          "step"
+        ],
+        "nargs": null,
+        "required": true,
+        "type": null
+      },
+      {
+        "action": "_StoreAction",
+        "choices": null,
+        "default": ".",
+        "names": [
+          "--root"
+        ],
+        "nargs": null,
+        "required": false,
+        "type": null
+      },
+      {
+        "action": "_StoreAction",
+        "choices": null,
+        "default": null,
+        "names": [
+          "--attempt"
+        ],
+        "nargs": null,
+        "required": false,
+        "type": null
+      },
+      {
+        "action": "_StoreAction",
+        "choices": null,
+        "default": null,
+        "names": [
+          "--reason"
+        ],
+        "nargs": null,
+        "required": true,
+        "type": null
+      },
+      {
+        "action": "_StoreAction",
+        "choices": null,
+        "default": null,
+        "names": [
+          "--agent"
+        ],
+        "nargs": null,
+        "required": false,
+        "type": null
+      },
+      {
+        "action": "_StoreTrueAction",
+        "choices": null,
+        "default": false,
+        "names": [
+          "--json"
+        ],
+        "nargs": 0,
+        "required": false,
+        "type": null
+      }
+    ],
+    "finish-run": [
+      {
+        "action": "_StoreAction",
+        "choices": null,
+        "default": ".",
+        "names": [
+          "--root"
+        ],
+        "nargs": null,
+        "required": false,
+        "type": null
+      },
+      {
+        "action": "_StoreAction",
+        "choices": null,
+        "default": ".agent/plan.lock.json",
+        "names": [
+          "--plan"
+        ],
+        "nargs": null,
+        "required": false,
+        "type": null
+      },
+      {
+        "action": "_StoreTrueAction",
+        "choices": null,
+        "default": false,
+        "names": [
+          "--json"
+        ],
+        "nargs": 0,
+        "required": false,
+        "type": null
+      },
+      {
+        "action": "_StoreTrueAction",
+        "choices": null,
+        "default": false,
+        "names": [
+          "--strict"
+        ],
+        "nargs": 0,
+        "required": false,
+        "type": null
+      }
+    ],
+    "finish-step": [
+      {
+        "action": "_StoreAction",
+        "choices": null,
+        "default": null,
+        "names": [
+          "step"
+        ],
+        "nargs": null,
+        "required": true,
+        "type": null
+      },
+      {
+        "action": "_StoreAction",
+        "choices": null,
+        "default": null,
+        "names": [
+          "--attempt"
+        ],
+        "nargs": null,
+        "required": false,
+        "type": null
+      },
+      {
+        "action": "_StoreAction",
+        "choices": null,
+        "default": ".",
+        "names": [
+          "--root"
+        ],
+        "nargs": null,
+        "required": false,
+        "type": null
+      },
+      {
+        "action": "_StoreAction",
+        "choices": null,
+        "default": null,
+        "names": [
+          "--agent"
+        ],
+        "nargs": null,
+        "required": false,
+        "type": null
+      },
+      {
+        "action": "_StoreTrueAction",
+        "choices": null,
+        "default": false,
+        "names": [
+          "--json"
+        ],
+        "nargs": 0,
+        "required": false,
+        "type": null
+      },
+      {
+        "action": "_StoreTrueAction",
+        "choices": null,
+        "default": false,
+        "names": [
+          "--strict"
+        ],
+        "nargs": 0,
+        "required": false,
+        "type": null
+      },
+      {
+        "action": "_StoreTrueAction",
+        "choices": null,
+        "default": false,
+        "names": [
+          "--replay"
+        ],
+        "nargs": 0,
+        "required": false,
+        "type": null
+      }
+    ],
+    "init": [
+      {
+        "action": "_StoreAction",
+        "choices": null,
+        "default": ".",
+        "names": [
+          "--root"
+        ],
+        "nargs": null,
+        "required": false,
+        "type": null
+      },
+      {
+        "action": "_StoreTrueAction",
+        "choices": null,
+        "default": false,
+        "names": [
+          "--force"
+        ],
+        "nargs": 0,
+        "required": false,
+        "type": null
+      },
+      {
+        "action": "_StoreAction",
+        "choices": null,
+        "default": null,
+        "names": [
+          "--pack"
+        ],
+        "nargs": null,
+        "required": false,
+        "type": null
+      },
+      {
+        "action": "_StoreAction",
+        "choices": null,
+        "default": null,
+        "names": [
+          "--profile"
+        ],
+        "nargs": null,
+        "required": false,
+        "type": null
+      },
+      {
+        "action": "_StoreAction",
+        "choices": null,
+        "default": null,
+        "names": [
+          "--reason"
+        ],
+        "nargs": null,
+        "required": false,
+        "type": null
+      }
+    ],
+    "init-execution": [
+      {
+        "action": "_StoreAction",
+        "choices": null,
+        "default": ".",
+        "names": [
+          "--root"
+        ],
+        "nargs": null,
+        "required": false,
+        "type": null
+      },
+      {
+        "action": "_StoreTrueAction",
+        "choices": null,
+        "default": false,
+        "names": [
+          "--force"
+        ],
+        "nargs": 0,
+        "required": false,
+        "type": null
+      }
+    ],
+    "intake": [
+      {
+        "action": "_StoreAction",
+        "choices": null,
+        "default": ".",
+        "names": [
+          "--root"
+        ],
+        "nargs": null,
+        "required": false,
+        "type": null
+      },
+      {
+        "action": "_StoreAction",
+        "choices": null,
+        "default": null,
+        "names": [
+          "--from"
+        ],
+        "nargs": null,
+        "required": true,
+        "type": null
+      }
+    ],
+    "lint-handoff": [
+      {
+        "action": "_StoreAction",
+        "choices": null,
+        "default": ".",
+        "names": [
+          "--root"
+        ],
+        "nargs": null,
+        "required": false,
+        "type": null
+      },
+      {
+        "action": "_StoreAction",
+        "choices": null,
+        "default": null,
+        "names": [
+          "--input"
+        ],
+        "nargs": null,
+        "required": true,
+        "type": null
+      },
+      {
+        "action": "_StoreTrueAction",
+        "choices": null,
+        "default": false,
+        "names": [
+          "--json"
+        ],
+        "nargs": 0,
+        "required": false,
+        "type": null
+      }
+    ],
+    "lock-plan": [
+      {
+        "action": "_StoreAction",
+        "choices": null,
+        "default": ".agent/plan.lock.json",
+        "names": [
+          "plan"
+        ],
+        "nargs": "?",
+        "required": false,
+        "type": null
+      },
+      {
+        "action": "_StoreTrueAction",
+        "choices": null,
+        "default": false,
+        "names": [
+          "--stdin"
+        ],
+        "nargs": 0,
+        "required": false,
+        "type": null
+      },
+      {
+        "action": "_StoreAction",
+        "choices": null,
+        "default": null,
+        "names": [
+          "--from-json"
+        ],
+        "nargs": null,
+        "required": false,
+        "type": null
+      },
+      {
+        "action": "_StoreTrueAction",
+        "choices": null,
+        "default": false,
+        "names": [
+          "--json"
+        ],
+        "nargs": 0,
+        "required": false,
+        "type": null
+      }
+    ],
+    "next-action": [
+      {
+        "action": "_StoreAction",
+        "choices": null,
+        "default": ".",
+        "names": [
+          "--root"
+        ],
+        "nargs": null,
+        "required": false,
+        "type": null
+      },
+      {
+        "action": "_StoreTrueAction",
+        "choices": null,
+        "default": false,
+        "names": [
+          "--json"
+        ],
+        "nargs": 0,
+        "required": false,
+        "type": null
+      },
+      {
+        "action": "_StoreTrueAction",
+        "choices": null,
+        "default": false,
+        "names": [
+          "--strict"
+        ],
+        "nargs": 0,
+        "required": false,
+        "type": null
+      }
+    ],
+    "next-step": [
+      {
+        "action": "_StoreAction",
+        "choices": null,
+        "default": ".",
+        "names": [
+          "--root"
+        ],
+        "nargs": null,
+        "required": false,
+        "type": null
+      },
+      {
+        "action": "_StoreTrueAction",
+        "choices": null,
+        "default": false,
+        "names": [
+          "--json"
+        ],
+        "nargs": 0,
+        "required": false,
+        "type": null
+      }
+    ],
+    "pack": [],
+    "pack inspect": [
+      {
+        "action": "_StoreAction",
+        "choices": null,
+        "default": null,
+        "names": [
+          "path"
+        ],
+        "nargs": null,
+        "required": true,
+        "type": null
+      },
+      {
+        "action": "_StoreTrueAction",
+        "choices": null,
+        "default": false,
+        "names": [
+          "--json"
+        ],
+        "nargs": 0,
+        "required": false,
+        "type": null
+      }
+    ],
+    "reclaim-step": [
+      {
+        "action": "_StoreAction",
+        "choices": null,
+        "default": null,
+        "names": [
+          "step"
+        ],
+        "nargs": null,
+        "required": true,
+        "type": null
+      },
+      {
+        "action": "_StoreAction",
+        "choices": null,
+        "default": ".",
+        "names": [
+          "--root"
+        ],
+        "nargs": null,
+        "required": false,
+        "type": null
+      },
+      {
+        "action": "_StoreAction",
+        "choices": null,
+        "default": null,
+        "names": [
+          "--agent"
+        ],
+        "nargs": null,
+        "required": false,
+        "type": null
+      },
+      {
+        "action": "_StoreAction",
+        "choices": null,
+        "default": null,
+        "names": [
+          "--reason"
+        ],
+        "nargs": null,
+        "required": true,
+        "type": null
+      },
+      {
+        "action": "_StoreAction",
+        "choices": null,
+        "default": null,
+        "names": [
+          "--lease-minutes"
+        ],
+        "nargs": null,
+        "required": false,
+        "type": "int"
+      },
+      {
+        "action": "_StoreTrueAction",
+        "choices": null,
+        "default": false,
+        "names": [
+          "--json"
+        ],
+        "nargs": 0,
+        "required": false,
+        "type": null
+      }
+    ],
+    "recommend-workflow": [
+      {
+        "action": "_StoreAction",
+        "choices": null,
+        "default": null,
+        "names": [
+          "--brief"
+        ],
+        "nargs": null,
+        "required": false,
+        "type": null
+      },
+      {
+        "action": "_StoreTrueAction",
+        "choices": null,
+        "default": false,
+        "names": [
+          "--stdin"
+        ],
+        "nargs": 0,
+        "required": false,
+        "type": null
+      },
+      {
+        "action": "_StoreTrueAction",
+        "choices": null,
+        "default": false,
+        "names": [
+          "--json"
+        ],
+        "nargs": 0,
+        "required": false,
+        "type": null
+      },
+      {
+        "action": "_StoreAction",
+        "choices": null,
+        "default": null,
+        "names": [
+          "--selected-profile"
+        ],
+        "nargs": null,
+        "required": false,
+        "type": null
+      },
+      {
+        "action": "_StoreAction",
+        "choices": null,
+        "default": null,
+        "names": [
+          "--reason"
+        ],
+        "nargs": null,
+        "required": false,
+        "type": null
+      }
+    ],
+    "record-capability": [
+      {
+        "action": "_StoreAction",
+        "choices": null,
+        "default": ".",
+        "names": [
+          "--root"
+        ],
+        "nargs": null,
+        "required": false,
+        "type": null
+      },
+      {
+        "action": "_StoreAction",
+        "choices": null,
+        "default": null,
+        "names": [
+          "--id"
+        ],
+        "nargs": null,
+        "required": true,
+        "type": null
+      },
+      {
+        "action": "_StoreAction",
+        "choices": null,
+        "default": null,
+        "names": [
+          "--capability"
+        ],
+        "nargs": null,
+        "required": true,
+        "type": null
+      },
+      {
+        "action": "_StoreAction",
+        "choices": null,
+        "default": null,
+        "names": [
+          "--provider"
+        ],
+        "nargs": null,
+        "required": true,
+        "type": null
+      },
+      {
+        "action": "_StoreAction",
+        "choices": null,
+        "default": null,
+        "names": [
+          "--reason"
+        ],
+        "nargs": null,
+        "required": true,
+        "type": null
+      },
+      {
+        "action": "_AppendAction",
+        "choices": null,
+        "default": null,
+        "names": [
+          "--evidence"
+        ],
+        "nargs": null,
+        "required": false,
+        "type": null
+      }
+    ],
+    "record-command": [
+      {
+        "action": "_StoreAction",
+        "choices": null,
+        "default": ".",
+        "names": [
+          "--root"
+        ],
+        "nargs": null,
+        "required": false,
+        "type": null
+      },
+      {
+        "action": "_StoreAction",
+        "choices": null,
+        "default": null,
+        "names": [
+          "--step"
+        ],
+        "nargs": null,
+        "required": true,
+        "type": null
+      },
+      {
+        "action": "_StoreAction",
+        "choices": null,
+        "default": null,
+        "names": [
+          "--attempt"
+        ],
+        "nargs": null,
+        "required": false,
+        "type": null
+      },
+      {
+        "action": "_StoreAction",
+        "choices": null,
+        "default": null,
+        "names": [
+          "--exit-code"
+        ],
+        "nargs": null,
+        "required": true,
+        "type": "int"
+      },
+      {
+        "action": "_StoreAction",
+        "choices": null,
+        "default": null,
+        "names": [
+          "--gate"
+        ],
+        "nargs": null,
+        "required": false,
+        "type": null
+      },
+      {
+        "action": "_StoreAction",
+        "choices": null,
+        "default": null,
+        "names": [
+          "--agent"
+        ],
+        "nargs": null,
+        "required": false,
+        "type": null
+      },
+      {
+        "action": "_StoreTrueAction",
+        "choices": null,
+        "default": false,
+        "names": [
+          "--json"
+        ],
+        "nargs": 0,
+        "required": false,
+        "type": null
+      },
+      {
+        "action": "_StoreAction",
+        "choices": null,
+        "default": null,
+        "names": [
+          "command"
+        ],
+        "nargs": "...",
+        "required": true,
+        "type": null
+      }
+    ],
+    "record-context": [
+      {
+        "action": "_StoreAction",
+        "choices": null,
+        "default": ".",
+        "names": [
+          "--root"
+        ],
+        "nargs": null,
+        "required": false,
+        "type": null
+      },
+      {
+        "action": "_StoreAction",
+        "choices": null,
+        "default": null,
+        "names": [
+          "--id"
+        ],
+        "nargs": null,
+        "required": true,
+        "type": null
+      },
+      {
+        "action": "_StoreAction",
+        "choices": null,
+        "default": null,
+        "names": [
+          "--source"
+        ],
+        "nargs": null,
+        "required": true,
+        "type": null
+      },
+      {
+        "action": "_StoreAction",
+        "choices": null,
+        "default": null,
+        "names": [
+          "--reason"
+        ],
+        "nargs": null,
+        "required": true,
+        "type": null
+      },
+      {
+        "action": "_AppendAction",
+        "choices": null,
+        "default": null,
+        "names": [
+          "--used-for"
+        ],
+        "nargs": null,
+        "required": false,
+        "type": null
+      },
+      {
+        "action": "_StoreAction",
+        "choices": null,
+        "default": null,
+        "names": [
+          "--bytes"
+        ],
+        "nargs": null,
+        "required": false,
+        "type": "int"
+      }
+    ],
+    "record-evidence": [
+      {
+        "action": "_StoreAction",
+        "choices": null,
+        "default": ".",
+        "names": [
+          "--root"
+        ],
+        "nargs": null,
+        "required": false,
+        "type": null
+      },
+      {
+        "action": "_StoreAction",
+        "choices": null,
+        "default": null,
+        "names": [
+          "--id"
+        ],
+        "nargs": null,
+        "required": true,
+        "type": null
+      },
+      {
+        "action": "_StoreAction",
+        "choices": null,
+        "default": null,
+        "names": [
+          "--claim"
+        ],
+        "nargs": null,
+        "required": true,
+        "type": null
+      },
+      {
+        "action": "_StoreAction",
+        "choices": null,
+        "default": null,
+        "names": [
+          "--source"
+        ],
+        "nargs": null,
+        "required": true,
+        "type": null
+      },
+      {
+        "action": "_StoreAction",
+        "choices": [
+          "low",
+          "medium",
+          "high"
+        ],
+        "default": "medium",
+        "names": [
+          "--confidence"
+        ],
+        "nargs": null,
+        "required": false,
+        "type": null
+      },
+      {
+        "action": "_StoreAction",
+        "choices": [
+          "command",
+          "file",
+          "log",
+          "review",
+          "runtime",
+          "test",
+          "url",
+          "user"
+        ],
+        "default": null,
+        "names": [
+          "--kind"
+        ],
+        "nargs": null,
+        "required": false,
+        "type": null
+      },
+      {
+        "action": "_AppendAction",
+        "choices": null,
+        "default": null,
+        "names": [
+          "--supports"
+        ],
+        "nargs": null,
+        "required": false,
+        "type": null
+      }
+    ],
+    "record-failure": [
+      {
+        "action": "_StoreAction",
+        "choices": null,
+        "default": ".",
+        "names": [
+          "--root"
+        ],
+        "nargs": null,
+        "required": false,
+        "type": null
+      },
+      {
+        "action": "_StoreAction",
+        "choices": null,
+        "default": null,
+        "names": [
+          "--command"
+        ],
+        "nargs": null,
+        "required": true,
+        "type": null
+      },
+      {
+        "action": "_StoreAction",
+        "choices": null,
+        "default": null,
+        "names": [
+          "--failure-type"
+        ],
+        "nargs": null,
+        "required": true,
+        "type": null
+      },
+      {
+        "action": "_AppendAction",
+        "choices": null,
+        "default": null,
+        "names": [
+          "--relevant-lines"
+        ],
+        "nargs": null,
+        "required": false,
+        "type": null
+      },
+      {
+        "action": "_StoreAction",
+        "choices": null,
+        "default": null,
+        "names": [
+          "--suspected-cause"
+        ],
+        "nargs": null,
+        "required": true,
+        "type": null
+      },
+      {
+        "action": "_StoreAction",
+        "choices": null,
+        "default": null,
+        "names": [
+          "--next-action"
+        ],
+        "nargs": null,
+        "required": true,
+        "type": null
+      }
+    ],
+    "record-file-change": [
+      {
+        "action": "_StoreAction",
+        "choices": null,
+        "default": ".",
+        "names": [
+          "--root"
+        ],
+        "nargs": null,
+        "required": false,
+        "type": null
+      },
+      {
+        "action": "_StoreAction",
+        "choices": null,
+        "default": null,
+        "names": [
+          "--step"
+        ],
+        "nargs": null,
+        "required": true,
+        "type": null
+      },
+      {
+        "action": "_StoreAction",
+        "choices": null,
+        "default": null,
+        "names": [
+          "--attempt"
+        ],
+        "nargs": null,
+        "required": false,
+        "type": null
+      },
+      {
+        "action": "_AppendAction",
+        "choices": null,
+        "default": null,
+        "names": [
+          "--path"
+        ],
+        "nargs": null,
+        "required": true,
+        "type": null
+      },
+      {
+        "action": "_StoreAction",
+        "choices": null,
+        "default": null,
+        "names": [
+          "--agent"
+        ],
+        "nargs": null,
+        "required": false,
+        "type": null
+      },
+      {
+        "action": "_StoreTrueAction",
+        "choices": null,
+        "default": false,
+        "names": [
+          "--json"
+        ],
+        "nargs": 0,
+        "required": false,
+        "type": null
+      }
+    ],
+    "record-review": [
+      {
+        "action": "_StoreAction",
+        "choices": null,
+        "default": ".",
+        "names": [
+          "--root"
+        ],
+        "nargs": null,
+        "required": false,
+        "type": null
+      },
+      {
+        "action": "_StoreAction",
+        "choices": null,
+        "default": null,
+        "names": [
+          "--manifest"
+        ],
+        "nargs": null,
+        "required": true,
+        "type": null
+      },
+      {
+        "action": "_StoreTrueAction",
+        "choices": null,
+        "default": false,
+        "names": [
+          "--emit-evidence"
+        ],
+        "nargs": 0,
+        "required": false,
+        "type": null
+      },
+      {
+        "action": "_StoreTrueAction",
+        "choices": null,
+        "default": false,
+        "names": [
+          "--json"
+        ],
+        "nargs": 0,
+        "required": false,
+        "type": null
+      }
+    ],
+    "renew-lease": [
+      {
+        "action": "_StoreAction",
+        "choices": null,
+        "default": null,
+        "names": [
+          "step"
+        ],
+        "nargs": null,
+        "required": true,
+        "type": null
+      },
+      {
+        "action": "_StoreAction",
+        "choices": null,
+        "default": ".",
+        "names": [
+          "--root"
+        ],
+        "nargs": null,
+        "required": false,
+        "type": null
+      },
+      {
+        "action": "_StoreAction",
+        "choices": null,
+        "default": null,
+        "names": [
+          "--attempt"
+        ],
+        "nargs": null,
+        "required": false,
+        "type": null
+      },
+      {
+        "action": "_StoreAction",
+        "choices": null,
+        "default": null,
+        "names": [
+          "--agent"
+        ],
+        "nargs": null,
+        "required": false,
+        "type": null
+      },
+      {
+        "action": "_StoreAction",
+        "choices": null,
+        "default": null,
+        "names": [
+          "--minutes"
+        ],
+        "nargs": null,
+        "required": false,
+        "type": "int"
+      },
+      {
+        "action": "_StoreTrueAction",
+        "choices": null,
+        "default": false,
+        "names": [
+          "--json"
+        ],
+        "nargs": 0,
+        "required": false,
+        "type": null
+      }
+    ],
+    "replay-gates": [
+      {
+        "action": "_StoreAction",
+        "choices": null,
+        "default": ".",
+        "names": [
+          "--root"
+        ],
+        "nargs": null,
+        "required": false,
+        "type": null
+      },
+      {
+        "action": "_StoreAction",
+        "choices": null,
+        "default": null,
+        "names": [
+          "--step"
+        ],
+        "nargs": null,
+        "required": false,
+        "type": null
+      },
+      {
+        "action": "_StoreTrueAction",
+        "choices": null,
+        "default": false,
+        "names": [
+          "--record"
+        ],
+        "nargs": 0,
+        "required": false,
+        "type": null
+      },
+      {
+        "action": "_StoreTrueAction",
+        "choices": null,
+        "default": false,
+        "names": [
+          "--json"
+        ],
+        "nargs": 0,
+        "required": false,
+        "type": null
+      }
+    ],
+    "review-manifest": [
+      {
+        "action": "_StoreAction",
+        "choices": null,
+        "default": ".",
+        "names": [
+          "--root"
+        ],
+        "nargs": null,
+        "required": false,
+        "type": null
+      },
+      {
+        "action": "_StoreAction",
+        "choices": null,
+        "default": null,
+        "names": [
+          "--state-dir"
+        ],
+        "nargs": null,
+        "required": true,
+        "type": null
+      },
+      {
+        "action": "_StoreAction",
+        "choices": null,
+        "default": null,
+        "names": [
+          "--branch"
+        ],
+        "nargs": null,
+        "required": false,
+        "type": null
+      },
+      {
+        "action": "_StoreAction",
+        "choices": null,
+        "default": "docs/ai/config.json",
+        "names": [
+          "--config"
+        ],
+        "nargs": null,
+        "required": false,
+        "type": null
+      },
+      {
+        "action": "_StoreAction",
+        "choices": null,
+        "default": null,
+        "names": [
+          "--findings-json"
+        ],
+        "nargs": null,
+        "required": false,
+        "type": null
+      },
+      {
+        "action": "_StoreAction",
+        "choices": [
+          "deep",
+          "light",
+          "none",
+          "spec_quality",
+          "standard"
+        ],
+        "default": "deep",
+        "names": [
+          "--depth-profile"
+        ],
+        "nargs": null,
+        "required": false,
+        "type": null
+      },
+      {
+        "action": "_StoreTrueAction",
+        "choices": null,
+        "default": false,
+        "names": [
+          "--write"
+        ],
+        "nargs": 0,
+        "required": false,
+        "type": null
+      },
+      {
+        "action": "_StoreTrueAction",
+        "choices": null,
+        "default": false,
+        "names": [
+          "--json"
+        ],
+        "nargs": 0,
+        "required": false,
+        "type": null
+      },
+      {
+        "action": "_StoreTrueAction",
+        "choices": null,
+        "default": false,
+        "names": [
+          "--fail-on-block"
+        ],
+        "nargs": 0,
+        "required": false,
+        "type": null
+      },
+      {
+        "action": "_StoreTrueAction",
+        "choices": null,
+        "default": false,
+        "names": [
+          "--strict-exit"
+        ],
+        "nargs": 0,
+        "required": false,
+        "type": null
+      }
+    ],
+    "run": [
+      {
+        "action": "_StoreAction",
+        "choices": null,
+        "default": ".",
+        "names": [
+          "--root"
+        ],
+        "nargs": null,
+        "required": false,
+        "type": null
+      },
+      {
+        "action": "_StoreAction",
+        "choices": null,
+        "default": null,
+        "names": [
+          "--step"
+        ],
+        "nargs": null,
+        "required": true,
+        "type": null
+      },
+      {
+        "action": "_StoreAction",
+        "choices": null,
+        "default": null,
+        "names": [
+          "--attempt"
+        ],
+        "nargs": null,
+        "required": false,
+        "type": null
+      },
+      {
+        "action": "_StoreAction",
+        "choices": null,
+        "default": null,
+        "names": [
+          "--gate"
+        ],
+        "nargs": null,
+        "required": false,
+        "type": null
+      },
+      {
+        "action": "_StoreAction",
+        "choices": null,
+        "default": null,
+        "names": [
+          "--agent"
+        ],
+        "nargs": null,
+        "required": false,
+        "type": null
+      },
+      {
+        "action": "_StoreTrueAction",
+        "choices": null,
+        "default": false,
+        "names": [
+          "--confirm-risk"
+        ],
+        "nargs": 0,
+        "required": false,
+        "type": null
+      },
+      {
+        "action": "_StoreTrueAction",
+        "choices": null,
+        "default": false,
+        "names": [
+          "--json"
+        ],
+        "nargs": 0,
+        "required": false,
+        "type": null
+      },
+      {
+        "action": "_StoreAction",
+        "choices": null,
+        "default": null,
+        "names": [
+          "command"
+        ],
+        "nargs": "...",
+        "required": true,
+        "type": null
+      }
+    ],
+    "runtime-status": [
+      {
+        "action": "_StoreAction",
+        "choices": null,
+        "default": ".",
+        "names": [
+          "--root"
+        ],
+        "nargs": null,
+        "required": false,
+        "type": null
+      },
+      {
+        "action": "_StoreAction",
+        "choices": null,
+        "default": ".agent/runtime.config.json",
+        "names": [
+          "--config"
+        ],
+        "nargs": null,
+        "required": false,
+        "type": null
+      },
+      {
+        "action": "_StoreTrueAction",
+        "choices": null,
+        "default": false,
+        "names": [
+          "--record"
+        ],
+        "nargs": 0,
+        "required": false,
+        "type": null
+      },
+      {
+        "action": "_StoreTrueAction",
+        "choices": null,
+        "default": false,
+        "names": [
+          "--json"
+        ],
+        "nargs": 0,
+        "required": false,
+        "type": null
+      },
+      {
+        "action": "_StoreTrueAction",
+        "choices": null,
+        "default": false,
+        "names": [
+          "--probe"
+        ],
+        "nargs": 0,
+        "required": false,
+        "type": null
+      },
+      {
+        "action": "_StoreTrueAction",
+        "choices": null,
+        "default": false,
+        "names": [
+          "--strict"
+        ],
+        "nargs": 0,
+        "required": false,
+        "type": null
+      }
+    ],
+    "status": [
+      {
+        "action": "_StoreAction",
+        "choices": null,
+        "default": ".",
+        "names": [
+          "--root"
+        ],
+        "nargs": null,
+        "required": false,
+        "type": null
+      }
+    ],
+    "validate-plan": [
+      {
+        "action": "_StoreAction",
+        "choices": null,
+        "default": ".agent/plan.lock.json",
+        "names": [
+          "plan"
+        ],
+        "nargs": "?",
+        "required": false,
+        "type": null
+      }
+    ],
+    "verify-proof": [
+      {
+        "action": "_StoreAction",
+        "choices": null,
+        "default": ".",
+        "names": [
+          "--root"
+        ],
+        "nargs": null,
+        "required": false,
+        "type": null
+      },
+      {
+        "action": "_StoreAction",
+        "choices": null,
+        "default": ".agent/proof-pack.json",
+        "names": [
+          "--proof"
+        ],
+        "nargs": null,
+        "required": false,
+        "type": null
+      },
+      {
+        "action": "_StoreTrueAction",
+        "choices": null,
+        "default": false,
+        "names": [
+          "--replay"
+        ],
+        "nargs": 0,
+        "required": false,
+        "type": null
+      },
+      {
+        "action": "_StoreTrueAction",
+        "choices": null,
+        "default": false,
+        "names": [
+          "--strict"
+        ],
+        "nargs": 0,
+        "required": false,
+        "type": null
+      }
+    ],
+    "verify-run": [
+      {
+        "action": "_StoreAction",
+        "choices": null,
+        "default": ".",
+        "names": [
+          "--root"
+        ],
+        "nargs": null,
+        "required": false,
+        "type": null
+      },
+      {
+        "action": "_StoreAction",
+        "choices": null,
+        "default": ".agent/plan.lock.json",
+        "names": [
+          "--plan"
+        ],
+        "nargs": null,
+        "required": false,
+        "type": null
+      },
+      {
+        "action": "_StoreTrueAction",
+        "choices": null,
+        "default": false,
+        "names": [
+          "--strict"
+        ],
+        "nargs": 0,
+        "required": false,
+        "type": null
+      },
+      {
+        "action": "_StoreFalseAction",
+        "choices": null,
+        "default": true,
+        "names": [
+          "--no-record"
+        ],
+        "nargs": 0,
+        "required": false,
+        "type": null
+      },
+      {
+        "action": "_StoreTrueAction",
+        "choices": null,
+        "default": false,
+        "names": [
+          "--json"
+        ],
+        "nargs": 0,
+        "required": false,
+        "type": null
+      }
+    ],
+    "verify-step": [
+      {
+        "action": "_StoreAction",
+        "choices": null,
+        "default": null,
+        "names": [
+          "step"
+        ],
+        "nargs": null,
+        "required": true,
+        "type": null
+      },
+      {
+        "action": "_StoreAction",
+        "choices": null,
+        "default": ".",
+        "names": [
+          "--root"
+        ],
+        "nargs": null,
+        "required": false,
+        "type": null
+      },
+      {
+        "action": "_StoreAction",
+        "choices": null,
+        "default": null,
+        "names": [
+          "--attempt"
+        ],
+        "nargs": null,
+        "required": false,
+        "type": null
+      },
+      {
+        "action": "_StoreAction",
+        "choices": null,
+        "default": null,
+        "names": [
+          "--agent"
+        ],
+        "nargs": null,
+        "required": false,
+        "type": null
+      },
+      {
+        "action": "_StoreTrueAction",
+        "choices": null,
+        "default": false,
+        "names": [
+          "--strict"
+        ],
+        "nargs": 0,
+        "required": false,
+        "type": null
+      },
+      {
+        "action": "_StoreTrueAction",
+        "choices": null,
+        "default": false,
+        "names": [
+          "--replay"
+        ],
+        "nargs": 0,
+        "required": false,
+        "type": null
+      },
+      {
+        "action": "_StoreTrueAction",
+        "choices": null,
+        "default": false,
+        "names": [
+          "--json"
+        ],
+        "nargs": 0,
+        "required": false,
+        "type": null
+      }
+    ],
+    "view-proof": [
+      {
+        "action": "_StoreTrueAction",
+        "choices": null,
+        "default": false,
+        "names": [
+          "--html"
+        ],
+        "nargs": 0,
+        "required": false,
+        "type": null
+      },
+      {
+        "action": "_StoreAction",
+        "choices": null,
+        "default": ".",
+        "names": [
+          "--root"
+        ],
+        "nargs": null,
+        "required": false,
+        "type": null
+      },
+      {
+        "action": "_StoreAction",
+        "choices": null,
+        "default": ".agent/proof-pack.json",
+        "names": [
+          "--proof"
+        ],
+        "nargs": null,
+        "required": false,
+        "type": null
+      },
+      {
+        "action": "_StoreAction",
+        "choices": null,
+        "default": ".agent/proof-report.html",
+        "names": [
+          "--output"
+        ],
+        "nargs": null,
+        "required": false,
+        "type": null
+      }
+    ],
+    "waive-capability": [
+      {
+        "action": "_StoreAction",
+        "choices": null,
+        "default": ".",
+        "names": [
+          "--root"
+        ],
+        "nargs": null,
+        "required": false,
+        "type": null
+      },
+      {
+        "action": "_StoreAction",
+        "choices": null,
+        "default": null,
+        "names": [
+          "--id"
+        ],
+        "nargs": null,
+        "required": true,
+        "type": null
+      },
+      {
+        "action": "_StoreAction",
+        "choices": null,
+        "default": null,
+        "names": [
+          "--capability"
+        ],
+        "nargs": null,
+        "required": true,
+        "type": null
+      },
+      {
+        "action": "_StoreAction",
+        "choices": null,
+        "default": null,
+        "names": [
+          "--reason"
+        ],
+        "nargs": null,
+        "required": true,
+        "type": null
+      },
+      {
+        "action": "_AppendAction",
+        "choices": null,
+        "default": null,
+        "names": [
+          "--evidence"
+        ],
+        "nargs": null,
+        "required": false,
+        "type": null
+      }
+    ],
+    "workflow-contract": [
+      {
+        "action": "_StoreAction",
+        "choices": null,
+        "default": ".agent/workflow.contract.json",
+        "names": [
+          "path"
+        ],
+        "nargs": "?",
+        "required": false,
+        "type": null
+      },
+      {
+        "action": "_StoreAction",
+        "choices": null,
+        "default": ".",
+        "names": [
+          "--root"
+        ],
+        "nargs": null,
+        "required": false,
+        "type": null
+      },
+      {
+        "action": "_StoreAction",
+        "choices": null,
+        "default": null,
+        "names": [
+          "--from-json"
+        ],
+        "nargs": null,
+        "required": false,
+        "type": null
+      },
+      {
+        "action": "_StoreTrueAction",
+        "choices": null,
+        "default": false,
+        "names": [
+          "--validate"
+        ],
+        "nargs": 0,
+        "required": false,
+        "type": null
+      }
+    ]
+  },
+  "json_outputs": {
+    "aggregate-ledgers": [
+      {
+        "keys": {
+          "collisions": "array",
+          "dry_run": "boolean",
+          "output": "string",
+          "rewrites": "array",
+          "source_count": "integer",
+          "sources": "array",
+          "status": "string"
+        },
+        "type": "object"
+      }
+    ],
+    "amend-step": [
+      {
+        "keys": {
+          "agent_id": "string|null",
+          "amends_attempt": "string|null",
+          "amends_completed_at": "string|null",
+          "attempt_id": "string",
+          "event": "string",
+          "findings": "array|null",
+          "lease_expires_at": "string|null",
+          "reason": "string|null",
+          "reason_code": "string|null",
+          "recorded_at": "string",
+          "schema_version": "string",
+          "step_id": "string"
+        },
+        "type": "object"
+      }
+    ],
+    "block-step": [
+      {
+        "keys": {
+          "agent_id": "string|null",
+          "amends_attempt": "string|null",
+          "amends_completed_at": "string|null",
+          "attempt_id": "string",
+          "event": "string",
+          "findings": "array|null",
+          "lease_expires_at": "string|null",
+          "reason": "string|null",
+          "reason_code": "string|null",
+          "recorded_at": "string",
+          "schema_version": "string",
+          "step_id": "string"
+        },
+        "type": "object"
+      }
+    ],
+    "claim-step": [
+      {
+        "keys": {
+          "agent_id": "string|null",
+          "amends_attempt": "string|null",
+          "amends_completed_at": "string|null",
+          "attempt_id": "string",
+          "event": "string",
+          "findings": "array|null",
+          "lease_expires_at": "string|null",
+          "reason": "string|null",
+          "reason_code": "string|null",
+          "recorded_at": "string",
+          "schema_version": "string",
+          "step_id": "string"
+        },
+        "type": "object"
+      }
+    ],
+    "complete-step": [
+      {
+        "keys": {
+          "agent_id": "string|null",
+          "amends_attempt": "string|null",
+          "amends_completed_at": "string|null",
+          "attempt_id": "string",
+          "event": "string",
+          "findings": "array|null",
+          "lease_expires_at": "string|null",
+          "reason": "string|null",
+          "reason_code": "string|null",
+          "recorded_at": "string",
+          "schema_version": "string",
+          "step_id": "string"
+        },
+        "type": "object"
+      }
+    ],
+    "detect-stuck": [
+      {
+        "keys": {
+          "findings": "array",
+          "recorded_at": "string",
+          "schema_version": "string",
+          "status": "string",
+          "thresholds": "object"
+        },
+        "type": "object"
+      }
+    ],
+    "doctor": [
+      {
+        "keys": {
+          "contract": "object|null",
+          "findings": "array",
+          "status": "string"
+        },
+        "type": "object"
+      }
+    ],
+    "draft-plan": [
+      {
+        "keys": {
+          "contract_path": "string|null",
+          "errors": "array|null",
+          "path": "string|null",
+          "plan_candidate": "object|null",
+          "recommended": "object|null",
+          "schema_version": "string|null",
+          "selected": "object|null",
+          "selection_mode": "string|null",
+          "status": "string",
+          "warnings": "array|null",
+          "workflow_contract": "object|null"
+        },
+        "type": "object"
+      }
+    ],
+    "events": [
+      {
+        "items": {
+          "keys": {
+            "attempt_id": "string|null",
+            "data": "object",
+            "source": "object",
+            "step_id": "string|null",
+            "timestamp": "string",
+            "type": "string"
+          },
+          "type": "object"
+        },
+        "type": "array"
+      }
+    ],
+    "fail-step": [
+      {
+        "keys": {
+          "agent_id": "string|null",
+          "amends_attempt": "string|null",
+          "amends_completed_at": "string|null",
+          "attempt_id": "string",
+          "event": "string",
+          "findings": "array|null",
+          "lease_expires_at": "string|null",
+          "reason": "string|null",
+          "reason_code": "string|null",
+          "recorded_at": "string",
+          "schema_version": "string",
+          "step_id": "string"
+        },
+        "type": "object"
+      }
+    ],
+    "finish-run": [
+      {
+        "keys": {
+          "diagnostics": "array",
+          "gates": "array",
+          "ok": "boolean",
+          "stopped_at": "string|null"
+        },
+        "type": "object"
+      }
+    ],
+    "finish-step": [
+      {
+        "keys": {
+          "completed": "boolean",
+          "diagnostics": "array",
+          "verification_status": "string",
+          "verified": "boolean"
+        },
+        "type": "object"
+      }
+    ],
+    "lint-handoff": [
+      {
+        "keys": {
+          "findings": "array"
+        },
+        "type": "object"
+      }
+    ],
+    "lock-plan": [
+      {
+        "keys": {
+          "errors": "array",
+          "path": "string|null",
+          "status": "string"
+        },
+        "type": "object"
+      }
+    ],
+    "next-action": [
+      {
+        "keys": {
+          "args": "array",
+          "blocking": "boolean",
+          "command": "string|null",
+          "diagnostics": "array",
+          "reason": "string",
+          "state": "string",
+          "step_id": "string|null"
+        },
+        "type": "object"
+      }
+    ],
+    "next-step": [
+      {
+        "keys": {
+          "action": "string",
+          "evidence_ids": "array",
+          "expected_diff": "array",
+          "files": "array",
+          "id": "string",
+          "preconditions": "array",
+          "validation": "array"
+        },
+        "type": "object"
+      },
+      {
+        "type": "null"
+      }
+    ],
+    "pack inspect": [
+      {
+        "keys": {
+          "errors": "array",
+          "id": "string|null",
+          "manifest_sha256": "string|null",
+          "profiles": "array|null",
+          "status": "string",
+          "version": "string|null"
+        },
+        "type": "object"
+      }
+    ],
+    "reclaim-step": [
+      {
+        "keys": {
+          "agent_id": "string|null",
+          "amends_attempt": "string|null",
+          "amends_completed_at": "string|null",
+          "attempt_id": "string",
+          "event": "string",
+          "findings": "array|null",
+          "lease_expires_at": "string|null",
+          "reason": "string|null",
+          "reason_code": "string|null",
+          "recorded_at": "string",
+          "schema_version": "string",
+          "step_id": "string"
+        },
+        "type": "object"
+      }
+    ],
+    "recommend-workflow": [
+      {
+        "keys": {
+          "errors": "array",
+          "reason": "string|null",
+          "recommended": "object|null",
+          "selected": "object|null",
+          "selection_mode": "string|null",
+          "status": "string"
+        },
+        "type": "object"
+      }
+    ],
+    "record-command": [
+      {
+        "keys": {
+          "attempt_id": "string",
+          "command": "array",
+          "cwd": "string",
+          "decision": "string",
+          "env_names": "array",
+          "exit_code": "integer",
+          "finished_at": "string",
+          "gate": "string|null",
+          "id": "string",
+          "provenance": "string",
+          "risk": "object",
+          "schema_version": "string",
+          "started_at": "string",
+          "stderr_path": "string",
+          "stderr_sha256": "string",
+          "stderr_truncated": "boolean",
+          "stdout_path": "string",
+          "stdout_sha256": "string",
+          "stdout_truncated": "boolean",
+          "step_id": "string",
+          "timed_out": "boolean",
+          "timeout_seconds": "number|null",
+          "truncated": "boolean"
+        },
+        "type": "object"
+      }
+    ],
+    "record-file-change": [
+      {
+        "items": {
+          "keys": {
+            "after_sha256": "string|null",
+            "attempt_id": "string",
+            "before_git_blob": "string|null",
+            "change_kind": "string",
+            "diff_algorithm": "string",
+            "diff_command_version": "string",
+            "diff_engine": "string",
+            "diff_unified": "integer",
+            "hunk_attribution": "string",
+            "hunks": "array",
+            "id": "string",
+            "path": "string",
+            "previous_path": "string|null",
+            "recorded_at": "string",
+            "schema_version": "string",
+            "step_id": "string"
+          },
+          "type": "object"
+        },
+        "type": "array"
+      }
+    ],
+    "record-review": [
+      {
+        "keys": {
+          "active_blocking": "array",
+          "findings": "array",
+          "gate_status": "string",
+          "manifest_sha256": "string",
+          "recorded_at": "string",
+          "review_run_id": "string",
+          "schema_version": "string",
+          "source": "string"
+        },
+        "type": "object"
+      }
+    ],
+    "renew-lease": [
+      {
+        "keys": {
+          "agent_id": "string|null",
+          "amends_attempt": "string|null",
+          "amends_completed_at": "string|null",
+          "attempt_id": "string",
+          "event": "string",
+          "findings": "array|null",
+          "lease_expires_at": "string|null",
+          "reason": "string|null",
+          "reason_code": "string|null",
+          "recorded_at": "string",
+          "schema_version": "string",
+          "step_id": "string"
+        },
+        "type": "object"
+      }
+    ],
+    "replay-gates": [
+      {
+        "keys": {
+          "errors": "array",
+          "receipts": "array",
+          "recorded": "boolean",
+          "status": "string",
+          "warnings": "array"
+        },
+        "type": "object"
+      }
+    ],
+    "review-manifest": [
+      {
+        "keys": {
+          "active_blocking": "array",
+          "artifacts": "object",
+          "depth_profile": "string",
+          "findings": "array",
+          "gate_status": "string",
+          "review_run_id": "string",
+          "schema_version": "string"
+        },
+        "type": "object"
+      }
+    ],
+    "run": [
+      {
+        "keys": {
+          "attempt_id": "string",
+          "command": "array",
+          "cwd": "string",
+          "decision": "string",
+          "env_names": "array",
+          "exit_code": "integer",
+          "finished_at": "string",
+          "gate": "string|null",
+          "id": "string",
+          "provenance": "string",
+          "risk": "object",
+          "schema_version": "string",
+          "started_at": "string",
+          "stderr_path": "string",
+          "stderr_sha256": "string",
+          "stderr_truncated": "boolean",
+          "stdout_path": "string",
+          "stdout_sha256": "string",
+          "stdout_truncated": "boolean",
+          "step_id": "string",
+          "timed_out": "boolean",
+          "timeout_seconds": "number|null",
+          "truncated": "boolean"
+        },
+        "type": "object"
+      }
+    ],
+    "runtime-status": [
+      {
+        "keys": {
+          "created_at": "string|null",
+          "findings": "array",
+          "id": "string|null",
+          "mcp_servers": "array|null",
+          "routes": "array|null",
+          "runtime_config_sha256": "string|null",
+          "runtimes": "array|null",
+          "schema_version": "string|null",
+          "status": "string|null"
+        },
+        "type": "object"
+      }
+    ],
+    "verify-run": [
+      {
+        "keys": {
+          "attempt_id": "string|null",
+          "findings": "array",
+          "id": "string",
+          "recorded_at": "string",
+          "replay": "boolean",
+          "schema_version": "string",
+          "scope": "string",
+          "status": "string",
+          "step_id": "string|null",
+          "strict": "boolean"
+        },
+        "type": "object"
+      }
+    ],
+    "verify-step": [
+      {
+        "keys": {
+          "attempt_id": "string|null",
+          "findings": "array",
+          "id": "string",
+          "recorded_at": "string",
+          "replay": "boolean",
+          "schema_version": "string",
+          "scope": "string",
+          "status": "string",
+          "step_id": "string|null",
+          "strict": "boolean"
+        },
+        "type": "object"
+      }
+    ]
+  },
+  "schema_version": "1.0.0"
+}

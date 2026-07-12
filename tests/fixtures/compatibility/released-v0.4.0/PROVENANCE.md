@@ -10,4 +10,5 @@ Published and locally verified SHA-256:
 
 The executable reported `agentflow 0.4.0`. It created, locked, executed, audited,
 built, and verified this proof bundle. The generated `.agent/` artifacts have
-not been edited after `build-proof`.
+not been edited after `build-proof`. `MANIFEST.json` pins the release asset and
+the SHA-256 of every generated artifact so CI detects any fixture edit.
