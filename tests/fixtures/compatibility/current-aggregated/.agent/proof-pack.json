@@ -1,0 +1,167 @@
+{
+  "aggregation": {
+    "mode": "cross_worktree",
+    "schema_version": "0.1.0",
+    "source_count": 2,
+    "sources": [
+      {
+        "base_commit": "29fe93bbdeb19dd3df66c77ba063da224abc088e",
+        "head_commit": "29fe93bbdeb19dd3df66c77ba063da224abc088e",
+        "namespaced_prefix": "WTalpha-",
+        "root_label": "fixture-alpha",
+        "source_id": "alpha"
+      },
+      {
+        "base_commit": "29fe93bbdeb19dd3df66c77ba063da224abc088e",
+        "head_commit": "29fe93bbdeb19dd3df66c77ba063da224abc088e",
+        "namespaced_prefix": "WTbeta-",
+        "root_label": "fixture-beta",
+        "source_id": "beta"
+      }
+    ]
+  },
+  "bundle_type": "agentflow_proof_pack",
+  "bundle_version": "0.9.0",
+  "capabilities": {
+    "missing": [],
+    "recorded": [],
+    "required": [],
+    "waived": []
+  },
+  "checks": [
+    {
+      "count": 0,
+      "id": "missing_plan_evidence_ids",
+      "status": "passed"
+    },
+    {
+      "count": 0,
+      "id": "unused_evidence_ids",
+      "status": "passed"
+    },
+    {
+      "count": 0,
+      "id": "steps_without_support",
+      "status": "passed"
+    },
+    {
+      "count": 0,
+      "id": "dangling_supports",
+      "status": "passed"
+    },
+    {
+      "count": 0,
+      "id": "dangling_used_for",
+      "status": "passed"
+    },
+    {
+      "count": 0,
+      "id": "dangling_route_runtimes",
+      "status": "passed"
+    },
+    {
+      "drift_status": "missing",
+      "id": "drift_audit",
+      "status": "not_run"
+    },
+    {
+      "id": "required_review_satisfied",
+      "message": "no required review run (review_depth=None)",
+      "required_review_depth": null,
+      "satisfied_by_depth": null,
+      "status": "passed"
+    },
+    {
+      "id": "review_gate",
+      "message": "no review run recorded",
+      "status": "not_run"
+    },
+    {
+      "count": 0,
+      "id": "required_capabilities_satisfied",
+      "status": "passed"
+    }
+  ],
+  "core_sha256": "34e5739e1c3196a1f5b8eb4c7fc195219d20ef127959ac0a4f1139b3bd8a6f4c",
+  "coverage": {
+    "abandoned_attempts": [],
+    "dangling_route_runtimes": [],
+    "dangling_supports": [],
+    "dangling_used_for": [],
+    "expired_leases": [],
+    "missing_plan_evidence_ids": [],
+    "no_deadline_open_attempts": [],
+    "steps_without_support": [],
+    "unused_evidence_ids": []
+  },
+  "execution": {
+    "amendments": [],
+    "attempts": 2,
+    "command_confirmed_high_risk": 0,
+    "command_decision_counts": {},
+    "command_finding_categories": {},
+    "command_receipts": 0,
+    "command_receipts_by_provenance": {},
+    "command_risk_counts": {},
+    "command_timed_out": 0,
+    "command_timeout_seconds": {},
+    "failed_attempts": [],
+    "file_receipts": 2,
+    "normalized_execution_sha256": "e2e33c393f6961ea7144ae98ca72e2fc631ea00b277cf30669b7794bb542eaeb",
+    "steps_completed": 2,
+    "steps_total": 0,
+    "unmapped_changed_files": [],
+    "verification_runs": 0
+  },
+  "files": [
+    {
+      "path": ".agent/aggregation.json",
+      "sha256": "7c21743204ffda25da3150b4df34bff73425c02d409f7e0223f4362176a6feee"
+    },
+    {
+      "path": ".agent/execution.contract.json",
+      "sha256": "e5a8a65d9550f0a50c754bd89f4d28c2a21c9e52e8f795e77035700e9f4835f6"
+    },
+    {
+      "path": ".agent/file-receipts.jsonl",
+      "sha256": "0b20bb8a8221235f6909802067c6026f1aed572d56b1b201380c183dc110e032"
+    },
+    {
+      "path": ".agent/plan.lock.json",
+      "sha256": "5037c923e473c1132c9c694eedd7ce779c4be377a1148b1408f379d73ad3d8d0"
+    },
+    {
+      "path": ".agent/step-runs.jsonl",
+      "sha256": "387bcc327ee0a62a9ab8d39a31293e35f3265cffa5990f59fceef52225322770"
+    }
+  ],
+  "generated_from": [
+    ".agent/aggregation.json",
+    ".agent/execution.contract.json",
+    ".agent/file-receipts.jsonl",
+    ".agent/plan.lock.json",
+    ".agent/step-runs.jsonl"
+  ],
+  "meta": {
+    "created_at": "2026-07-12T02:32:48+00:00",
+    "tool_version": "0.4.0"
+  },
+  "review": {
+    "correlations": [],
+    "latest_review_run_id": null,
+    "policy": {
+      "proof_strict_effective": false,
+      "require_review_run": false,
+      "required_review_depth": null,
+      "review_gate_effective": "warn",
+      "verification_semantics": "ratchet-v1"
+    },
+    "review_runs": [],
+    "unresolved_finding_refs": []
+  },
+  "schema_version": "0.9.0",
+  "stuck": {
+    "findings": [],
+    "rules_evaluated": 3
+  }
+}

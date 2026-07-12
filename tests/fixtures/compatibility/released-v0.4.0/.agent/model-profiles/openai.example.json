@@ -1,0 +1,11 @@
+{
+  "context_window": 0,
+  "cost_tier": "medium",
+  "name": "model-id",
+  "provider": "openai",
+  "schema_version": "0.3.0",
+  "strengths": [],
+  "supports_json_schema": false,
+  "supports_tool_calls": false,
+  "supports_vision": false
+}

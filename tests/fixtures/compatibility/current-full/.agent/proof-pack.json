@@ -1,0 +1,327 @@
+{
+  "bundle_type": "agentflow_proof_pack",
+  "bundle_version": "0.9.0",
+  "capabilities": {
+    "missing": [],
+    "recorded": [
+      "tdd"
+    ],
+    "required": [
+      "tdd"
+    ],
+    "waived": []
+  },
+  "checks": [
+    {
+      "count": 0,
+      "id": "missing_plan_evidence_ids",
+      "status": "passed"
+    },
+    {
+      "count": 0,
+      "id": "unused_evidence_ids",
+      "status": "passed"
+    },
+    {
+      "count": 1,
+      "id": "steps_without_support",
+      "status": "warning"
+    },
+    {
+      "count": 0,
+      "id": "dangling_supports",
+      "status": "passed"
+    },
+    {
+      "count": 0,
+      "id": "dangling_used_for",
+      "status": "passed"
+    },
+    {
+      "count": 0,
+      "id": "dangling_route_runtimes",
+      "status": "passed"
+    },
+    {
+      "count": 0,
+      "id": "criteria_satisfied",
+      "message": "all acceptance criteria are satisfied",
+      "status": "passed"
+    },
+    {
+      "drift_status": "pass",
+      "id": "drift_audit",
+      "status": "passed"
+    },
+    {
+      "id": "workflow_contract_valid",
+      "status": "passed"
+    },
+    {
+      "id": "required_review_satisfied",
+      "message": "no required review run (review_depth=standard)",
+      "required_review_depth": "standard",
+      "satisfied_by_depth": null,
+      "status": "passed"
+    },
+    {
+      "id": "review_gate",
+      "message": "latest gate_status=pass, active_blocking=0",
+      "status": "passed"
+    },
+    {
+      "count": 0,
+      "id": "review_artifacts_present",
+      "status": "passed"
+    },
+    {
+      "count": 0,
+      "id": "review_finding_refs_resolved",
+      "status": "passed"
+    },
+    {
+      "count": 0,
+      "id": "required_capabilities_satisfied",
+      "status": "passed"
+    }
+  ],
+  "core_sha256": "b2b93cd19ef9202547b065b07edc68af87aa82da5e1eccf30a25f92e97ae0697",
+  "coverage": {
+    "abandoned_attempts": [],
+    "criterion_status_counts": {
+      "failed": 0,
+      "missing": 0,
+      "satisfied": 1,
+      "unmapped": 0
+    },
+    "dangling_route_runtimes": [],
+    "dangling_supports": [],
+    "dangling_used_for": [],
+    "expired_leases": [],
+    "missing_plan_evidence_ids": [],
+    "no_deadline_open_attempts": [],
+    "requirements": [
+      {
+        "acceptance_criteria": [
+          {
+            "evidence": [
+              {
+                "gate": "/usr/bin/python3 -c pass",
+                "kind": "command",
+                "receipt_id": "CR2",
+                "status": "satisfied",
+                "step_id": "P1"
+              }
+            ],
+            "id": "AC-FIXTURE",
+            "status": "satisfied",
+            "steps": [
+              "P1"
+            ],
+            "text": "The fixture command exits zero."
+          }
+        ],
+        "id": "REQ-FIXTURE",
+        "status": "satisfied",
+        "text": "The fixture records a successful command criterion."
+      }
+    ],
+    "steps_without_support": [
+      "P1"
+    ],
+    "unused_evidence_ids": []
+  },
+  "execution": {
+    "amendments": [
+      {
+        "amends_attempt": "A1",
+        "amends_completed_at": "2026-07-12T02:31:10+00:00",
+        "attempt": "A2",
+        "reason": "Exercise amendment receipts.",
+        "reason_code": "operator_correction",
+        "step_id": "P1"
+      }
+    ],
+    "attempts": 2,
+    "command_confirmed_high_risk": 0,
+    "command_decision_counts": {
+      "allowed": 2
+    },
+    "command_finding_categories": {},
+    "command_receipts": 2,
+    "command_receipts_by_provenance": {
+      "observed": 2
+    },
+    "command_risk_counts": {
+      "low": 2
+    },
+    "command_timed_out": 0,
+    "command_timeout_seconds": {},
+    "failed_attempts": [],
+    "file_receipts": 2,
+    "normalized_execution_sha256": "5de0c75c7e577c1c597eee5b819e428f2b14c7a7342bf36d1da29459c246ce30",
+    "steps_completed": 1,
+    "steps_total": 1,
+    "unmapped_changed_files": [],
+    "verification_runs": 3
+  },
+  "files": [
+    {
+      "path": ".agent/amendments.jsonl",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": ".agent/assumptions.json",
+      "sha256": "c4c98e433ab1d2554ff6dcdb1917b19cc2546428ce14a9634f39d38615b49d26"
+    },
+    {
+      "path": ".agent/capability-receipts.jsonl",
+      "sha256": "d4c918cece099ccfdeaa54eacaab94ffc529666364c473f883459ec917ec2273"
+    },
+    {
+      "path": ".agent/command-receipts.jsonl",
+      "sha256": "19ef33eb43e787825abf458f6aea86e73a2bd9753bcbb51f3fa0a7af76ca4127"
+    },
+    {
+      "path": ".agent/context-receipts.jsonl",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": ".agent/drift-report.json",
+      "sha256": "0ef8f0cba91a705aac9823ccdff234c1e97e0044e8d970e139d4e568f696a1d0"
+    },
+    {
+      "path": ".agent/evidence.jsonl",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": ".agent/execution.contract.json",
+      "sha256": "492d22a0813e815df1e90ef140951ad1ccbd3eb3a033f3e629ff2a08603393fa"
+    },
+    {
+      "path": ".agent/failures.jsonl",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": ".agent/file-receipts.jsonl",
+      "sha256": "839b7ea1e14cff9314d727c326f1300375f44706b6bfd4c8d8d91ab6e356e380"
+    },
+    {
+      "path": ".agent/plan.lock.json",
+      "sha256": "2a7ff39a2ef0ca525463860c2c31cd84b7ac0c0a203a82a3dcc29f8e807124be"
+    },
+    {
+      "path": ".agent/review-runs.jsonl",
+      "sha256": "adbbb4aeb61e1d1aa2586a9e3e8aa883d00e38d205cc6baca1dbe34792b7b36d"
+    },
+    {
+      "path": ".agent/runtime-snapshots.jsonl",
+      "sha256": "0ed600ccc77abc9d42d2a8e2e633dc8d38d5cced1f6e873801fcd081064d4e9f"
+    },
+    {
+      "path": ".agent/runtime.config.json",
+      "sha256": "1810765cd462e37dc995f749606d175be5fe8d759ebbfeb8af7e0944c20d21b6"
+    },
+    {
+      "path": ".agent/step-runs.jsonl",
+      "sha256": "719e9e481158928cbfaec8be31402601f599b40a5f7a7629261c1ae49a0796d0"
+    },
+    {
+      "path": ".agent/verification-runs.jsonl",
+      "sha256": "bfa208fc4188230be268fbc06281b20270c5aa9c1f63f9309ed4e3a3251b6f11"
+    },
+    {
+      "path": ".agent/workflow.contract.json",
+      "sha256": "a6b7a03b0a2043bc1d64a51f9d95cd6b3c89cd7ae1d9adcfd2c7cb80c678f92c"
+    }
+  ],
+  "generated_from": [
+    ".agent/amendments.jsonl",
+    ".agent/assumptions.json",
+    ".agent/capability-receipts.jsonl",
+    ".agent/command-receipts.jsonl",
+    ".agent/context-receipts.jsonl",
+    ".agent/drift-report.json",
+    ".agent/evidence.jsonl",
+    ".agent/execution.contract.json",
+    ".agent/failures.jsonl",
+    ".agent/file-receipts.jsonl",
+    ".agent/plan.lock.json",
+    ".agent/review-runs.jsonl",
+    ".agent/runtime-snapshots.jsonl",
+    ".agent/runtime.config.json",
+    ".agent/step-runs.jsonl",
+    ".agent/verification-runs.jsonl",
+    ".agent/workflow.contract.json"
+  ],
+  "meta": {
+    "created_at": "2026-07-12T02:31:31+00:00",
+    "tool_version": "0.4.0"
+  },
+  "review": {
+    "correlations": [],
+    "latest_review_run_id": "RR-20260712T023031Z-3cd0edea",
+    "policy": {
+      "proof_strict_effective": false,
+      "require_review_run": false,
+      "required_review_depth": "standard",
+      "review_gate_effective": "warn",
+      "verification_semantics": "ratchet-v1"
+    },
+    "review_runs": [
+      {
+        "active_blocking": [],
+        "artifacts": [
+          {
+            "path": "docs/ai/state/main/findings-final.json",
+            "sha256": "b8adad3852f196db84ad05c2affa3855c7e15d1c9d24c62c8d32165e34a82c39"
+          }
+        ],
+        "counts_by_severity": {},
+        "counts_by_status": {},
+        "depth_profile": "standard",
+        "gate_status": "pass",
+        "plan_sha256": "f08a7367d903d56e580470a4c9bcb515b531a367b621fa4b49558f00a91ace3f",
+        "review_run_id": "RR-20260712T023031Z-3cd0edea"
+      }
+    ],
+    "unresolved_finding_refs": []
+  },
+  "runtime": {
+    "latest_snapshot_id": "R1",
+    "mcp_server_counts": {
+      "ready": 1
+    },
+    "mcp_servers": [
+      {
+        "declared_tool_count": 1,
+        "id": "fixture",
+        "status": "ready"
+      }
+    ],
+    "runtime_counts": {
+      "ready": 1
+    }
+  },
+  "schema_version": "0.9.0",
+  "stuck": {
+    "findings": [],
+    "rules_evaluated": 3
+  },
+  "workflow_contract": {
+    "proof_policy": {
+      "hunk_attribution": "enforce",
+      "require_review_run": false
+    },
+    "required_capabilities": [
+      "tdd"
+    ],
+    "required_gates": [
+      "focused"
+    ],
+    "review_depth": "standard",
+    "selected_by": "operator",
+    "workflow_pack": "compatibility.fixture",
+    "workflow_profile": "full"
+  }
+}

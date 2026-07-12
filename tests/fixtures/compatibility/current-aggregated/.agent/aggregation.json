@@ -1,0 +1,21 @@
+{
+  "mode": "cross_worktree",
+  "schema_version": "0.1.0",
+  "source_count": 2,
+  "sources": [
+    {
+      "base_commit": "29fe93bbdeb19dd3df66c77ba063da224abc088e",
+      "head_commit": "29fe93bbdeb19dd3df66c77ba063da224abc088e",
+      "namespaced_prefix": "WTalpha-",
+      "root_label": "fixture-alpha",
+      "source_id": "alpha"
+    },
+    {
+      "base_commit": "29fe93bbdeb19dd3df66c77ba063da224abc088e",
+      "head_commit": "29fe93bbdeb19dd3df66c77ba063da224abc088e",
+      "namespaced_prefix": "WTbeta-",
+      "root_label": "fixture-beta",
+      "source_id": "beta"
+    }
+  ]
+}

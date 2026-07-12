@@ -1,0 +1,50 @@
+{
+  "agent_interface": {
+    "forbidden_assumptions": [
+      "codex_skills",
+      "mcp_tools",
+      "provider_function_calls"
+    ],
+    "minimum_capabilities": [
+      "read_files",
+      "edit_files",
+      "run_shell",
+      "report_exit_code"
+    ]
+  },
+  "command_policy": {
+    "capture_stderr": true,
+    "command_timeout_seconds": 600,
+    "max_output_bytes": 200000,
+    "receipt_store": "by_attempt",
+    "record_outputs": true,
+    "risk_policy": "require-confirmation"
+  },
+  "concurrency": {
+    "lease_grace_seconds": 30,
+    "lease_policy": "advisory",
+    "lease_ttl_minutes": 30,
+    "reconcile_ignore": [
+      ".agent/",
+      ".git/"
+    ],
+    "writer_model": "single_writer"
+  },
+  "contract_type": "agentflow_execution_contract",
+  "proof_policy": {
+    "hunk_attribution": "enforce",
+    "require_command_receipts_for_validation": true,
+    "require_evidence_for_inspection_gates": true,
+    "require_file_receipts_for_changed_files": true,
+    "require_managed_receipts_for_validation": false,
+    "require_review_run": false,
+    "review_gate": "warn",
+    "strict_by_default": false
+  },
+  "root": ".",
+  "schema_version": "0.3.0",
+  "shell": {
+    "default": "sh",
+    "requires_posix": true
+  }
+}
