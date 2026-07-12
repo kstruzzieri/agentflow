@@ -1,0 +1,99 @@
+# Stability policy
+
+Agentflow 1.x uses semantic versioning for its supported command surfaces. This
+page defines those surfaces narrowly enough that a compatibility claim can be
+tested. Human-readable wording, formatting, log lines, and Python implementation
+details are not APIs unless this page says otherwise.
+
+## Surface classification
+
+| Surface | Classification | Compatibility rule |
+| --- | --- | --- |
+| CLI commands and flags | SemVer-supported | Names and meanings shown by `agentflow --help` and each command's `--help` remain compatible within a major release. New optional commands and flags may be added. |
+| CLI exit codes | SemVer-supported | `0` means success, `1` means the requested operation or gate failed, and `2` means command-line usage was invalid. Shell-level failures such as command-not-found are outside Agentflow. |
+| CLI JSON output | SemVer-supported | Documented keys and value types are stable within a major release. Minor releases may add keys; consumers must ignore unknown keys. Human output is not stable. |
+| MCP tools | SemVer-supported | Tool names, input schemas, result envelope, and meanings are stable within a major release. Additive optional tools or fields may ship in a minor release. |
+| Versioned `.agent/` artifacts | Own schema version | Each artifact follows its declared schema version and ingestion policy. General working-state ingestion has no historical cross-major promise. See [Compatibility](compatibility.md). |
+| `AGENTFLOW_*` environment variables | SemVer-supported where listed below | Names, accepted values, and meanings remain compatible within a major release. |
+| Distribution and console scripts | SemVer-supported | The PyPI distribution may be `agentflow` or the fallback `agentflow-proof`; installed `agentflow` and `agentflow-mcp` console-script names do not change. |
+| Python internals | Internal | Modules, imports, functions, classes, constants, signatures, and package layout may change without deprecation. Use the CLI or MCP interface. |
+
+Before 1.0, compatibility-breaking corrections may still occur and are called
+out in release notes. The table is the contract that 1.0 freezes.
+
+## CLI contract
+
+The supported command names are:
+
+`init`, `init-execution`, `pack`, `doctor`, `intake`, `validate-plan`,
+`lock-plan`, `recommend-workflow`, `draft-plan`, `workflow-contract`,
+`amend-plan`, `record-evidence`, `record-review`, `record-capability`,
+`waive-capability`, `review-manifest`, `record-context`, `record-failure`,
+`audit-drift`, `next-step`, `claim-step`, `amend-step`, `complete-step`,
+`block-step`, `fail-step`, `reclaim-step`, `renew-lease`, `run`,
+`record-command`, `record-file-change`, `verify-step`, `verify-run`,
+`aggregate-ledgers`, `detect-stuck`, `export-handoff`, `lint-handoff`,
+`replay-gates`, `runtime-status`, `build-proof`, `verify-proof`, `view-proof`,
+`events`, `next-action`, `finish-step`, `finish-run`, and `status`.
+
+All positional arguments and flags displayed by the corresponding `--help`
+page are part of the same supported surface. An incompatible rename, removal,
+default change, or meaning change requires a major release after the deprecation
+process below.
+
+For `--json` modes, removing a documented key, changing its type, or changing
+its meaning incompatibly requires a major release. Additive keys are allowed in
+a minor release. When a JSON-facing feature is deprecated, its output includes
+a machine-readable top-level `deprecations` array; stderr prose alone is not a
+deprecation signal.
+
+## MCP contract
+
+The supported tool names and arguments are:
+
+| Tool | Arguments |
+| --- | --- |
+| `status`, `doctor`, `next_step` | optional `root` |
+| `claim_step` | `step`, `agent`; optional `lease_minutes`, `root` |
+| `amend_step` | `step`, `agent`, `reason`; optional `reason_code`, `finding_refs`, `lease_minutes`, `root` |
+| `reclaim_step` | `step`, `agent`, `reason`; optional `lease_minutes`, `root` |
+| `renew_lease` | `step`, `agent`; optional `attempt`, `minutes`, `root` |
+| `complete_step` | `step`; optional `attempt`, `agent`, `root` |
+| `verify_step` | `step`; optional `attempt`, `agent`, `strict`, `replay`, `root` |
+| `verify_run` | optional `strict`, `record`, `root` |
+| `audit_drift` | optional `plan`, `root` |
+| `build_proof` | optional `strict`, `root` |
+| `verify_proof` | optional `replay`, `strict`, `root` |
+| `record_review` | `manifest`; optional `emit_evidence`, `root` |
+| `next_action` | optional `strict`, `root` |
+| `finish_step` | `step`; optional `attempt`, `agent`, `strict`, `replay`, `root` |
+| `finish_run` | optional `plan`, `strict`, `root` |
+
+Every tool result uses the MCP content envelope plus structured fields
+`exit_code`, `stdout`, and `stderr`; when stdout is valid JSON, `data` contains
+that parsed value. The standard JSON-RPC and MCP protocol envelopes follow the
+negotiated protocol rather than Agentflow SemVer.
+
+## Environment variables
+
+Supported runtime variables are `AGENTFLOW_AGENT_ID`, `AGENTFLOW_CONFIRM_RISK`,
+and `AGENTFLOW_STRICT`. Supported repository integrations also define
+`AGENTFLOW_CMD`, `AGENTFLOW_ROOT`, `AGENTFLOW_PROOF_ROOT`, and
+`AGENTFLOW_PROOF_BASE_REF`. The latter four affect the documented stop-hook or
+CI integration, not the core library when those integrations are absent.
+
+Unlisted `AGENTFLOW_*` names are not implicitly supported.
+
+## Deprecation policy
+
+A supported interface survives for at least one minor release and 90 days
+after its first released deprecation warning. A deprecation must:
+
+1. appear in the command or MCP documentation and CHANGELOG;
+2. name the replacement and earliest removal release;
+3. emit a warning on use, including a `deprecations` array in `--json` output;
+4. remain functional throughout the window; and
+5. be removed only in a major release unless preserving it is impossible for a
+   security or data-integrity reason.
+
+Emergency removal is documented with the reason and migration path.
