@@ -4,6 +4,13 @@ From a clean checkout, select a workflow posture from a brief, then compile an
 unlocked plan from the shipped pack:
 
 ```sh
+PYTHONPATH=src python3 examples/workflow-pack/run.py
+```
+
+Expected result: `workflow-pack example passed`; the workload runs the full
+recommendation, draft, lock, execution, and proof chain in a temporary checkout.
+
+```sh
 PYTHONPATH=src python3 -m agentflow recommend-workflow --brief examples/briefs/docs-only.brief.json
 PYTHONPATH=src python3 -m agentflow draft-plan --brief examples/briefs/docs-only.brief.json \
   --workflow examples/packs/agentflow-draft-demo \

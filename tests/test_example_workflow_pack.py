@@ -1,10 +1,21 @@
 from __future__ import annotations
 
 import unittest
+import os
+import subprocess
+import sys
 from pathlib import Path
 
 
 class WorkflowPackExampleTests(unittest.TestCase):
+    def test_workload_executes_draft_plan_and_proof(self) -> None:
+        root = Path(__file__).resolve().parents[1]
+        result = subprocess.run([sys.executable, "examples/workflow-pack/run.py"], cwd=root,
+            env={**os.environ, "PYTHONPATH": str(root / "src")}, text=True,
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("workflow-pack example passed", result.stdout)
+
     def test_readme_uses_shipped_pack_and_required_commands(self) -> None:
         root = Path(__file__).resolve().parents[1]
         readme = (root / "examples/workflow-pack/README.md").read_text()
