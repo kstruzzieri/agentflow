@@ -35,6 +35,8 @@ The active task `.agent/` directory is local-only by default. See
 [docs/agent-artifacts.md](docs/agent-artifacts.md) for when to keep it ignored,
 upload proof as CI artifacts, attach proof to PRs, or commit a deliberate proof
 bundle.
+Supported interfaces and compatibility promises are defined in
+[docs/stability.md](docs/stability.md).
 
 ## Quick Start
 
