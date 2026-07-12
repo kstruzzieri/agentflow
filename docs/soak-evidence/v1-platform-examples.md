@@ -2,8 +2,9 @@
 
 Run date: 2026-07-11
 
-Checkout: disposable worktree at commit `78bcd01` (integrated Track C branch).
+Validated commit: `4694f3d16da0affa72d4a563cde665c9b748af7e`.
 Runtime: Agentflow `0.4.0` via `PYTHONPATH=src python3 -m agentflow`.
+CI: [run 29177747344](https://github.com/kstruzzieri/agentflow/actions/runs/29177747344), six jobs green on Linux/macOS × Python 3.11–3.13.
 
 | Packet | Command / workload | Result |
 | --- | --- | --- |
