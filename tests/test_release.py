@@ -163,5 +163,89 @@ class ReleaseGuardTests(unittest.TestCase):
         self.assertIn("--notes-file requires --tag", result.stderr)
 
 
+@unittest.skipIf(
+    sys.version_info < (3, 11), "release guard requires Python 3.11+"
+)
+class RepositoryReleaseDisciplineTests(unittest.TestCase):
+    def test_repository_release_guard_accepts_declared_version(self) -> None:
+        # Derive the tag from the declared version so this contract survives
+        # every future bump: the documented procedure moves Unreleased notes
+        # into a dated heading in the same commit that changes the version.
+        import tomllib
+
+        declared = tomllib.loads(
+            (REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8")
+        )["project"]["version"]
+        with tempfile.TemporaryDirectory() as tmp:
+            notes = Path(tmp) / "notes.md"
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    str(SCRIPT),
+                    "--root",
+                    str(REPO_ROOT),
+                    "--tag",
+                    f"v{declared}",
+                    "--notes-file",
+                    str(notes),
+                ],
+                capture_output=True,
+                text=True,
+            )
+
+            self.assertEqual(result.returncode, 0, result.stderr)
+            text = notes.read_text(encoding="utf-8")
+            self.assertTrue(text.strip(), "release notes must not be empty")
+            self.assertNotIn("## [", text)
+
+    def test_changelog_contains_unreleased_and_backfilled_releases(self) -> None:
+        text = (REPO_ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
+
+        self.assertIn("## [Unreleased]", text)
+        self.assertIn("## [0.4.0] - 2026-07-10", text)
+        self.assertIn("## [0.3.0] - 2026-07-03", text)
+
+    def test_ci_checks_versions_before_unit_tests(self) -> None:
+        text = (REPO_ROOT / ".github" / "workflows" / "ci.yml").read_text(
+            encoding="utf-8"
+        )
+
+        check = text.index("python3 scripts/check_release.py")
+        tests = text.index("PYTHONPATH=src python3 -m unittest discover")
+        self.assertLess(check, tests)
+
+    def test_release_workflow_guards_before_release_and_uses_changelog(self) -> None:
+        text = (
+            REPO_ROOT / ".github" / "workflows" / "release.yml"
+        ).read_text(encoding="utf-8")
+
+        guard = text.index("\n  guard:")
+        release = text.index("\n  release:")
+        self.assertLess(guard, release)
+        self.assertIn("permissions:\n  contents: read", text[:guard])
+        release_job = text[release:]
+        self.assertIn("needs: guard", release_job)
+        self.assertIn("contents: write", release_job)
+        self.assertIn("--notes-file", release_job)
+        self.assertNotIn("--generate-notes", text)
+
+    def test_packaging_docs_name_release_order_and_python_floor(self) -> None:
+        text = (REPO_ROOT / "docs" / "packaging.md").read_text(
+            encoding="utf-8"
+        )
+
+        ordered = [
+            "pyproject.toml",
+            "src/agentflow/__init__.py",
+            "Unreleased",
+            "python3 scripts/check_release.py --tag vX.Y.Z",
+            "git tag vX.Y.Z",
+            "git push origin vX.Y.Z",
+        ]
+        positions = [text.index(value) for value in ordered]
+        self.assertEqual(positions, sorted(positions))
+        self.assertIn("Python 3.11 or newer", text)
+
+
 if __name__ == "__main__":
     unittest.main()

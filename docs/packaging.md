@@ -46,17 +46,43 @@ Python >= 3.11 before importing anything, and archives it with the stdlib
 
 ## Release checklist
 
-1. Bump the version in **both** `pyproject.toml` and
-   `src/agentflow/__init__.py` (they must match), on `main` via a normal PR.
-2. Run the full suite: `PYTHONPATH=src python3 -m unittest discover -s tests`.
-3. Build and smoke locally:
-   `python3 scripts/build_zipapp.py && ./dist/agentflow.pyz --version`.
-4. Tag and push: `git tag vX.Y.Z && git push origin vX.Y.Z`.
-5. The `Release` workflow (`.github/workflows/release.yml`) re-runs the
-   tests, rebuilds the artifacts, generates `SHA256SUMS`, and attaches all
-   three files to a GitHub release with generated notes.
-6. Post-release smoke: download `agentflow.pyz` from the release page, check
-   `sha256sum -c SHA256SUMS`, run `python3 agentflow.pyz --version`.
+The release guard requires Python 3.11 or newer because it reads
+`pyproject.toml` with the standard-library `tomllib` module.
+
+1. On `main`, update the version in `pyproject.toml`.
+2. Update the same version in `src/agentflow/__init__.py`.
+3. Move the relevant notes under `CHANGELOG.md`'s `Unreleased` heading into
+   a dated `## [X.Y.Z] - YYYY-MM-DD` release heading, leaving an empty
+   `Unreleased` heading for future changes.
+4. Run the version check and full suite:
+
+   ```bash
+   python3 scripts/check_release.py
+   PYTHONPATH=src python3 -m unittest discover -s tests -v
+   ```
+
+5. Commit the version and CHANGELOG changes through a normal pull request.
+6. After that commit reaches `main`, validate the intended tag before creating
+   it:
+
+   ```bash
+   python3 scripts/check_release.py --tag vX.Y.Z
+   ```
+
+7. Create and push the exact validated tag:
+
+   ```bash
+   git tag vX.Y.Z
+   git push origin vX.Y.Z
+   ```
+
+8. The `Release` workflow validates the tag, both version declarations, and
+   CHANGELOG before it runs tests or builds artifacts. It builds and smokes the
+   zipapps, generates `SHA256SUMS`, and creates the GitHub release using the
+   matching CHANGELOG section as its notes.
+9. Download `agentflow.pyz`, `agentflow-mcp.pyz`, and `SHA256SUMS` from the
+   release; run `sha256sum -c SHA256SUMS`, then
+   `python3 agentflow.pyz --version`.
 
 ## Phase 2: standalone binaries (PyInstaller)
 
