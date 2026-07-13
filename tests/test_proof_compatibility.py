@@ -15,6 +15,10 @@ from agentflow.proof import core_sha256
 
 ROOT = Path(__file__).resolve().parents[1]
 FIXTURES = ROOT / "tests/fixtures/compatibility"
+# Provenance bookkeeping, not asset verification: the released agentflow.pyz is
+# not in the repo, so this pin is only asserted consistent across the constant,
+# MANIFEST.json, and PROVENANCE.md. The per-artifact pins below ARE verified
+# against file bytes.
 RELEASE_SHA256 = "6617b33de632e174fffb7f3e869ab0793fff4df62c324a0cb017c9d5c5ed671c"
 
 
@@ -76,6 +80,27 @@ class ProofCompatibilityMatrixTests(unittest.TestCase):
             actual = hashlib.sha256((root / path).read_bytes()).hexdigest()
             self.assertEqual(actual, expected, path)
         self.assertEqual(proof["meta"]["tool_version"], "0.4.0")
+
+    def test_current_fixtures_are_checksum_pinned(self) -> None:
+        # "current" means current as of the generating commit in PROVENANCE.md;
+        # the pins turn silent fixture rot into a loud CI failure.
+        for name in ("current-full", "current-aggregated"):
+            root = FIXTURES / name
+            manifest = json.loads((root / "MANIFEST.json").read_text(encoding="utf-8"))
+            pinned = set(manifest["artifacts"])
+            actual = {
+                str(path.relative_to(root))
+                for path in root.rglob("*")
+                if path.is_file() and path.name not in {"MANIFEST.json", "PROVENANCE.md"}
+            }
+            with self.subTest(name=name):
+                self.assertEqual(actual, pinned)
+                for path, expected in manifest["artifacts"].items():
+                    digest = hashlib.sha256((root / path).read_bytes()).hexdigest()
+                    self.assertEqual(digest, expected, path)
+                provenance = (root / "PROVENANCE.md").read_text(encoding="utf-8")
+                self.assertIn("MANIFEST.json", provenance)
+                self.assertIn("Updating the fixture", provenance)
 
     def test_current_full_fixture_exercises_load_bearing_optional_blocks(self) -> None:
         root = FIXTURES / "current-full"

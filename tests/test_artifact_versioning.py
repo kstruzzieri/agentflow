@@ -8,10 +8,21 @@ from unittest.mock import patch
 
 from agentflow import artifacts
 from agentflow.artifacts import read_json, read_jsonl, write_json
+from agentflow.contracts import (
+    EVIDENCE_SCHEMA_VERSION,
+    PLAN_SCHEMA_VERSION,
+    STEP_RUNS_SCHEMA_VERSION,
+)
 from agentflow.proof import verify_proof
 
 
 ROOT = Path(__file__).resolve().parents[1]
+
+
+def _next_major(version: str) -> str:
+    """The next-major literal must track the constant: hardcoding "1.0.0"
+    would invert these rejection tests on the day the schema freezes at 1.0.0."""
+    return f"{int(version.split('.')[0]) + 1}.0.0"
 
 
 class ArtifactReaderVersionTests(unittest.TestCase):
@@ -40,10 +51,37 @@ class ArtifactReaderVersionTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "execution-contract.*incompatible"):
                 read_json(path)
 
+    def test_contract_policy_degrades_on_incompatible_contract(self) -> None:
+        # Mirrors execution._concurrency: an incompatible contract must not
+        # crash the receipt-recording path; it degrades to advisory defaults.
+        from agentflow.receipts import _contract_policy
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            path = root / ".agent/execution.contract.json"
+            write_json(path, {"schema_version": "0.2.0", "command_policy": {"receipt_store": "by_attempt"}})
+
+            self.assertEqual(_contract_policy(root), {})
+
+    def test_try_read_json_reports_version_rejection_not_malformed_json(self) -> None:
+        # The file is well-formed JSON; calling a version rejection "malformed
+        # JSON" would send users chasing a parse error that does not exist.
+        from agentflow.artifacts import try_read_json
+
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / ".agent/execution.contract.json"
+            write_json(path, {"schema_version": "0.2.0"})
+
+            data, error = try_read_json(path)
+
+            self.assertIsNone(data)
+            self.assertNotIn("malformed JSON", error or "")
+            self.assertIn("incompatible", error or "")
+
     def test_plan_reader_rejects_newer_major(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / ".agent/plan.lock.json"
-            write_json(path, {"schema_version": "1.0.0"})
+            write_json(path, {"schema_version": _next_major(PLAN_SCHEMA_VERSION)})
 
             with self.assertRaisesRegex(ValueError, "plan-lock.*incompatible"):
                 read_json(path)
@@ -60,7 +98,8 @@ class ArtifactReaderVersionTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / ".agent/step-runs.jsonl"
             path.parent.mkdir(parents=True)
-            path.write_text('{"schema_version":"1.0.0"}\n', encoding="utf-8")
+            newer = _next_major(STEP_RUNS_SCHEMA_VERSION)
+            path.write_text(f'{{"schema_version":"{newer}"}}\n', encoding="utf-8")
 
             with self.assertRaisesRegex(ValueError, "incompatible"):
                 read_jsonl(path)
@@ -69,7 +108,8 @@ class ArtifactReaderVersionTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / ".agent/evidence.jsonl"
             path.parent.mkdir(parents=True)
-            path.write_text('{"schema_version":"1.0.0"}\n', encoding="utf-8")
+            newer = _next_major(EVIDENCE_SCHEMA_VERSION)
+            path.write_text(f'{{"schema_version":"{newer}"}}\n', encoding="utf-8")
 
             with self.assertRaisesRegex(ValueError, "evidence.*incompatible"):
                 read_jsonl(path)

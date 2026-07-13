@@ -78,8 +78,11 @@ def _load_plan(root: Path) -> Optional[Dict[str, Any]]:
         return None
     try:
         return read_json(plan_path)
-    except (OSError, json.JSONDecodeError, ValueError):
+    except (OSError, json.JSONDecodeError):
         return None
+    # A schema_version policy rejection (plain ValueError) propagates: the plan
+    # exists but is incompatible, and reporting "uninitialized" with an
+    # `agentflow init` remediation would be wrong on both counts.
 
 
 def _inflight(root: Path, plan: Dict[str, Any]) -> Optional[tuple[str, str, Dict[str, Any]]]:

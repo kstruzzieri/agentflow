@@ -123,6 +123,20 @@ def _read_bytes(path: Path) -> bytes:
     return path.read_bytes()
 
 
+def _rows(source: Source, rel: str) -> List[Dict[str, Any]]:
+    """Ledger rows for one source, tolerating unreadable ledgers.
+
+    Detectors and mergers must not crash on a version-incompatible or
+    malformed source ledger (worktrees are the realistic multi-version case);
+    _malformed_ledger_collisions is the single reporter for those, and its
+    collision fails aggregation closed before any write.
+    """
+    try:
+        return read_jsonl(source.root / rel)
+    except ValueError:
+        return []
+
+
 def _contained_path(root: Path, rel_path: str) -> Optional[Path]:
     candidate = root / rel_path
     try:
@@ -153,7 +167,7 @@ def _must_match_collisions(sources: List[Source]) -> List[Dict[str, Any]]:
 def _step_rows_by_step(source: Source) -> Dict[str, List[str]]:
     rel = EXECUTION_ARTIFACT_PATHS["step-runs"]
     rows: Dict[str, List[str]] = {}
-    for row in read_jsonl(source.root / rel):
+    for row in _rows(source, rel):
         step_id = row.get("step_id")
         if isinstance(step_id, str):
             rows.setdefault(step_id, []).append(json.dumps(row, sort_keys=True))
@@ -177,7 +191,7 @@ def _step_overlap_collisions(sources: List[Source]) -> List[Dict[str, Any]]:
 def _file_rows_by_path(source: Source) -> Dict[str, List[str]]:
     rel = EXECUTION_ARTIFACT_PATHS["file-receipts"]
     rows: Dict[str, List[str]] = {}
-    for row in read_jsonl(source.root / rel):
+    for row in _rows(source, rel):
         path = row.get("path")
         if isinstance(path, str):
             rows.setdefault(path, []).append(json.dumps(row, sort_keys=True))
@@ -205,7 +219,7 @@ def _concat_dup_collisions(sources: List[Source]) -> List[Dict[str, Any]]:
         canon_by_id: Dict[str, str] = {}
         src_by_id: Dict[str, str] = {}
         for source in sources:
-            for row in read_jsonl(source.root / rel):
+            for row in _rows(source, rel):
                 rid = row.get("id")
                 if not isinstance(rid, str):
                     continue
@@ -230,7 +244,7 @@ def _receipt_file_collisions(sources: List[Source]) -> List[Dict[str, Any]]:
     collisions: List[Dict[str, Any]] = []
     rel = EXECUTION_ARTIFACT_PATHS["command-receipts"]
     for source in sources:
-        for row in read_jsonl(source.root / rel):
+        for row in _rows(source, rel):
             for path_key, sha_key in (("stdout_path", "stdout_sha256"), ("stderr_path", "stderr_sha256")):
                 rel_path = row.get(path_key)
                 expected = row.get(sha_key)
@@ -257,7 +271,7 @@ def _review_artifact_collisions(sources: List[Source]) -> List[Dict[str, Any]]:
     collisions: List[Dict[str, Any]] = []
     rel = BASE_ARTIFACT_PATHS["review-runs"]
     for source in sources:
-        for row in read_jsonl(source.root / rel):
+        for row in _rows(source, rel):
             manifest = row.get("manifest_path")
             manifest_sha = row.get("manifest_sha256")
             if isinstance(manifest, str):
@@ -296,7 +310,7 @@ def _review_dup_collisions(sources: List[Source]) -> List[Dict[str, Any]]:
     rel = BASE_ARTIFACT_PATHS["review-runs"]
     seen: Dict[str, Tuple[str, str]] = {}
     for source in sources:
-        for row in read_jsonl(source.root / rel):
+        for row in _rows(source, rel):
             rid = row.get("review_run_id")
             if not isinstance(rid, str):
                 continue
@@ -357,7 +371,7 @@ def _latest_file_receipts(sources: List[Source]) -> Dict[str, Tuple[str, Optiona
     latest: Dict[str, Tuple[str, Optional[str], str, Optional[str]]] = {}
     rel = EXECUTION_ARTIFACT_PATHS["file-receipts"]
     for source in sources:
-        for row in read_jsonl(source.root / rel):
+        for row in _rows(source, rel):
             path = row.get("path")
             if not isinstance(path, str):
                 continue
@@ -398,14 +412,14 @@ def _precondition_collisions(sources: List[Source], output_root: Path) -> List[D
 
 def _ids(source: Source, name: str, key: str) -> set:
     rel = _artifact_rel(name)
-    return {row[key] for row in read_jsonl(source.root / rel) if isinstance(row.get(key), str)}
+    return {row[key] for row in _rows(source, rel) if isinstance(row.get(key), str)}
 
 
 def _verification_ids(source: Source) -> set:
     rel = EXECUTION_ARTIFACT_PATHS["verification-runs"]
     return {
         row["id"]
-        for row in read_jsonl(source.root / rel)
+        for row in _rows(source, rel)
         if row.get("scope") == "step" and isinstance(row.get("id"), str)
     }
 
@@ -460,7 +474,7 @@ def _malformed_id_collisions(sources: List[Source]) -> List[Dict[str, Any]]:
     for source in sources:
         for name, rules in _LOCAL_ID_RULES.items():
             rel = _artifact_rel(name)
-            for row in read_jsonl(source.root / rel):
+            for row in _rows(source, rel):
                 for field, tag in rules:
                     value = row.get(field)
                     if isinstance(value, str) and not re.fullmatch(rf"{tag}[0-9]+", value):
@@ -484,7 +498,7 @@ def _intra_source_dup_id_collisions(sources: List[Source]) -> List[Dict[str, Any
         for name in ("command-receipts", "file-receipts", "verification-runs"):
             rel = _artifact_rel(name)
             seen: set = set()
-            for row in read_jsonl(source.root / rel):
+            for row in _rows(source, rel):
                 rid = row.get("id")
                 if not isinstance(rid, str):
                     continue
@@ -599,7 +613,7 @@ def _baseline_canon(sources: List[Source], rel: str) -> set:
     counts: Counter = Counter()
     for source in sources:
         seen_in_source: set = set()
-        for row in read_jsonl(source.root / rel):
+        for row in _rows(source, rel):
             canon = _canon(row)
             if canon not in seen_in_source:
                 seen_in_source.add(canon)
@@ -617,7 +631,7 @@ def _attempt_map(source: Source, step_baseline: set) -> Dict[str, str]:
     """
     rel = EXECUTION_ARTIFACT_PATHS["step-runs"]
     local: set = set()
-    for row in read_jsonl(source.root / rel):
+    for row in _rows(source, rel):
         if _canon(row) in step_baseline:
             continue
         attempt = row.get("attempt_id")
@@ -660,7 +674,7 @@ def _emit_baseline_then_local(
     emitted: set = set()
     out: List[Dict[str, Any]] = []
     for source in sources:
-        for row in read_jsonl(source.root / rel):
+        for row in _rows(source, rel):
             if keep_row is not None and not keep_row(row):
                 continue
             canon = _canon(row)
@@ -668,7 +682,7 @@ def _emit_baseline_then_local(
                 emitted.add(canon)
                 out.append(row)
     for source in sources:
-        for row in read_jsonl(source.root / rel):
+        for row in _rows(source, rel):
             if keep_row is not None and not keep_row(row):
                 continue
             if _canon(row) in baseline:
@@ -769,7 +783,7 @@ def _merge_command_receipts(
     copies: List[Tuple[Path, str, Optional[str]]] = []
 
     for source in sources:
-        for row in read_jsonl(source.root / rel):
+        for row in _rows(source, rel):
             canon = _canon(row)
             if canon in baseline and canon not in emitted:
                 emitted.add(canon)
@@ -778,7 +792,7 @@ def _merge_command_receipts(
 
     for source in sources:
         amap = attempt_maps[source.source_id]
-        for row in read_jsonl(source.root / rel):
+        for row in _rows(source, rel):
             canon = _canon(row)
             if canon in baseline:
                 continue
@@ -804,7 +818,7 @@ def _merge_concat(sources: List[Source], rel: str) -> List[Dict[str, Any]]:
     entries: List[Tuple[str, int, int, Dict[str, Any]]] = []
     seen: set = set()
     for order, source in enumerate(sources):
-        for index, row in enumerate(read_jsonl(source.root / rel)):
+        for index, row in enumerate(_rows(source, rel)):
             canon = _canon(row)
             if canon in seen:
                 continue
@@ -827,7 +841,7 @@ def _merge_review_runs(
     entries: List[Tuple[str, int, int, Dict[str, Any], Source]] = []
     seen: set = set()
     for order, source in enumerate(sources):
-        for index, row in enumerate(read_jsonl(source.root / rel)):
+        for index, row in enumerate(_rows(source, rel)):
             canon = _canon(row)
             if canon in seen:  # byte-identical review_run_id row emits once (differing => collision)
                 continue

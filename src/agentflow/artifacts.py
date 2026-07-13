@@ -256,8 +256,12 @@ def try_read_json(path: Path) -> Tuple[Optional[Dict[str, Any]], Optional[str]]:
     """Read a JSON object without raising for malformed or non-object JSON."""
     try:
         data = read_json(path)
-    except (json.JSONDecodeError, ValueError) as exc:
+    except json.JSONDecodeError as exc:
         return None, f"malformed JSON in {path.name}: {exc}"
+    except ValueError as exc:
+        # Version-gate rejection: the file is well-formed JSON, so calling it
+        # malformed would send users chasing a parse error that does not exist.
+        return None, str(exc)
     if not isinstance(data, dict):
         return None, f"{path.name} top-level value must be a JSON object"
     return data, None

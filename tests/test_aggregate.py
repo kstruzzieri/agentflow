@@ -723,6 +723,22 @@ class HardeningTests(unittest.TestCase):
             # source summaries still present (built without reading the corrupt ledger)
             self.assertEqual({s["source_id"] for s in report["sources"]}, {"w1"})
 
+    def test_version_incompatible_ledger_fails_closed_in_analyze(self):
+        # A source ledger written by a newer Agentflow trips the reader version
+        # gate; that must surface as a malformed_ledger collision from the
+        # single reporter, never as an uncaught ValueError from a detector.
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp) / "out"; out.mkdir()
+            a = build_tree(Path(tmp) / "a", steps=["P1"])
+            (a / ".agent/evidence.jsonl").write_text(
+                '{"schema_version": "9.0.0", "id": "E1"}\n', encoding="utf-8"
+            )
+            report = aggregate.analyze([Source(a, "w1", "a")], out, base_ref="HEAD")
+            self.assertEqual(report["status"], "collision")
+            self.assertTrue(any(c["kind"] == "malformed_ledger" and c["ledger"] == "evidence" for c in report["collisions"]))
+            self.assertEqual(report["planned"], {})
+
     def test_non_object_jsonl_row_fails_closed_in_analyze(self):
         import tempfile
         with tempfile.TemporaryDirectory() as tmp:

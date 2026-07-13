@@ -807,6 +807,12 @@ def _verify_proof(
             proof.get("schema_version"), PROOF_PACK_SCHEMA_VERSION
         )
         if schema_errors:
+            # Intentional precedence (#82): a newer-schema proof early-returns
+            # the "upgrade Agentflow" diagnostic without running the shape or
+            # core_sha256 checks, whose composition this verifier cannot know
+            # for a future schema. This never weakens integrity: the finding is
+            # severity=error, so the proof is rejected either way, and a
+            # supported-schema proof always reaches the core tamper check.
             return [{"severity": "error", "message": error} for error in schema_errors]
     findings: List[Dict[str, Any]] = []
     for field, expected_type in PROOF_METADATA_FIELDS.items():

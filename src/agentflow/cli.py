@@ -296,12 +296,10 @@ def command_validate_plan(args: argparse.Namespace) -> int:
     plan_path = Path(args.plan).resolve()
     try:
         plan = _load_plan(plan_path)
-    except (FileNotFoundError, json.JSONDecodeError) as exc:
+    except (FileNotFoundError, ValueError) as exc:
+        # One presentation for every unreadable plan (missing, malformed JSON,
+        # or schema_version policy rejection): stderr + exit 1.
         print(f"invalid plan: {exc}", file=sys.stderr)
-        return 1
-    except ValueError as exc:
-        print("plan invalid")
-        print(f"- {exc}")
         return 1
 
     errors = validate_plan(plan)
@@ -1312,36 +1310,45 @@ def command_status(args: argparse.Namespace) -> int:
 
     try:
         plan = read_json(plan_path)
-    except json.JSONDecodeError as exc:
+    except ValueError as exc:
+        # Covers malformed JSON (JSONDecodeError is a ValueError) and
+        # schema_version policy rejections: status must report, never traceback.
         print(f"status invalid: {exc}")
         return 1
+
+    problems = False
+
+    def count(path: Path) -> str:
+        nonlocal problems
+        if not path.exists():
+            return "0"
+        try:
+            return str(len(read_jsonl(path)))
+        except ValueError as exc:
+            problems = True
+            return f"unreadable: {exc}"
 
     print(f"objective {plan.get('objective') or 'TBD'}")
     print(f"locked {bool(plan.get('locked'))}")
     print(f"steps {len(plan.get('steps', []))}")
-    print(f"evidence {len(read_jsonl(evidence_path)) if evidence_path.exists() else 0}")
-    print(f"failures {len(read_jsonl(failures_path)) if failures_path.exists() else 0}")
+    print(f"evidence {count(evidence_path)}")
+    print(f"failures {count(failures_path)}")
     if drift_path.exists():
-        drift = read_json(drift_path)
-        print(f"drift {drift.get('status', 'unknown')}")
+        try:
+            drift = read_json(drift_path)
+            print(f"drift {drift.get('status', 'unknown')}")
+        except ValueError as exc:
+            problems = True
+            print(f"drift unreadable: {exc}")
     else:
         print("drift missing")
     print(f"runtime config {'present' if runtime_config_path.exists() else 'missing'}")
-    print(
-        "runtime snapshots "
-        f"{len(read_jsonl(runtime_snapshots_path)) if runtime_snapshots_path.exists() else 0}"
-    )
+    print(f"runtime snapshots {count(runtime_snapshots_path)}")
     print(f"execution contract {'present' if execution_contract_path.exists() else 'missing'}")
-    print(f"step runs {len(read_jsonl(step_runs_path)) if step_runs_path.exists() else 0}")
-    print(
-        "command receipts "
-        f"{len(read_jsonl(command_receipts_path)) if command_receipts_path.exists() else 0}"
-    )
-    print(
-        "file receipts "
-        f"{len(read_jsonl(file_receipts_path)) if file_receipts_path.exists() else 0}"
-    )
-    return 0
+    print(f"step runs {count(step_runs_path)}")
+    print(f"command receipts {count(command_receipts_path)}")
+    print(f"file receipts {count(file_receipts_path)}")
+    return 1 if problems else 0
 
 
 def _load_brief_from_path(path: Path) -> Any:
@@ -2064,4 +2071,11 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv: Optional[List[str]] = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
-    return args.func(args)
+    try:
+        return args.func(args)
+    except ValueError as exc:
+        # Safety net for reader-gate errors (artifact schema_version policy
+        # rejections raise ValueError): cross-version .agent state must surface
+        # as a clean diagnostic, never a traceback.
+        print(f"error: {exc}", file=sys.stderr)
+        return 1

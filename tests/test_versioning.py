@@ -58,6 +58,18 @@ class SchemaVersionTests(unittest.TestCase):
             validate_historical_proof_schema_version("0.3.9", "1.2.0"), []
         )
 
+    def test_parse_rejects_whitespace_leading_zeros_and_suffixes(self) -> None:
+        for value in ("01.2.3", "1. 2.3", " 1.2.3", "1.2.3 ", "1.2.3-rc1", "1.2", "1.2.3.4"):
+            with self.subTest(value=value):
+                with self.assertRaisesRegex(ValueError, "MAJOR.MINOR.PATCH"):
+                    parse_schema_version(value)
+
+    def test_invalid_supported_constant_is_a_loud_developer_error(self) -> None:
+        # A malformed *supported* version is a broken constant, not bad user
+        # data; it must raise instead of blaming the artifact's schema_version.
+        with self.assertRaisesRegex(ValueError, "invalid supported schema_version"):
+            validate_schema_version("0.2.0", "not-a-version", "plan-lock")
+
     def test_invalid_schema_version_is_error(self) -> None:
         errors = validate_schema_version("bad", "0.2.0", "runtime-config")
         self.assertEqual(

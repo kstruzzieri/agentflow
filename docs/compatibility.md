@@ -10,8 +10,11 @@ rewritten or extended while work is active.
 `verify-proof` is the only historical cross-version guarantee. Agentflow 1.x
 verifies proofs built by Agentflow 0.4.0 or later and proofs built by every
 Agentflow 1.y release where y is less than or equal to the verifier's minor
-version. This promise applies to the installed CLI command and the MCP
-`verify_proof` tool that delegates to it.
+version. The floor is enforced against the proof-pack **schema** version
+recorded in the proof (0.4.0, the schema written by the Agentflow 0.4.0
+release); release numbers and proof-pack schema versions are distinct
+sequences that happen to coincide at that floor. This promise applies to the
+installed CLI command and the MCP `verify_proof` tool that delegates to it.
 
 Agentflow 2.0 may drop pre-1.0 proofs only after announcing that change under
 the deprecation policy and shipping a documented migration tool. This bounds

@@ -284,7 +284,14 @@ def validate_execution_contract(contract: Dict[str, Any]) -> List[Dict[str, str]
 
 def doctor(root: Path) -> Dict[str, Any]:
     findings: List[Dict[str, str]] = []
-    contract = load_execution_contract(root)
+    # An incompatible or unreadable contract is exactly what doctor exists to
+    # diagnose: report it as a finding instead of letting read_json's version
+    # gate escape as a traceback (same degrade rule as _concurrency above).
+    try:
+        contract = load_execution_contract(root)
+    except (ValueError, OSError) as exc:
+        findings.append({"severity": "error", "message": str(exc)})
+        return {"status": "failed", "contract": None, "findings": findings}
     if contract is None:
         findings.append(
             {"severity": "error", "message": ".agent/execution.contract.json is missing"}

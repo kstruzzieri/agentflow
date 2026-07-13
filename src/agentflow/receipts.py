@@ -84,7 +84,12 @@ def _ledger_lock_path(ledger_path: Path) -> Path:
 
 
 def _contract_policy(root: Path) -> Dict[str, Any]:
-    contract = load_execution_contract(root) or {}
+    # A malformed/incompatible contract degrades to advisory defaults instead
+    # of crashing the receipt-recording path (mirrors execution._concurrency).
+    try:
+        contract = load_execution_contract(root) or {}
+    except (ValueError, OSError):
+        return {}
     policy = contract.get("command_policy", {})
     return policy if isinstance(policy, dict) else {}
 
