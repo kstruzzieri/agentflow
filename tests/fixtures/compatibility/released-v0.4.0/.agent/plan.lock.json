@@ -1,0 +1,52 @@
+{
+  "allowed_files": [
+    ".agent/",
+    "fixture.txt"
+  ],
+  "blocked_files": [],
+  "drift_budget": {
+    "architecture_drift": "requires_approval",
+    "formatting_drift": "minimal",
+    "new_dependencies": 0,
+    "test_weakening": 0,
+    "unrelated_edits": 0
+  },
+  "evidence_ids": [],
+  "invariants": [
+    "All proof artifacts are emitted by the released v0.4.0 executable."
+  ],
+  "locked": true,
+  "locked_at": "2026-07-12T02:27:46+00:00",
+  "non_goals": [
+    "Exercise post-v0.4.0 optional proof features."
+  ],
+  "objective": "Build the genuine Agentflow v0.4.0 compatibility fixture.",
+  "risk_level": "low",
+  "rollback_plan": "Delete the generated fixture root and regenerate it from the pinned executable.",
+  "schema_version": "0.3.0",
+  "scope": [
+    "Create one receipted fixture file and a verifiable proof pack."
+  ],
+  "steps": [
+    {
+      "action": "Create fixture.txt.",
+      "evidence_ids": [],
+      "expected_diff": [
+        "fixture.txt is added."
+      ],
+      "files": [
+        "fixture.txt"
+      ],
+      "id": "P1",
+      "preconditions": [
+        "Plan locked."
+      ],
+      "validation": [
+        "python -c pass"
+      ]
+    }
+  ],
+  "validation_gates": [
+    "python -c pass"
+  ]
+}

@@ -1,0 +1,32 @@
+{
+  "artifacts": {
+    ".agent/amendments.jsonl": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    ".agent/assumptions.json": "c4c98e433ab1d2554ff6dcdb1917b19cc2546428ce14a9634f39d38615b49d26",
+    ".agent/capability-receipts.jsonl": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    ".agent/command-receipts.jsonl": "033fc7d496bb0dd45d8e80a95fbb47a77a88d8ce484f0ec5de2a380c3e1e5094",
+    ".agent/context-receipts.jsonl": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    ".agent/drift-report.json": "550e49ebc8c8c9e495a0221b9c1985929bdaadbf85c7242b71ab7e7a82d59380",
+    ".agent/evidence.jsonl": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    ".agent/execution.contract.json": "492d22a0813e815df1e90ef140951ad1ccbd3eb3a033f3e629ff2a08603393fa",
+    ".agent/failures.jsonl": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    ".agent/file-receipts.jsonl": "909546cb44ede546eafdc43e4863524b82a4fc16b0e0029f65294c4948506872",
+    ".agent/model-profiles/anthropic.example.json": "89791ba06a148f6c8a739af66ed8b2dc2382fba8cef6114a26f2f7d8822305ca",
+    ".agent/model-profiles/local.example.json": "c68f866a45ef62271d01891dbee50f9bdec65ee77b5dca36fdf55760d4da650e",
+    ".agent/model-profiles/openai.example.json": "7675acf7f93e77a0223fcb51b9bcc13c6b1ae8bfc6454e4288ada20ff3529e44",
+    ".agent/plan.lock.json": "b7819bd4047ba90e8bfd60863f4dd283be249d63bb0a5234d3f23a6d600e35f1",
+    ".agent/proof-pack.json": "5f58d73b5d09a97be6f5ce865b59ff13b2afbf4b50f9329f4088f60f55d5c235",
+    ".agent/proof-pack.md": "a93b30e0100e69805498fed3cc94798611d02e8787188f75a74e0321b5bb19eb",
+    ".agent/receipts/A1/CR1.stderr.txt": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    ".agent/receipts/A1/CR1.stdout.txt": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    ".agent/review-runs.jsonl": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    ".agent/runtime-snapshots.jsonl": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    ".agent/step-runs.jsonl": "fdc982f0e2abd7c8efed0eb3297d63661fc48ea8a8799576e05fb7396564d40f",
+    ".agent/verification-runs.jsonl": "1b2c146261af743dced8761a9e796968b71802e6773cf4a7295df5688f3caf00",
+    "fixture.txt": "0fd659ab2f9a5c27f770811f77f112404a111f6d18265c06ece219949146fd59"
+  },
+  "release_asset": {
+    "sha256": "6617b33de632e174fffb7f3e869ab0793fff4df62c324a0cb017c9d5c5ed671c",
+    "url": "https://github.com/kstruzzieri/agentflow/releases/download/v0.4.0/agentflow.pyz"
+  },
+  "schema_version": "1.0.0"
+}

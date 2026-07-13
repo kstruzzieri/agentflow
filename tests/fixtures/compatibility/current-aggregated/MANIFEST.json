@@ -1,0 +1,14 @@
+{
+  "artifacts": {
+    ".agent/aggregation.json": "7c21743204ffda25da3150b4df34bff73425c02d409f7e0223f4362176a6feee",
+    ".agent/execution.contract.json": "e5a8a65d9550f0a50c754bd89f4d28c2a21c9e52e8f795e77035700e9f4835f6",
+    ".agent/file-receipts.jsonl": "0b20bb8a8221235f6909802067c6026f1aed572d56b1b201380c183dc110e032",
+    ".agent/plan.lock.json": "5037c923e473c1132c9c694eedd7ce779c4be377a1148b1408f379d73ad3d8d0",
+    ".agent/proof-pack.json": "9f2312aecc01c6e84bd11af75adb9cb59dbf32967f2fd9b01d49d6f0e80e70ab",
+    ".agent/proof-pack.md": "e536321d5f142fde86256978388be0ad4359f359507cf21bd6df1d412d7ffa1d",
+    ".agent/step-runs.jsonl": "387bcc327ee0a62a9ab8d39a31293e35f3265cffa5990f59fceef52225322770",
+    "seed.txt": "4a6689419b00b11700c9b6246bcfa8936c8f5e1e824db3a7e57030e2d1c1a684",
+    "src/x.py": "9e26bf369911c45c243c684147b23fc9e1dcfcf257d299a1c632016a6fcd33f4",
+    "src/y.py": "f469842763db3981070764f968bbc779cb0779f326e386b99bbe3431f8f30c49"
+  }
+}

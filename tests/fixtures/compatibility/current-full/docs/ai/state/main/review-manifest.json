@@ -1,0 +1,19 @@
+{
+  "active_blocking": [],
+  "artifacts": [
+    {
+      "path": "findings-final.json"
+    }
+  ],
+  "depth_profile": "standard",
+  "findings": {
+    "counts_by_severity": {},
+    "counts_by_status": {},
+    "index": []
+  },
+  "gate_status": "pass",
+  "policy": "default",
+  "review_run_id": "RR-20260712T023031Z-3cd0edea",
+  "schema_version": "0.2.0",
+  "state_dir": "docs/ai/state/main"
+}

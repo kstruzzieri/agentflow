@@ -136,6 +136,7 @@ class CoverageTests(unittest.TestCase):
             append_jsonl(
                 root / ".agent/command-receipts.jsonl",
                 {
+                    "schema_version": "0.4.0",
                     "id": "CR1",
                     "step_id": "P1",
                     "command": ["check", "criterion"],
@@ -456,6 +457,7 @@ class CoverageTests(unittest.TestCase):
             append_jsonl(
                 root / ".agent/command-receipts.jsonl",
                 {
+                    "schema_version": "0.4.0",
                     "id": "CR1",
                     "step_id": "P1",
                     "command": ["python3", "-m", "unittest"],
@@ -627,6 +629,7 @@ class CoverageTests(unittest.TestCase):
                 append_jsonl(
                     root / ".agent/command-receipts.jsonl",
                     {
+                        "schema_version": "0.4.0",
                         "id": receipt_id,
                         "step_id": step_id,
                         "command": command,
@@ -713,7 +716,10 @@ class CoverageTests(unittest.TestCase):
                 ],
             }
             write_json(root / ".agent/plan.lock.json", plan)
-            append_jsonl(root / ".agent/evidence.jsonl", {"id": "E1"})
+            append_jsonl(
+                root / ".agent/evidence.jsonl",
+                {"schema_version": "0.2.0", "id": "E1"},
+            )
 
             proof = build_proof(root, root / ".agent/plan.lock.json")
 
@@ -1058,11 +1064,7 @@ class CoverageTests(unittest.TestCase):
             self.assertIn("older schema version", core_findings[0]["message"].lower())
             self.assertEqual(core_findings[0]["severity"], "error")
 
-    def test_verify_proof_keeps_generic_message_for_unparseable_schema_version(self) -> None:
-        # #82: a recorded schema_version that is not a well-formed
-        # MAJOR.MINOR.PATCH cannot prove the bundle predates a schema change, so
-        # a core mismatch keeps the generic tamper message rather than excusing
-        # it as schema growth.
+    def test_verify_proof_rejects_unparseable_schema_version(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = self._fixture(tmp)
             proof = build_proof(root, root / ".agent/plan.lock.json")
@@ -1070,17 +1072,18 @@ class CoverageTests(unittest.TestCase):
             proof_path = root / ".agent/proof-pack.json"
             data = json.loads(proof_path.read_text(encoding="utf-8"))
             data["schema_version"] = "not-a-version"
-            data["core_sha256"] = "0" * 64
+            data["core_sha256"] = core_sha256(data)
             proof_path.write_text(json.dumps(data), encoding="utf-8")
 
             findings = verify_proof(root, proof_path)
 
-            core_findings = [f for f in findings if "core" in f["message"].lower()]
-            self.assertTrue(core_findings, "expected a core-mismatch finding")
-            self.assertNotIn(
-                "older schema version", core_findings[0]["message"].lower()
+            self.assertTrue(
+                any(
+                    finding["severity"] == "error"
+                    and "MAJOR.MINOR.PATCH" in finding["message"]
+                    for finding in findings
+                )
             )
-            self.assertEqual(core_findings[0]["severity"], "error")
 
     def test_canonical_core_membership_pinned_to_schema_version(self) -> None:
         # #82 regression guard: canonical_core is hashed into core_sha256, so
@@ -1136,7 +1139,12 @@ class CoverageTests(unittest.TestCase):
         }
         path = root / ".agent/runtime-snapshots.jsonl"
         with path.open("a", encoding="utf-8") as handle:
-            handle.write(json.dumps({"id": "R2", "runtimes": []}) + "\n")
+            handle.write(
+                json.dumps(
+                    {"schema_version": "0.3.0", "id": "R2", "runtimes": []}
+                )
+                + "\n"
+            )
             handle.write(json.dumps(snapshot) + "\n")
 
     def test_proof_runtime_block_from_latest_snapshot(self) -> None:
@@ -2269,7 +2277,6 @@ class AggregationProvenanceProofTests(unittest.TestCase):
                 },
             ],
         }
-
     def test_proof_without_aggregation_file_is_unchanged(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = self._root(tmp)
@@ -2517,6 +2524,39 @@ class AggregationProvenanceProofTests(unittest.TestCase):
             self.assertIn("aggregation_valid", checks)
             self.assertEqual(checks["aggregation_valid"]["status"], "failed")
             self.assertIn("must be a JSON object", checks["aggregation_valid"]["message"])
+
+
+class ProofSchemaGateTests(unittest.TestCase):
+    def test_newer_proof_schema_requests_upgrade_without_tamper_diagnostic(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            create_initial_artifacts(root)
+            proof = build_proof(root, root / ".agent/plan.lock.json")
+            proof["schema_version"] = "0.10.0"
+            proof_path = write_proof_metadata(root, proof)
+
+            findings = verify_proof(root, proof_path)
+            messages = "\n".join(finding["message"] for finding in findings)
+
+            self.assertIn("newer", messages)
+            self.assertIn("upgrade Agentflow", messages)
+            self.assertNotIn("tamper", messages.lower())
+
+    def test_newer_schema_gate_precedes_current_shape_validation(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            create_initial_artifacts(root)
+            proof = build_proof(root, root / ".agent/plan.lock.json")
+            proof["schema_version"] = "0.10.0"
+            del proof["meta"]
+            proof_path = write_proof_metadata(root, proof)
+
+            findings = verify_proof(root, proof_path)
+            messages = "\n".join(finding["message"] for finding in findings)
+
+            self.assertIn("newer schema", messages)
+            self.assertIn("upgrade Agentflow", messages)
+            self.assertNotIn("missing required field meta", messages)
 
 
 if __name__ == "__main__":

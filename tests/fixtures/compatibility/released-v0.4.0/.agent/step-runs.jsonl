@@ -1,0 +1,3 @@
+{"agent_id": "fixture", "attempt_id": "A1", "event": "claimed", "lease_expires_at": null, "recorded_at": "2026-07-12T02:28:17+00:00", "schema_version": "0.5.0", "step_id": "P1"}
+{"attempt_id": "A1", "event": "verified", "findings": [], "recorded_at": "2026-07-12T02:28:20+00:00", "schema_version": "0.5.0", "step_id": "P1"}
+{"attempt_id": "A1", "event": "completed", "recorded_at": "2026-07-12T02:28:21+00:00", "schema_version": "0.5.0", "step_id": "P1"}

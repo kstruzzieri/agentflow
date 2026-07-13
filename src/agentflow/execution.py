@@ -10,6 +10,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from .artifacts import append_jsonl, dumps_json, read_json, read_jsonl, utc_now
 from .contracts import (
+    ARTIFACT_COMPATIBILITY_POLICIES,
     DEFAULT_COMMAND_TIMEOUT_SECONDS,
     DEFAULT_LEASE_GRACE_SECONDS,
     DEFAULT_LEASE_TTL_MINUTES,
@@ -22,6 +23,7 @@ from .contracts import (
 )
 from .git import is_git_repo
 from .locks import file_lock
+from .versioning import validate_schema_version_policy
 
 
 ATTEMPT_OPENING_EVENTS = {"claimed", "amendment_started"}
@@ -193,15 +195,16 @@ def _lease_minutes_or_default(value: Optional[int], default: Optional[int]) -> O
 
 def validate_execution_contract(contract: Dict[str, Any]) -> List[Dict[str, str]]:
     findings: List[Dict[str, str]] = []
-    if contract.get("schema_version") != EXECUTION_CONTRACT_SCHEMA_VERSION:
+    for error in validate_schema_version_policy(
+        contract.get("schema_version"),
+        EXECUTION_CONTRACT_SCHEMA_VERSION,
+        "execution-contract",
+        ARTIFACT_COMPATIBILITY_POLICIES["execution-contract"],
+    ):
         findings.append(
             {
                 "severity": "error",
-                "message": (
-                    "execution contract schema_version "
-                    f"{contract.get('schema_version')} is incompatible with "
-                    f"{EXECUTION_CONTRACT_SCHEMA_VERSION}"
-                ),
+                "message": error,
             }
         )
     if contract.get("contract_type") != "agentflow_execution_contract":
@@ -281,7 +284,14 @@ def validate_execution_contract(contract: Dict[str, Any]) -> List[Dict[str, str]
 
 def doctor(root: Path) -> Dict[str, Any]:
     findings: List[Dict[str, str]] = []
-    contract = load_execution_contract(root)
+    # An incompatible or unreadable contract is exactly what doctor exists to
+    # diagnose: report it as a finding instead of letting read_json's version
+    # gate escape as a traceback (same degrade rule as _concurrency above).
+    try:
+        contract = load_execution_contract(root)
+    except (ValueError, OSError) as exc:
+        findings.append({"severity": "error", "message": str(exc)})
+        return {"status": "failed", "contract": None, "findings": findings}
     if contract is None:
         findings.append(
             {"severity": "error", "message": ".agent/execution.contract.json is missing"}

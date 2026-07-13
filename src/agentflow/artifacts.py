@@ -4,11 +4,16 @@ from __future__ import annotations
 
 import hashlib
 import json
+from contextlib import contextmanager
+from contextvars import ContextVar
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 from .contracts import (
+    ARTIFACT_COMPATIBILITY_POLICIES,
+    ARTIFACT_PATHS,
+    ARTIFACT_SCHEMA_VERSIONS,
     ASSUMPTIONS_SCHEMA_VERSION,
     CONTEXT_RECEIPTS_SCHEMA_VERSION,
     DRIFT_REPORT_SCHEMA_VERSION,
@@ -16,10 +21,15 @@ from .contracts import (
     FAILURES_SCHEMA_VERSION,
     PLAN_SCHEMA_VERSION,
     PROOF_PACK_SCHEMA_VERSION,
+    EXECUTION_ARTIFACT_SCHEMA_VERSIONS,
 )
+from .versioning import validate_schema_version_policy
 
 
 SCHEMA_VERSION = PLAN_SCHEMA_VERSION
+_VALIDATE_ARTIFACT_VERSIONS = ContextVar(
+    "agentflow_validate_artifact_versions", default=True
+)
 
 
 def utc_now() -> str:
@@ -181,9 +191,65 @@ def initial_files() -> List[Tuple[str, str]]:
     ]
 
 
+def _artifact_name(path: Path) -> Optional[str]:
+    candidate = path.as_posix()
+    paths = {**ARTIFACT_PATHS, "proof-pack": ".agent/proof-pack.json"}
+    return next(
+        (
+            name
+            for name, relative in paths.items()
+            if candidate == relative or candidate.endswith("/" + relative)
+        ),
+        None,
+    )
+
+
+def _validate_artifact_version(
+    path: Path, data: Any, line_number: Optional[int] = None
+) -> None:
+    if not _VALIDATE_ARTIFACT_VERSIONS.get():
+        return
+    artifact = _artifact_name(path)
+    reader_gated = set(ARTIFACT_COMPATIBILITY_POLICIES) - {
+        "aggregation",
+        "proof-pack",
+    }
+    if (
+        artifact not in reader_gated
+        or not isinstance(data, dict)
+    ):
+        return
+    supported = EXECUTION_ARTIFACT_SCHEMA_VERSIONS.get(
+        artifact, ARTIFACT_SCHEMA_VERSIONS.get(artifact)
+    )
+    if supported is None:
+        return
+    errors = validate_schema_version_policy(
+        data.get("schema_version"),
+        supported,
+        artifact,
+        ARTIFACT_COMPATIBILITY_POLICIES[artifact],
+    )
+    if errors:
+        location = f"{path}:{line_number}" if line_number is not None else str(path)
+        raise ValueError(f"{location}: {errors[0]}")
+
+
+@contextmanager
+def historical_proof_reads() -> Iterable[None]:
+    """Let verify-proof read its hash-bound historical source artifacts."""
+    token = _VALIDATE_ARTIFACT_VERSIONS.set(False)
+    try:
+        yield
+    finally:
+        _VALIDATE_ARTIFACT_VERSIONS.reset(token)
+
+
 def read_json(path: Path) -> Dict[str, Any]:
     with path.open("r", encoding="utf-8") as handle:
-        return json.load(handle)
+        data = json.load(handle)
+    _validate_artifact_version(path, data)
+    return data
 
 
 def try_read_json(path: Path) -> Tuple[Optional[Dict[str, Any]], Optional[str]]:
@@ -192,6 +258,10 @@ def try_read_json(path: Path) -> Tuple[Optional[Dict[str, Any]], Optional[str]]:
         data = read_json(path)
     except json.JSONDecodeError as exc:
         return None, f"malformed JSON in {path.name}: {exc}"
+    except ValueError as exc:
+        # Version-gate rejection: the file is well-formed JSON, so calling it
+        # malformed would send users chasing a parse error that does not exist.
+        return None, str(exc)
     if not isinstance(data, dict):
         return None, f"{path.name} top-level value must be a JSON object"
     return data, None
@@ -203,6 +273,16 @@ def write_json(path: Path, data: Dict[str, Any]) -> None:
 
 
 def append_jsonl(path: Path, item: Dict[str, Any]) -> None:
+    artifact = _artifact_name(path)
+    supported = (
+        EXECUTION_ARTIFACT_SCHEMA_VERSIONS.get(
+            artifact, ARTIFACT_SCHEMA_VERSIONS.get(artifact)
+        )
+        if artifact is not None
+        else None
+    )
+    if supported is not None and "schema_version" not in item:
+        item = {"schema_version": supported, **item}
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("a", encoding="utf-8") as handle:
         handle.write(json.dumps(item, sort_keys=True) + "\n")
@@ -219,7 +299,9 @@ def read_jsonl(path: Path) -> List[Dict[str, Any]]:
             if not stripped:
                 continue
             try:
-                items.append(json.loads(stripped))
+                item = json.loads(stripped)
+                _validate_artifact_version(path, item, line_number)
+                items.append(item)
             except json.JSONDecodeError as exc:
                 raise ValueError(f"{path}:{line_number}: invalid JSONL: {exc}") from exc
     return items

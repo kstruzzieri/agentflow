@@ -24,7 +24,8 @@ uv tool install --editable /path/to/agentflow
 2. Use the Agentflow task loop in [docs/agent-workflow.md](docs/agent-workflow.md)
    for planned changes in this repository.
 3. Keep changes focused, preserve backward compatibility unless the change is
-   explicitly breaking, and update documentation with behavior changes.
+   explicitly breaking, follow [docs/stability.md](docs/stability.md), and
+   update documentation with behavior changes.
 4. Add focused tests and run the complete suite:
 
    ```bash

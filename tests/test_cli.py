@@ -137,7 +137,8 @@ class AgentflowCliTests(unittest.TestCase):
             result = run_agentflow(cwd, "validate-plan")
 
             self.assertNotEqual(result.returncode, 0)
-            self.assertIn("plan-lock schema_version 0.4.0 is incompatible", result.stdout)
+            self.assertIn("invalid plan:", result.stderr)
+            self.assertIn("plan-lock schema_version 0.4.0 is incompatible", result.stderr)
 
     def test_validate_plan_rejects_invalid_step_delegation_fields(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -1330,6 +1331,89 @@ class AgentflowCliTests(unittest.TestCase):
             self.assertIn("command receipts 0", result.stdout)
             self.assertIn("file receipts 0", result.stdout)
 
+    def test_status_reports_incompatible_plan_schema_cleanly(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            cwd = Path(tmp)
+            self.assertEqual(run_agentflow(cwd, "init").returncode, 0)
+            plan_path = cwd / ".agent/plan.lock.json"
+            plan = json.loads(plan_path.read_text(encoding="utf-8"))
+            plan["schema_version"] = "9.0.0"
+            plan_path.write_text(json.dumps(plan), encoding="utf-8")
+
+            result = run_agentflow(cwd, "status")
+
+            self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+            self.assertIn("status invalid:", result.stdout)
+            self.assertNotIn("Traceback", result.stderr)
+
+    def test_status_degrades_on_incompatible_ledger_schema(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            cwd = Path(tmp)
+            self.assertEqual(run_agentflow(cwd, "init").returncode, 0)
+            self.assertEqual(run_agentflow(cwd, "init-execution").returncode, 0)
+            (cwd / ".agent/step-runs.jsonl").write_text(
+                '{"schema_version": "9.0.0", "event": "claimed"}\n', encoding="utf-8"
+            )
+
+            result = run_agentflow(cwd, "status")
+
+            self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+            self.assertIn("step runs unreadable:", result.stdout)
+            self.assertIn("file receipts 0", result.stdout)
+            self.assertNotIn("Traceback", result.stderr)
+
+    def test_validate_plan_reports_incompatible_schema_on_stderr(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            cwd = Path(tmp)
+            self.assertEqual(run_agentflow(cwd, "init").returncode, 0)
+            plan_path = cwd / ".agent/plan.lock.json"
+            plan = json.loads(plan_path.read_text(encoding="utf-8"))
+            plan["schema_version"] = "9.0.0"
+            plan_path.write_text(json.dumps(plan), encoding="utf-8")
+
+            result = run_agentflow(cwd, "validate-plan", ".agent/plan.lock.json")
+
+            self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+            self.assertIn("invalid plan:", result.stderr)
+            self.assertNotIn("Traceback", result.stderr)
+
+    def test_doctor_reports_incompatible_contract_schema_as_finding(self) -> None:
+        # doctor exists to diagnose exactly this state: the version-gate
+        # rejection degrades to a finding instead of escaping as a traceback.
+        with tempfile.TemporaryDirectory() as tmp:
+            cwd = Path(tmp)
+            self.assertEqual(run_agentflow(cwd, "init").returncode, 0)
+            self.assertEqual(run_agentflow(cwd, "init-execution").returncode, 0)
+            contract_path = cwd / ".agent/execution.contract.json"
+            contract = json.loads(contract_path.read_text(encoding="utf-8"))
+            contract["schema_version"] = "0.2.0"
+            contract_path.write_text(json.dumps(contract), encoding="utf-8")
+
+            result = run_agentflow(cwd, "doctor")
+
+            self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+            self.assertIn("doctor failed", result.stdout)
+            self.assertIn("incompatible", result.stdout)
+            self.assertNotIn("Traceback", result.stderr)
+
+    def test_next_action_incompatible_plan_is_clean_error(self) -> None:
+        # The cli.main safety net: version-gate rejections surface as a clean
+        # one-line diagnostic, never a traceback.
+        with tempfile.TemporaryDirectory() as tmp:
+            cwd = Path(tmp)
+            self.assertEqual(run_agentflow(cwd, "init").returncode, 0)
+            plan_path = cwd / ".agent/plan.lock.json"
+            plan = json.loads(plan_path.read_text(encoding="utf-8"))
+            plan["schema_version"] = "9.0.0"
+            plan_path.write_text(json.dumps(plan), encoding="utf-8")
+
+            result = run_agentflow(cwd, "next-action")
+
+            self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+            self.assertIn("error:", result.stderr)
+            self.assertIn("incompatible", result.stderr)
+            self.assertNotIn("Traceback", result.stderr)
+
     @unittest.skipIf(shutil.which("git") is None, "git is not available")
     def test_audit_drift_fails_out_of_scope_file(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -1885,6 +1969,7 @@ class EventsCommandTests(unittest.TestCase):
         (cwd / ".agent" / "step-runs.jsonl").write_text(
             json.dumps(
                 {
+                    "schema_version": "0.5.0",
                     "event": "claimed",
                     "step_id": "P1",
                     "attempt_id": "A1",

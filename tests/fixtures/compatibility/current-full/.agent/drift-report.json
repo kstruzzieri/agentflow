@@ -1,0 +1,26 @@
+{
+  "blocked_files_changed": [],
+  "changed_files": [
+    ".agent/command-receipts.jsonl",
+    ".agent/command-receipts.jsonl.lockfile",
+    ".agent/file-receipts.jsonl",
+    ".agent/file-receipts.jsonl.lockfile",
+    ".agent/receipts/A1/CR1.stderr.txt",
+    ".agent/receipts/A1/CR1.stdout.txt",
+    ".agent/receipts/A2/CR2.stderr.txt",
+    ".agent/receipts/A2/CR2.stdout.txt",
+    ".agent/step-runs.jsonl",
+    ".agent/step-runs.jsonl.lockfile",
+    ".agent/verification-runs.jsonl",
+    "fixture.txt"
+  ],
+  "dependency_changes": [],
+  "generated_at": "2026-07-12T02:31:30+00:00",
+  "notes": [],
+  "out_of_scope_files": [],
+  "schema_version": "0.2.2",
+  "stale_attempts": [],
+  "status": "pass",
+  "test_weakening": [],
+  "unmapped_hunks": []
+}

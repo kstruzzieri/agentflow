@@ -1,0 +1,3158 @@
+{
+  "commands": {
+    "aggregate-ledgers": [
+      {
+        "choices": null,
+        "default": null,
+        "multiple": true,
+        "names": [
+          "--input"
+        ],
+        "nargs": null,
+        "required": false,
+        "takes_value": true
+      },
+      {
+        "choices": null,
+        "default": null,
+        "multiple": true,
+        "names": [
+          "--source-id"
+        ],
+        "nargs": null,
+        "required": false,
+        "takes_value": true
+      },
+      {
+        "choices": null,
+        "default": null,
+        "multiple": true,
+        "names": [
+          "--label"
+        ],
+        "nargs": null,
+        "required": false,
+        "takes_value": true
+      },
+      {
+        "choices": null,
+        "default": ".",
+        "multiple": false,
+        "names": [
+          "--output"
+        ],
+        "nargs": null,
+        "required": false,
+        "takes_value": true
+      },
+      {
+        "choices": null,
+        "default": null,
+        "multiple": false,
+        "names": [
+          "--base"
+        ],
+        "nargs": null,
+        "required": false,
+        "takes_value": true
+      },
+      {
+        "choices": null,
+        "default": false,
+        "multiple": false,
+        "names": [
+          "--dry-run"
+        ],
+        "nargs": 0,
+        "required": false,
+        "takes_value": false
+      },
+      {
+        "choices": null,
+        "default": false,
+        "multiple": false,
+        "names": [
+          "--json"
+        ],
+        "nargs": 0,
+        "required": false,
+        "takes_value": false
+      }
+    ],
+    "amend-plan": [
+      {
+        "choices": null,
+        "default": ".",
+        "multiple": false,
+        "names": [
+          "--root"
+        ],
+        "nargs": null,
+        "required": false,
+        "takes_value": true
+      },
+      {
+        "choices": null,
+        "default": null,
+        "multiple": false,
+        "names": [
+          "--id"
+        ],
+        "nargs": null,
+        "required": true,
+        "takes_value": true
+      },
+      {
+        "choices": null,
+        "default": null,
+        "multiple": false,
+        "names": [
+          "--reason"
+        ],
+        "nargs": null,
+        "required": true,
+        "takes_value": true
+      },
+      {
+        "choices": null,
+        "default": null,
+        "multiple": true,
+        "names": [
+          "--evidence"
+        ],
+        "nargs": null,
+        "required": false,
+        "takes_value": true
+      },
+      {
+        "choices": null,
+        "default": null,
+        "multiple": true,
+        "names": [
+          "--changed-scope"
+        ],
+        "nargs": null,
+        "required": false,
+        "takes_value": true
+      },
+      {
+        "choices": null,
+        "default": null,
+        "multiple": true,
+        "names": [
+          "--changed-steps"
+        ],
+        "nargs": null,
+        "required": false,
+        "takes_value": true
+      },
+      {
+        "choices": null,
+        "default": null,
+        "multiple": false,
+        "names": [
+          "--changed-risk"
+        ],
+        "nargs": null,
+        "required": false,
+        "takes_value": true
+      },
+      {
+        "choices": null,
+        "default": false,
+        "multiple": false,
+        "names": [
+          "--requires-approval"
+        ],
+        "nargs": 0,
+        "required": false,
+        "takes_value": false
+      }
+    ],
+    "amend-step": [
+      {
+        "choices": null,
+        "default": null,
+        "multiple": false,
+        "names": [
+          "step"
+        ],
+        "nargs": null,
+        "required": true,
+        "takes_value": true
+      },
+      {
+        "choices": null,
+        "default": ".",
+        "multiple": false,
+        "names": [
+          "--root"
+        ],
+        "nargs": null,
+        "required": false,
+        "takes_value": true
+      },
+      {
+        "choices": null,
+        "default": null,
+        "multiple": false,
+        "names": [
+          "--agent"
+        ],
+        "nargs": null,
+        "required": true,
+        "takes_value": true
+      },
+      {
+        "choices": null,
+        "default": null,
+        "multiple": false,
+        "names": [
+          "--reason"
+        ],
+        "nargs": null,
+        "required": true,
+        "takes_value": true
+      },
+      {
+        "choices": [
+          "operator_correction",
+          "other",
+          "review_feedback",
+          "validation_followup"
+        ],
+        "default": null,
+        "multiple": false,
+        "names": [
+          "--reason-code"
+        ],
+        "nargs": null,
+        "required": false,
+        "takes_value": true
+      },
+      {
+        "choices": null,
+        "default": null,
+        "multiple": true,
+        "names": [
+          "--finding"
+        ],
+        "nargs": null,
+        "required": false,
+        "takes_value": true
+      },
+      {
+        "choices": null,
+        "default": null,
+        "multiple": false,
+        "names": [
+          "--lease-minutes"
+        ],
+        "nargs": null,
+        "required": false,
+        "takes_value": true
+      },
+      {
+        "choices": null,
+        "default": false,
+        "multiple": false,
+        "names": [
+          "--json"
+        ],
+        "nargs": 0,
+        "required": false,
+        "takes_value": false
+      }
+    ],
+    "audit-drift": [
+      {
+        "choices": null,
+        "default": ".",
+        "multiple": false,
+        "names": [
+          "--root"
+        ],
+        "nargs": null,
+        "required": false,
+        "takes_value": true
+      },
+      {
+        "choices": null,
+        "default": ".agent/plan.lock.json",
+        "multiple": false,
+        "names": [
+          "--plan"
+        ],
+        "nargs": null,
+        "required": false,
+        "takes_value": true
+      }
+    ],
+    "block-step": [
+      {
+        "choices": null,
+        "default": null,
+        "multiple": false,
+        "names": [
+          "step"
+        ],
+        "nargs": null,
+        "required": true,
+        "takes_value": true
+      },
+      {
+        "choices": null,
+        "default": ".",
+        "multiple": false,
+        "names": [
+          "--root"
+        ],
+        "nargs": null,
+        "required": false,
+        "takes_value": true
+      },
+      {
+        "choices": null,
+        "default": null,
+        "multiple": false,
+        "names": [
+          "--attempt"
+        ],
+        "nargs": null,
+        "required": false,
+        "takes_value": true
+      },
+      {
+        "choices": null,
+        "default": null,
+        "multiple": false,
+        "names": [
+          "--reason"
+        ],
+        "nargs": null,
+        "required": true,
+        "takes_value": true
+      },
+      {
+        "choices": null,
+        "default": null,
+        "multiple": false,
+        "names": [
+          "--agent"
+        ],
+        "nargs": null,
+        "required": false,
+        "takes_value": true
+      },
+      {
+        "choices": null,
+        "default": false,
+        "multiple": false,
+        "names": [
+          "--json"
+        ],
+        "nargs": 0,
+        "required": false,
+        "takes_value": false
+      }
+    ],
+    "build-proof": [
+      {
+        "choices": null,
+        "default": ".",
+        "multiple": false,
+        "names": [
+          "--root"
+        ],
+        "nargs": null,
+        "required": false,
+        "takes_value": true
+      },
+      {
+        "choices": null,
+        "default": ".agent/plan.lock.json",
+        "multiple": false,
+        "names": [
+          "--plan"
+        ],
+        "nargs": null,
+        "required": false,
+        "takes_value": true
+      },
+      {
+        "choices": null,
+        "default": ".agent/proof-pack.md",
+        "multiple": false,
+        "names": [
+          "--output"
+        ],
+        "nargs": null,
+        "required": false,
+        "takes_value": true
+      },
+      {
+        "choices": null,
+        "default": false,
+        "multiple": false,
+        "names": [
+          "--strict"
+        ],
+        "nargs": 0,
+        "required": false,
+        "takes_value": false
+      }
+    ],
+    "claim-step": [
+      {
+        "choices": null,
+        "default": null,
+        "multiple": false,
+        "names": [
+          "step"
+        ],
+        "nargs": null,
+        "required": true,
+        "takes_value": true
+      },
+      {
+        "choices": null,
+        "default": ".",
+        "multiple": false,
+        "names": [
+          "--root"
+        ],
+        "nargs": null,
+        "required": false,
+        "takes_value": true
+      },
+      {
+        "choices": null,
+        "default": null,
+        "multiple": false,
+        "names": [
+          "--agent"
+        ],
+        "nargs": null,
+        "required": true,
+        "takes_value": true
+      },
+      {
+        "choices": null,
+        "default": null,
+        "multiple": false,
+        "names": [
+          "--lease-minutes"
+        ],
+        "nargs": null,
+        "required": false,
+        "takes_value": true
+      },
+      {
+        "choices": null,
+        "default": false,
+        "multiple": false,
+        "names": [
+          "--json"
+        ],
+        "nargs": 0,
+        "required": false,
+        "takes_value": false
+      }
+    ],
+    "complete-step": [
+      {
+        "choices": null,
+        "default": null,
+        "multiple": false,
+        "names": [
+          "step"
+        ],
+        "nargs": null,
+        "required": true,
+        "takes_value": true
+      },
+      {
+        "choices": null,
+        "default": ".",
+        "multiple": false,
+        "names": [
+          "--root"
+        ],
+        "nargs": null,
+        "required": false,
+        "takes_value": true
+      },
+      {
+        "choices": null,
+        "default": null,
+        "multiple": false,
+        "names": [
+          "--attempt"
+        ],
+        "nargs": null,
+        "required": false,
+        "takes_value": true
+      },
+      {
+        "choices": null,
+        "default": null,
+        "multiple": false,
+        "names": [
+          "--agent"
+        ],
+        "nargs": null,
+        "required": false,
+        "takes_value": true
+      },
+      {
+        "choices": null,
+        "default": false,
+        "multiple": false,
+        "names": [
+          "--json"
+        ],
+        "nargs": 0,
+        "required": false,
+        "takes_value": false
+      }
+    ],
+    "detect-stuck": [
+      {
+        "choices": null,
+        "default": ".",
+        "multiple": false,
+        "names": [
+          "--root"
+        ],
+        "nargs": null,
+        "required": false,
+        "takes_value": true
+      },
+      {
+        "choices": null,
+        "default": ".agent/plan.lock.json",
+        "multiple": false,
+        "names": [
+          "--plan"
+        ],
+        "nargs": null,
+        "required": false,
+        "takes_value": true
+      },
+      {
+        "choices": null,
+        "default": false,
+        "multiple": false,
+        "names": [
+          "--strict"
+        ],
+        "nargs": 0,
+        "required": false,
+        "takes_value": false
+      },
+      {
+        "choices": null,
+        "default": false,
+        "multiple": false,
+        "names": [
+          "--json"
+        ],
+        "nargs": 0,
+        "required": false,
+        "takes_value": false
+      },
+      {
+        "choices": null,
+        "default": 3,
+        "multiple": false,
+        "names": [
+          "--min-command-failures"
+        ],
+        "nargs": null,
+        "required": false,
+        "takes_value": true
+      },
+      {
+        "choices": null,
+        "default": 2,
+        "multiple": false,
+        "names": [
+          "--min-verify-failures"
+        ],
+        "nargs": null,
+        "required": false,
+        "takes_value": true
+      },
+      {
+        "choices": null,
+        "default": 3,
+        "multiple": false,
+        "names": [
+          "--min-cycle-repeats"
+        ],
+        "nargs": null,
+        "required": false,
+        "takes_value": true
+      }
+    ],
+    "doctor": [
+      {
+        "choices": null,
+        "default": ".",
+        "multiple": false,
+        "names": [
+          "--root"
+        ],
+        "nargs": null,
+        "required": false,
+        "takes_value": true
+      },
+      {
+        "choices": null,
+        "default": false,
+        "multiple": false,
+        "names": [
+          "--json"
+        ],
+        "nargs": 0,
+        "required": false,
+        "takes_value": false
+      }
+    ],
+    "draft-plan": [
+      {
+        "choices": null,
+        "default": ".",
+        "multiple": false,
+        "names": [
+          "--root"
+        ],
+        "nargs": null,
+        "required": false,
+        "takes_value": true
+      },
+      {
+        "choices": null,
+        "default": null,
+        "multiple": false,
+        "names": [
+          "--brief"
+        ],
+        "nargs": null,
+        "required": false,
+        "takes_value": true
+      },
+      {
+        "choices": null,
+        "default": false,
+        "multiple": false,
+        "names": [
+          "--stdin"
+        ],
+        "nargs": 0,
+        "required": false,
+        "takes_value": false
+      },
+      {
+        "choices": null,
+        "default": null,
+        "multiple": false,
+        "names": [
+          "--workflow"
+        ],
+        "nargs": null,
+        "required": true,
+        "takes_value": true
+      },
+      {
+        "choices": null,
+        "default": null,
+        "multiple": false,
+        "names": [
+          "--objective"
+        ],
+        "nargs": null,
+        "required": false,
+        "takes_value": true
+      },
+      {
+        "choices": null,
+        "default": null,
+        "multiple": false,
+        "names": [
+          "--profile"
+        ],
+        "nargs": null,
+        "required": false,
+        "takes_value": true
+      },
+      {
+        "choices": null,
+        "default": null,
+        "multiple": false,
+        "names": [
+          "--reason"
+        ],
+        "nargs": null,
+        "required": false,
+        "takes_value": true
+      },
+      {
+        "choices": null,
+        "default": false,
+        "multiple": false,
+        "names": [
+          "--allow-missing-candidates",
+          "--greenfield"
+        ],
+        "nargs": 0,
+        "required": false,
+        "takes_value": false
+      },
+      {
+        "choices": null,
+        "default": false,
+        "multiple": false,
+        "names": [
+          "--write"
+        ],
+        "nargs": 0,
+        "required": false,
+        "takes_value": false
+      },
+      {
+        "choices": null,
+        "default": false,
+        "multiple": false,
+        "names": [
+          "--force"
+        ],
+        "nargs": 0,
+        "required": false,
+        "takes_value": false
+      },
+      {
+        "choices": null,
+        "default": false,
+        "multiple": false,
+        "names": [
+          "--json"
+        ],
+        "nargs": 0,
+        "required": false,
+        "takes_value": false
+      }
+    ],
+    "events": [
+      {
+        "choices": null,
+        "default": ".",
+        "multiple": false,
+        "names": [
+          "--root"
+        ],
+        "nargs": null,
+        "required": false,
+        "takes_value": true
+      },
+      {
+        "choices": null,
+        "default": null,
+        "multiple": false,
+        "names": [
+          "--since"
+        ],
+        "nargs": null,
+        "required": false,
+        "takes_value": true
+      },
+      {
+        "choices": null,
+        "default": false,
+        "multiple": false,
+        "names": [
+          "--jsonl"
+        ],
+        "nargs": 0,
+        "required": false,
+        "takes_value": false
+      },
+      {
+        "choices": null,
+        "default": false,
+        "multiple": false,
+        "names": [
+          "--json"
+        ],
+        "nargs": 0,
+        "required": false,
+        "takes_value": false
+      }
+    ],
+    "export-handoff": [
+      {
+        "choices": null,
+        "default": ".",
+        "multiple": false,
+        "names": [
+          "--root"
+        ],
+        "nargs": null,
+        "required": false,
+        "takes_value": true
+      },
+      {
+        "choices": null,
+        "default": null,
+        "multiple": false,
+        "names": [
+          "--step"
+        ],
+        "nargs": null,
+        "required": true,
+        "takes_value": true
+      },
+      {
+        "choices": [
+          "json",
+          "markdown"
+        ],
+        "default": "json",
+        "multiple": false,
+        "names": [
+          "--format"
+        ],
+        "nargs": null,
+        "required": false,
+        "takes_value": true
+      },
+      {
+        "choices": null,
+        "default": null,
+        "multiple": false,
+        "names": [
+          "--output"
+        ],
+        "nargs": null,
+        "required": false,
+        "takes_value": true
+      }
+    ],
+    "fail-step": [
+      {
+        "choices": null,
+        "default": null,
+        "multiple": false,
+        "names": [
+          "step"
+        ],
+        "nargs": null,
+        "required": true,
+        "takes_value": true
+      },
+      {
+        "choices": null,
+        "default": ".",
+        "multiple": false,
+        "names": [
+          "--root"
+        ],
+        "nargs": null,
+        "required": false,
+        "takes_value": true
+      },
+      {
+        "choices": null,
+        "default": null,
+        "multiple": false,
+        "names": [
+          "--attempt"
+        ],
+        "nargs": null,
+        "required": false,
+        "takes_value": true
+      },
+      {
+        "choices": null,
+        "default": null,
+        "multiple": false,
+        "names": [
+          "--reason"
+        ],
+        "nargs": null,
+        "required": true,
+        "takes_value": true
+      },
+      {
+        "choices": null,
+        "default": null,
+        "multiple": false,
+        "names": [
+          "--agent"
+        ],
+        "nargs": null,
+        "required": false,
+        "takes_value": true
+      },
+      {
+        "choices": null,
+        "default": false,
+        "multiple": false,
+        "names": [
+          "--json"
+        ],
+        "nargs": 0,
+        "required": false,
+        "takes_value": false
+      }
+    ],
+    "finish-run": [
+      {
+        "choices": null,
+        "default": ".",
+        "multiple": false,
+        "names": [
+          "--root"
+        ],
+        "nargs": null,
+        "required": false,
+        "takes_value": true
+      },
+      {
+        "choices": null,
+        "default": ".agent/plan.lock.json",
+        "multiple": false,
+        "names": [
+          "--plan"
+        ],
+        "nargs": null,
+        "required": false,
+        "takes_value": true
+      },
+      {
+        "choices": null,
+        "default": false,
+        "multiple": false,
+        "names": [
+          "--json"
+        ],
+        "nargs": 0,
+        "required": false,
+        "takes_value": false
+      },
+      {
+        "choices": null,
+        "default": false,
+        "multiple": false,
+        "names": [
+          "--strict"
+        ],
+        "nargs": 0,
+        "required": false,
+        "takes_value": false
+      }
+    ],
+    "finish-step": [
+      {
+        "choices": null,
+        "default": null,
+        "multiple": false,
+        "names": [
+          "step"
+        ],
+        "nargs": null,
+        "required": true,
+        "takes_value": true
+      },
+      {
+        "choices": null,
+        "default": null,
+        "multiple": false,
+        "names": [
+          "--attempt"
+        ],
+        "nargs": null,
+        "required": false,
+        "takes_value": true
+      },
+      {
+        "choices": null,
+        "default": ".",
+        "multiple": false,
+        "names": [
+          "--root"
+        ],
+        "nargs": null,
+        "required": false,
+        "takes_value": true
+      },
+      {
+        "choices": null,
+        "default": null,
+        "multiple": false,
+        "names": [
+          "--agent"
+        ],
+        "nargs": null,
+        "required": false,
+        "takes_value": true
+      },
+      {
+        "choices": null,
+        "default": false,
+        "multiple": false,
+        "names": [
+          "--json"
+        ],
+        "nargs": 0,
+        "required": false,
+        "takes_value": false
+      },
+      {
+        "choices": null,
+        "default": false,
+        "multiple": false,
+        "names": [
+          "--strict"
+        ],
+        "nargs": 0,
+        "required": false,
+        "takes_value": false
+      },
+      {
+        "choices": null,
+        "default": false,
+        "multiple": false,
+        "names": [
+          "--replay"
+        ],
+        "nargs": 0,
+        "required": false,
+        "takes_value": false
+      }
+    ],
+    "init": [
+      {
+        "choices": null,
+        "default": ".",
+        "multiple": false,
+        "names": [
+          "--root"
+        ],
+        "nargs": null,
+        "required": false,
+        "takes_value": true
+      },
+      {
+        "choices": null,
+        "default": false,
+        "multiple": false,
+        "names": [
+          "--force"
+        ],
+        "nargs": 0,
+        "required": false,
+        "takes_value": false
+      },
+      {
+        "choices": null,
+        "default": null,
+        "multiple": false,
+        "names": [
+          "--pack"
+        ],
+        "nargs": null,
+        "required": false,
+        "takes_value": true
+      },
+      {
+        "choices": null,
+        "default": null,
+        "multiple": false,
+        "names": [
+          "--profile"
+        ],
+        "nargs": null,
+        "required": false,
+        "takes_value": true
+      },
+      {
+        "choices": null,
+        "default": null,
+        "multiple": false,
+        "names": [
+          "--reason"
+        ],
+        "nargs": null,
+        "required": false,
+        "takes_value": true
+      }
+    ],
+    "init-execution": [
+      {
+        "choices": null,
+        "default": ".",
+        "multiple": false,
+        "names": [
+          "--root"
+        ],
+        "nargs": null,
+        "required": false,
+        "takes_value": true
+      },
+      {
+        "choices": null,
+        "default": false,
+        "multiple": false,
+        "names": [
+          "--force"
+        ],
+        "nargs": 0,
+        "required": false,
+        "takes_value": false
+      }
+    ],
+    "intake": [
+      {
+        "choices": null,
+        "default": ".",
+        "multiple": false,
+        "names": [
+          "--root"
+        ],
+        "nargs": null,
+        "required": false,
+        "takes_value": true
+      },
+      {
+        "choices": null,
+        "default": null,
+        "multiple": false,
+        "names": [
+          "--from"
+        ],
+        "nargs": null,
+        "required": true,
+        "takes_value": true
+      }
+    ],
+    "lint-handoff": [
+      {
+        "choices": null,
+        "default": ".",
+        "multiple": false,
+        "names": [
+          "--root"
+        ],
+        "nargs": null,
+        "required": false,
+        "takes_value": true
+      },
+      {
+        "choices": null,
+        "default": null,
+        "multiple": false,
+        "names": [
+          "--input"
+        ],
+        "nargs": null,
+        "required": true,
+        "takes_value": true
+      },
+      {
+        "choices": null,
+        "default": false,
+        "multiple": false,
+        "names": [
+          "--json"
+        ],
+        "nargs": 0,
+        "required": false,
+        "takes_value": false
+      }
+    ],
+    "lock-plan": [
+      {
+        "choices": null,
+        "default": ".agent/plan.lock.json",
+        "multiple": false,
+        "names": [
+          "plan"
+        ],
+        "nargs": "?",
+        "required": false,
+        "takes_value": true
+      },
+      {
+        "choices": null,
+        "default": false,
+        "multiple": false,
+        "names": [
+          "--stdin"
+        ],
+        "nargs": 0,
+        "required": false,
+        "takes_value": false
+      },
+      {
+        "choices": null,
+        "default": null,
+        "multiple": false,
+        "names": [
+          "--from-json"
+        ],
+        "nargs": null,
+        "required": false,
+        "takes_value": true
+      },
+      {
+        "choices": null,
+        "default": false,
+        "multiple": false,
+        "names": [
+          "--json"
+        ],
+        "nargs": 0,
+        "required": false,
+        "takes_value": false
+      }
+    ],
+    "next-action": [
+      {
+        "choices": null,
+        "default": ".",
+        "multiple": false,
+        "names": [
+          "--root"
+        ],
+        "nargs": null,
+        "required": false,
+        "takes_value": true
+      },
+      {
+        "choices": null,
+        "default": false,
+        "multiple": false,
+        "names": [
+          "--json"
+        ],
+        "nargs": 0,
+        "required": false,
+        "takes_value": false
+      },
+      {
+        "choices": null,
+        "default": false,
+        "multiple": false,
+        "names": [
+          "--strict"
+        ],
+        "nargs": 0,
+        "required": false,
+        "takes_value": false
+      }
+    ],
+    "next-step": [
+      {
+        "choices": null,
+        "default": ".",
+        "multiple": false,
+        "names": [
+          "--root"
+        ],
+        "nargs": null,
+        "required": false,
+        "takes_value": true
+      },
+      {
+        "choices": null,
+        "default": false,
+        "multiple": false,
+        "names": [
+          "--json"
+        ],
+        "nargs": 0,
+        "required": false,
+        "takes_value": false
+      }
+    ],
+    "pack": [],
+    "pack inspect": [
+      {
+        "choices": null,
+        "default": null,
+        "multiple": false,
+        "names": [
+          "path"
+        ],
+        "nargs": null,
+        "required": true,
+        "takes_value": true
+      },
+      {
+        "choices": null,
+        "default": false,
+        "multiple": false,
+        "names": [
+          "--json"
+        ],
+        "nargs": 0,
+        "required": false,
+        "takes_value": false
+      }
+    ],
+    "reclaim-step": [
+      {
+        "choices": null,
+        "default": null,
+        "multiple": false,
+        "names": [
+          "step"
+        ],
+        "nargs": null,
+        "required": true,
+        "takes_value": true
+      },
+      {
+        "choices": null,
+        "default": ".",
+        "multiple": false,
+        "names": [
+          "--root"
+        ],
+        "nargs": null,
+        "required": false,
+        "takes_value": true
+      },
+      {
+        "choices": null,
+        "default": null,
+        "multiple": false,
+        "names": [
+          "--agent"
+        ],
+        "nargs": null,
+        "required": false,
+        "takes_value": true
+      },
+      {
+        "choices": null,
+        "default": null,
+        "multiple": false,
+        "names": [
+          "--reason"
+        ],
+        "nargs": null,
+        "required": true,
+        "takes_value": true
+      },
+      {
+        "choices": null,
+        "default": null,
+        "multiple": false,
+        "names": [
+          "--lease-minutes"
+        ],
+        "nargs": null,
+        "required": false,
+        "takes_value": true
+      },
+      {
+        "choices": null,
+        "default": false,
+        "multiple": false,
+        "names": [
+          "--json"
+        ],
+        "nargs": 0,
+        "required": false,
+        "takes_value": false
+      }
+    ],
+    "recommend-workflow": [
+      {
+        "choices": null,
+        "default": null,
+        "multiple": false,
+        "names": [
+          "--brief"
+        ],
+        "nargs": null,
+        "required": false,
+        "takes_value": true
+      },
+      {
+        "choices": null,
+        "default": false,
+        "multiple": false,
+        "names": [
+          "--stdin"
+        ],
+        "nargs": 0,
+        "required": false,
+        "takes_value": false
+      },
+      {
+        "choices": null,
+        "default": false,
+        "multiple": false,
+        "names": [
+          "--json"
+        ],
+        "nargs": 0,
+        "required": false,
+        "takes_value": false
+      },
+      {
+        "choices": null,
+        "default": null,
+        "multiple": false,
+        "names": [
+          "--selected-profile"
+        ],
+        "nargs": null,
+        "required": false,
+        "takes_value": true
+      },
+      {
+        "choices": null,
+        "default": null,
+        "multiple": false,
+        "names": [
+          "--reason"
+        ],
+        "nargs": null,
+        "required": false,
+        "takes_value": true
+      }
+    ],
+    "record-capability": [
+      {
+        "choices": null,
+        "default": ".",
+        "multiple": false,
+        "names": [
+          "--root"
+        ],
+        "nargs": null,
+        "required": false,
+        "takes_value": true
+      },
+      {
+        "choices": null,
+        "default": null,
+        "multiple": false,
+        "names": [
+          "--id"
+        ],
+        "nargs": null,
+        "required": true,
+        "takes_value": true
+      },
+      {
+        "choices": null,
+        "default": null,
+        "multiple": false,
+        "names": [
+          "--capability"
+        ],
+        "nargs": null,
+        "required": true,
+        "takes_value": true
+      },
+      {
+        "choices": null,
+        "default": null,
+        "multiple": false,
+        "names": [
+          "--provider"
+        ],
+        "nargs": null,
+        "required": true,
+        "takes_value": true
+      },
+      {
+        "choices": null,
+        "default": null,
+        "multiple": false,
+        "names": [
+          "--reason"
+        ],
+        "nargs": null,
+        "required": true,
+        "takes_value": true
+      },
+      {
+        "choices": null,
+        "default": null,
+        "multiple": true,
+        "names": [
+          "--evidence"
+        ],
+        "nargs": null,
+        "required": false,
+        "takes_value": true
+      }
+    ],
+    "record-command": [
+      {
+        "choices": null,
+        "default": ".",
+        "multiple": false,
+        "names": [
+          "--root"
+        ],
+        "nargs": null,
+        "required": false,
+        "takes_value": true
+      },
+      {
+        "choices": null,
+        "default": null,
+        "multiple": false,
+        "names": [
+          "--step"
+        ],
+        "nargs": null,
+        "required": true,
+        "takes_value": true
+      },
+      {
+        "choices": null,
+        "default": null,
+        "multiple": false,
+        "names": [
+          "--attempt"
+        ],
+        "nargs": null,
+        "required": false,
+        "takes_value": true
+      },
+      {
+        "choices": null,
+        "default": null,
+        "multiple": false,
+        "names": [
+          "--exit-code"
+        ],
+        "nargs": null,
+        "required": true,
+        "takes_value": true
+      },
+      {
+        "choices": null,
+        "default": null,
+        "multiple": false,
+        "names": [
+          "--gate"
+        ],
+        "nargs": null,
+        "required": false,
+        "takes_value": true
+      },
+      {
+        "choices": null,
+        "default": null,
+        "multiple": false,
+        "names": [
+          "--agent"
+        ],
+        "nargs": null,
+        "required": false,
+        "takes_value": true
+      },
+      {
+        "choices": null,
+        "default": false,
+        "multiple": false,
+        "names": [
+          "--json"
+        ],
+        "nargs": 0,
+        "required": false,
+        "takes_value": false
+      },
+      {
+        "choices": null,
+        "default": null,
+        "multiple": true,
+        "names": [
+          "command"
+        ],
+        "nargs": "...",
+        "required": false,
+        "takes_value": true
+      }
+    ],
+    "record-context": [
+      {
+        "choices": null,
+        "default": ".",
+        "multiple": false,
+        "names": [
+          "--root"
+        ],
+        "nargs": null,
+        "required": false,
+        "takes_value": true
+      },
+      {
+        "choices": null,
+        "default": null,
+        "multiple": false,
+        "names": [
+          "--id"
+        ],
+        "nargs": null,
+        "required": true,
+        "takes_value": true
+      },
+      {
+        "choices": null,
+        "default": null,
+        "multiple": false,
+        "names": [
+          "--source"
+        ],
+        "nargs": null,
+        "required": true,
+        "takes_value": true
+      },
+      {
+        "choices": null,
+        "default": null,
+        "multiple": false,
+        "names": [
+          "--reason"
+        ],
+        "nargs": null,
+        "required": true,
+        "takes_value": true
+      },
+      {
+        "choices": null,
+        "default": null,
+        "multiple": true,
+        "names": [
+          "--used-for"
+        ],
+        "nargs": null,
+        "required": false,
+        "takes_value": true
+      },
+      {
+        "choices": null,
+        "default": null,
+        "multiple": false,
+        "names": [
+          "--bytes"
+        ],
+        "nargs": null,
+        "required": false,
+        "takes_value": true
+      }
+    ],
+    "record-evidence": [
+      {
+        "choices": null,
+        "default": ".",
+        "multiple": false,
+        "names": [
+          "--root"
+        ],
+        "nargs": null,
+        "required": false,
+        "takes_value": true
+      },
+      {
+        "choices": null,
+        "default": null,
+        "multiple": false,
+        "names": [
+          "--id"
+        ],
+        "nargs": null,
+        "required": true,
+        "takes_value": true
+      },
+      {
+        "choices": null,
+        "default": null,
+        "multiple": false,
+        "names": [
+          "--claim"
+        ],
+        "nargs": null,
+        "required": true,
+        "takes_value": true
+      },
+      {
+        "choices": null,
+        "default": null,
+        "multiple": false,
+        "names": [
+          "--source"
+        ],
+        "nargs": null,
+        "required": true,
+        "takes_value": true
+      },
+      {
+        "choices": [
+          "low",
+          "medium",
+          "high"
+        ],
+        "default": "medium",
+        "multiple": false,
+        "names": [
+          "--confidence"
+        ],
+        "nargs": null,
+        "required": false,
+        "takes_value": true
+      },
+      {
+        "choices": [
+          "command",
+          "file",
+          "log",
+          "review",
+          "runtime",
+          "test",
+          "url",
+          "user"
+        ],
+        "default": null,
+        "multiple": false,
+        "names": [
+          "--kind"
+        ],
+        "nargs": null,
+        "required": false,
+        "takes_value": true
+      },
+      {
+        "choices": null,
+        "default": null,
+        "multiple": true,
+        "names": [
+          "--supports"
+        ],
+        "nargs": null,
+        "required": false,
+        "takes_value": true
+      }
+    ],
+    "record-failure": [
+      {
+        "choices": null,
+        "default": ".",
+        "multiple": false,
+        "names": [
+          "--root"
+        ],
+        "nargs": null,
+        "required": false,
+        "takes_value": true
+      },
+      {
+        "choices": null,
+        "default": null,
+        "multiple": false,
+        "names": [
+          "--command"
+        ],
+        "nargs": null,
+        "required": true,
+        "takes_value": true
+      },
+      {
+        "choices": null,
+        "default": null,
+        "multiple": false,
+        "names": [
+          "--failure-type"
+        ],
+        "nargs": null,
+        "required": true,
+        "takes_value": true
+      },
+      {
+        "choices": null,
+        "default": null,
+        "multiple": true,
+        "names": [
+          "--relevant-lines"
+        ],
+        "nargs": null,
+        "required": false,
+        "takes_value": true
+      },
+      {
+        "choices": null,
+        "default": null,
+        "multiple": false,
+        "names": [
+          "--suspected-cause"
+        ],
+        "nargs": null,
+        "required": true,
+        "takes_value": true
+      },
+      {
+        "choices": null,
+        "default": null,
+        "multiple": false,
+        "names": [
+          "--next-action"
+        ],
+        "nargs": null,
+        "required": true,
+        "takes_value": true
+      }
+    ],
+    "record-file-change": [
+      {
+        "choices": null,
+        "default": ".",
+        "multiple": false,
+        "names": [
+          "--root"
+        ],
+        "nargs": null,
+        "required": false,
+        "takes_value": true
+      },
+      {
+        "choices": null,
+        "default": null,
+        "multiple": false,
+        "names": [
+          "--step"
+        ],
+        "nargs": null,
+        "required": true,
+        "takes_value": true
+      },
+      {
+        "choices": null,
+        "default": null,
+        "multiple": false,
+        "names": [
+          "--attempt"
+        ],
+        "nargs": null,
+        "required": false,
+        "takes_value": true
+      },
+      {
+        "choices": null,
+        "default": null,
+        "multiple": true,
+        "names": [
+          "--path"
+        ],
+        "nargs": null,
+        "required": true,
+        "takes_value": true
+      },
+      {
+        "choices": null,
+        "default": null,
+        "multiple": false,
+        "names": [
+          "--agent"
+        ],
+        "nargs": null,
+        "required": false,
+        "takes_value": true
+      },
+      {
+        "choices": null,
+        "default": false,
+        "multiple": false,
+        "names": [
+          "--json"
+        ],
+        "nargs": 0,
+        "required": false,
+        "takes_value": false
+      }
+    ],
+    "record-review": [
+      {
+        "choices": null,
+        "default": ".",
+        "multiple": false,
+        "names": [
+          "--root"
+        ],
+        "nargs": null,
+        "required": false,
+        "takes_value": true
+      },
+      {
+        "choices": null,
+        "default": null,
+        "multiple": false,
+        "names": [
+          "--manifest"
+        ],
+        "nargs": null,
+        "required": true,
+        "takes_value": true
+      },
+      {
+        "choices": null,
+        "default": false,
+        "multiple": false,
+        "names": [
+          "--emit-evidence"
+        ],
+        "nargs": 0,
+        "required": false,
+        "takes_value": false
+      },
+      {
+        "choices": null,
+        "default": false,
+        "multiple": false,
+        "names": [
+          "--json"
+        ],
+        "nargs": 0,
+        "required": false,
+        "takes_value": false
+      }
+    ],
+    "renew-lease": [
+      {
+        "choices": null,
+        "default": null,
+        "multiple": false,
+        "names": [
+          "step"
+        ],
+        "nargs": null,
+        "required": true,
+        "takes_value": true
+      },
+      {
+        "choices": null,
+        "default": ".",
+        "multiple": false,
+        "names": [
+          "--root"
+        ],
+        "nargs": null,
+        "required": false,
+        "takes_value": true
+      },
+      {
+        "choices": null,
+        "default": null,
+        "multiple": false,
+        "names": [
+          "--attempt"
+        ],
+        "nargs": null,
+        "required": false,
+        "takes_value": true
+      },
+      {
+        "choices": null,
+        "default": null,
+        "multiple": false,
+        "names": [
+          "--agent"
+        ],
+        "nargs": null,
+        "required": false,
+        "takes_value": true
+      },
+      {
+        "choices": null,
+        "default": null,
+        "multiple": false,
+        "names": [
+          "--minutes"
+        ],
+        "nargs": null,
+        "required": false,
+        "takes_value": true
+      },
+      {
+        "choices": null,
+        "default": false,
+        "multiple": false,
+        "names": [
+          "--json"
+        ],
+        "nargs": 0,
+        "required": false,
+        "takes_value": false
+      }
+    ],
+    "replay-gates": [
+      {
+        "choices": null,
+        "default": ".",
+        "multiple": false,
+        "names": [
+          "--root"
+        ],
+        "nargs": null,
+        "required": false,
+        "takes_value": true
+      },
+      {
+        "choices": null,
+        "default": null,
+        "multiple": false,
+        "names": [
+          "--step"
+        ],
+        "nargs": null,
+        "required": false,
+        "takes_value": true
+      },
+      {
+        "choices": null,
+        "default": false,
+        "multiple": false,
+        "names": [
+          "--record"
+        ],
+        "nargs": 0,
+        "required": false,
+        "takes_value": false
+      },
+      {
+        "choices": null,
+        "default": false,
+        "multiple": false,
+        "names": [
+          "--json"
+        ],
+        "nargs": 0,
+        "required": false,
+        "takes_value": false
+      }
+    ],
+    "review-manifest": [
+      {
+        "choices": null,
+        "default": ".",
+        "multiple": false,
+        "names": [
+          "--root"
+        ],
+        "nargs": null,
+        "required": false,
+        "takes_value": true
+      },
+      {
+        "choices": null,
+        "default": null,
+        "multiple": false,
+        "names": [
+          "--state-dir"
+        ],
+        "nargs": null,
+        "required": true,
+        "takes_value": true
+      },
+      {
+        "choices": null,
+        "default": null,
+        "multiple": false,
+        "names": [
+          "--branch"
+        ],
+        "nargs": null,
+        "required": false,
+        "takes_value": true
+      },
+      {
+        "choices": null,
+        "default": "docs/ai/config.json",
+        "multiple": false,
+        "names": [
+          "--config"
+        ],
+        "nargs": null,
+        "required": false,
+        "takes_value": true
+      },
+      {
+        "choices": null,
+        "default": null,
+        "multiple": false,
+        "names": [
+          "--findings-json"
+        ],
+        "nargs": null,
+        "required": false,
+        "takes_value": true
+      },
+      {
+        "choices": [
+          "deep",
+          "light",
+          "none",
+          "spec_quality",
+          "standard"
+        ],
+        "default": "deep",
+        "multiple": false,
+        "names": [
+          "--depth-profile"
+        ],
+        "nargs": null,
+        "required": false,
+        "takes_value": true
+      },
+      {
+        "choices": null,
+        "default": false,
+        "multiple": false,
+        "names": [
+          "--write"
+        ],
+        "nargs": 0,
+        "required": false,
+        "takes_value": false
+      },
+      {
+        "choices": null,
+        "default": false,
+        "multiple": false,
+        "names": [
+          "--json"
+        ],
+        "nargs": 0,
+        "required": false,
+        "takes_value": false
+      },
+      {
+        "choices": null,
+        "default": false,
+        "multiple": false,
+        "names": [
+          "--fail-on-block"
+        ],
+        "nargs": 0,
+        "required": false,
+        "takes_value": false
+      },
+      {
+        "choices": null,
+        "default": false,
+        "multiple": false,
+        "names": [
+          "--strict-exit"
+        ],
+        "nargs": 0,
+        "required": false,
+        "takes_value": false
+      }
+    ],
+    "run": [
+      {
+        "choices": null,
+        "default": ".",
+        "multiple": false,
+        "names": [
+          "--root"
+        ],
+        "nargs": null,
+        "required": false,
+        "takes_value": true
+      },
+      {
+        "choices": null,
+        "default": null,
+        "multiple": false,
+        "names": [
+          "--step"
+        ],
+        "nargs": null,
+        "required": true,
+        "takes_value": true
+      },
+      {
+        "choices": null,
+        "default": null,
+        "multiple": false,
+        "names": [
+          "--attempt"
+        ],
+        "nargs": null,
+        "required": false,
+        "takes_value": true
+      },
+      {
+        "choices": null,
+        "default": null,
+        "multiple": false,
+        "names": [
+          "--gate"
+        ],
+        "nargs": null,
+        "required": false,
+        "takes_value": true
+      },
+      {
+        "choices": null,
+        "default": null,
+        "multiple": false,
+        "names": [
+          "--agent"
+        ],
+        "nargs": null,
+        "required": false,
+        "takes_value": true
+      },
+      {
+        "choices": null,
+        "default": false,
+        "multiple": false,
+        "names": [
+          "--confirm-risk"
+        ],
+        "nargs": 0,
+        "required": false,
+        "takes_value": false
+      },
+      {
+        "choices": null,
+        "default": false,
+        "multiple": false,
+        "names": [
+          "--json"
+        ],
+        "nargs": 0,
+        "required": false,
+        "takes_value": false
+      },
+      {
+        "choices": null,
+        "default": null,
+        "multiple": true,
+        "names": [
+          "command"
+        ],
+        "nargs": "...",
+        "required": false,
+        "takes_value": true
+      }
+    ],
+    "runtime-status": [
+      {
+        "choices": null,
+        "default": ".",
+        "multiple": false,
+        "names": [
+          "--root"
+        ],
+        "nargs": null,
+        "required": false,
+        "takes_value": true
+      },
+      {
+        "choices": null,
+        "default": ".agent/runtime.config.json",
+        "multiple": false,
+        "names": [
+          "--config"
+        ],
+        "nargs": null,
+        "required": false,
+        "takes_value": true
+      },
+      {
+        "choices": null,
+        "default": false,
+        "multiple": false,
+        "names": [
+          "--record"
+        ],
+        "nargs": 0,
+        "required": false,
+        "takes_value": false
+      },
+      {
+        "choices": null,
+        "default": false,
+        "multiple": false,
+        "names": [
+          "--json"
+        ],
+        "nargs": 0,
+        "required": false,
+        "takes_value": false
+      },
+      {
+        "choices": null,
+        "default": false,
+        "multiple": false,
+        "names": [
+          "--probe"
+        ],
+        "nargs": 0,
+        "required": false,
+        "takes_value": false
+      },
+      {
+        "choices": null,
+        "default": false,
+        "multiple": false,
+        "names": [
+          "--strict"
+        ],
+        "nargs": 0,
+        "required": false,
+        "takes_value": false
+      }
+    ],
+    "status": [
+      {
+        "choices": null,
+        "default": ".",
+        "multiple": false,
+        "names": [
+          "--root"
+        ],
+        "nargs": null,
+        "required": false,
+        "takes_value": true
+      }
+    ],
+    "validate-plan": [
+      {
+        "choices": null,
+        "default": ".agent/plan.lock.json",
+        "multiple": false,
+        "names": [
+          "plan"
+        ],
+        "nargs": "?",
+        "required": false,
+        "takes_value": true
+      }
+    ],
+    "verify-proof": [
+      {
+        "choices": null,
+        "default": ".",
+        "multiple": false,
+        "names": [
+          "--root"
+        ],
+        "nargs": null,
+        "required": false,
+        "takes_value": true
+      },
+      {
+        "choices": null,
+        "default": ".agent/proof-pack.json",
+        "multiple": false,
+        "names": [
+          "--proof"
+        ],
+        "nargs": null,
+        "required": false,
+        "takes_value": true
+      },
+      {
+        "choices": null,
+        "default": false,
+        "multiple": false,
+        "names": [
+          "--replay"
+        ],
+        "nargs": 0,
+        "required": false,
+        "takes_value": false
+      },
+      {
+        "choices": null,
+        "default": false,
+        "multiple": false,
+        "names": [
+          "--strict"
+        ],
+        "nargs": 0,
+        "required": false,
+        "takes_value": false
+      }
+    ],
+    "verify-run": [
+      {
+        "choices": null,
+        "default": ".",
+        "multiple": false,
+        "names": [
+          "--root"
+        ],
+        "nargs": null,
+        "required": false,
+        "takes_value": true
+      },
+      {
+        "choices": null,
+        "default": ".agent/plan.lock.json",
+        "multiple": false,
+        "names": [
+          "--plan"
+        ],
+        "nargs": null,
+        "required": false,
+        "takes_value": true
+      },
+      {
+        "choices": null,
+        "default": false,
+        "multiple": false,
+        "names": [
+          "--strict"
+        ],
+        "nargs": 0,
+        "required": false,
+        "takes_value": false
+      },
+      {
+        "choices": null,
+        "default": true,
+        "multiple": false,
+        "names": [
+          "--no-record"
+        ],
+        "nargs": 0,
+        "required": false,
+        "takes_value": false
+      },
+      {
+        "choices": null,
+        "default": false,
+        "multiple": false,
+        "names": [
+          "--json"
+        ],
+        "nargs": 0,
+        "required": false,
+        "takes_value": false
+      }
+    ],
+    "verify-step": [
+      {
+        "choices": null,
+        "default": null,
+        "multiple": false,
+        "names": [
+          "step"
+        ],
+        "nargs": null,
+        "required": true,
+        "takes_value": true
+      },
+      {
+        "choices": null,
+        "default": ".",
+        "multiple": false,
+        "names": [
+          "--root"
+        ],
+        "nargs": null,
+        "required": false,
+        "takes_value": true
+      },
+      {
+        "choices": null,
+        "default": null,
+        "multiple": false,
+        "names": [
+          "--attempt"
+        ],
+        "nargs": null,
+        "required": false,
+        "takes_value": true
+      },
+      {
+        "choices": null,
+        "default": null,
+        "multiple": false,
+        "names": [
+          "--agent"
+        ],
+        "nargs": null,
+        "required": false,
+        "takes_value": true
+      },
+      {
+        "choices": null,
+        "default": false,
+        "multiple": false,
+        "names": [
+          "--strict"
+        ],
+        "nargs": 0,
+        "required": false,
+        "takes_value": false
+      },
+      {
+        "choices": null,
+        "default": false,
+        "multiple": false,
+        "names": [
+          "--replay"
+        ],
+        "nargs": 0,
+        "required": false,
+        "takes_value": false
+      },
+      {
+        "choices": null,
+        "default": false,
+        "multiple": false,
+        "names": [
+          "--json"
+        ],
+        "nargs": 0,
+        "required": false,
+        "takes_value": false
+      }
+    ],
+    "view-proof": [
+      {
+        "choices": null,
+        "default": false,
+        "multiple": false,
+        "names": [
+          "--html"
+        ],
+        "nargs": 0,
+        "required": false,
+        "takes_value": false
+      },
+      {
+        "choices": null,
+        "default": ".",
+        "multiple": false,
+        "names": [
+          "--root"
+        ],
+        "nargs": null,
+        "required": false,
+        "takes_value": true
+      },
+      {
+        "choices": null,
+        "default": ".agent/proof-pack.json",
+        "multiple": false,
+        "names": [
+          "--proof"
+        ],
+        "nargs": null,
+        "required": false,
+        "takes_value": true
+      },
+      {
+        "choices": null,
+        "default": ".agent/proof-report.html",
+        "multiple": false,
+        "names": [
+          "--output"
+        ],
+        "nargs": null,
+        "required": false,
+        "takes_value": true
+      }
+    ],
+    "waive-capability": [
+      {
+        "choices": null,
+        "default": ".",
+        "multiple": false,
+        "names": [
+          "--root"
+        ],
+        "nargs": null,
+        "required": false,
+        "takes_value": true
+      },
+      {
+        "choices": null,
+        "default": null,
+        "multiple": false,
+        "names": [
+          "--id"
+        ],
+        "nargs": null,
+        "required": true,
+        "takes_value": true
+      },
+      {
+        "choices": null,
+        "default": null,
+        "multiple": false,
+        "names": [
+          "--capability"
+        ],
+        "nargs": null,
+        "required": true,
+        "takes_value": true
+      },
+      {
+        "choices": null,
+        "default": null,
+        "multiple": false,
+        "names": [
+          "--reason"
+        ],
+        "nargs": null,
+        "required": true,
+        "takes_value": true
+      },
+      {
+        "choices": null,
+        "default": null,
+        "multiple": true,
+        "names": [
+          "--evidence"
+        ],
+        "nargs": null,
+        "required": false,
+        "takes_value": true
+      }
+    ],
+    "workflow-contract": [
+      {
+        "choices": null,
+        "default": ".agent/workflow.contract.json",
+        "multiple": false,
+        "names": [
+          "path"
+        ],
+        "nargs": "?",
+        "required": false,
+        "takes_value": true
+      },
+      {
+        "choices": null,
+        "default": ".",
+        "multiple": false,
+        "names": [
+          "--root"
+        ],
+        "nargs": null,
+        "required": false,
+        "takes_value": true
+      },
+      {
+        "choices": null,
+        "default": null,
+        "multiple": false,
+        "names": [
+          "--from-json"
+        ],
+        "nargs": null,
+        "required": false,
+        "takes_value": true
+      },
+      {
+        "choices": null,
+        "default": false,
+        "multiple": false,
+        "names": [
+          "--validate"
+        ],
+        "nargs": 0,
+        "required": false,
+        "takes_value": false
+      }
+    ]
+  },
+  "json_outputs": {
+    "aggregate-ledgers": [
+      {
+        "keys": {
+          "collisions": "array",
+          "dry_run": "boolean",
+          "output": "string",
+          "rewrites": "array",
+          "source_count": "integer",
+          "sources": "array",
+          "status": "string"
+        },
+        "type": "object"
+      }
+    ],
+    "amend-step": [
+      {
+        "keys": {
+          "agent_id": "string|null",
+          "amends_attempt": "string|null",
+          "amends_completed_at": "string|null",
+          "attempt_id": "string",
+          "event": "string",
+          "findings": "array|null",
+          "lease_expires_at": "string|null",
+          "reason": "string|null",
+          "reason_code": "string|null",
+          "recorded_at": "string",
+          "schema_version": "string",
+          "step_id": "string"
+        },
+        "type": "object"
+      }
+    ],
+    "block-step": [
+      {
+        "keys": {
+          "agent_id": "string|null",
+          "amends_attempt": "string|null",
+          "amends_completed_at": "string|null",
+          "attempt_id": "string",
+          "event": "string",
+          "findings": "array|null",
+          "lease_expires_at": "string|null",
+          "reason": "string|null",
+          "reason_code": "string|null",
+          "recorded_at": "string",
+          "schema_version": "string",
+          "step_id": "string"
+        },
+        "type": "object"
+      }
+    ],
+    "claim-step": [
+      {
+        "keys": {
+          "agent_id": "string|null",
+          "amends_attempt": "string|null",
+          "amends_completed_at": "string|null",
+          "attempt_id": "string",
+          "event": "string",
+          "findings": "array|null",
+          "lease_expires_at": "string|null",
+          "reason": "string|null",
+          "reason_code": "string|null",
+          "recorded_at": "string",
+          "schema_version": "string",
+          "step_id": "string"
+        },
+        "type": "object"
+      }
+    ],
+    "complete-step": [
+      {
+        "keys": {
+          "agent_id": "string|null",
+          "amends_attempt": "string|null",
+          "amends_completed_at": "string|null",
+          "attempt_id": "string",
+          "event": "string",
+          "findings": "array|null",
+          "lease_expires_at": "string|null",
+          "reason": "string|null",
+          "reason_code": "string|null",
+          "recorded_at": "string",
+          "schema_version": "string",
+          "step_id": "string"
+        },
+        "type": "object"
+      }
+    ],
+    "detect-stuck": [
+      {
+        "keys": {
+          "findings": "array",
+          "recorded_at": "string",
+          "schema_version": "string",
+          "status": "string",
+          "thresholds": "object"
+        },
+        "type": "object"
+      }
+    ],
+    "doctor": [
+      {
+        "keys": {
+          "contract": "object|null",
+          "findings": "array",
+          "status": "string"
+        },
+        "type": "object"
+      }
+    ],
+    "draft-plan": [
+      {
+        "keys": {
+          "contract_path": "string|null",
+          "errors": "array|null",
+          "path": "string|null",
+          "plan_candidate": "object|null",
+          "recommended": "object|null",
+          "schema_version": "string|null",
+          "selected": "object|null",
+          "selection_mode": "string|null",
+          "status": "string",
+          "warnings": "array|null",
+          "workflow_contract": "object|null"
+        },
+        "type": "object"
+      }
+    ],
+    "events": [
+      {
+        "items": {
+          "keys": {
+            "attempt_id": "string|null",
+            "data": "object",
+            "source": "object",
+            "step_id": "string|null",
+            "timestamp": "string",
+            "type": "string"
+          },
+          "type": "object"
+        },
+        "type": "array"
+      }
+    ],
+    "fail-step": [
+      {
+        "keys": {
+          "agent_id": "string|null",
+          "amends_attempt": "string|null",
+          "amends_completed_at": "string|null",
+          "attempt_id": "string",
+          "event": "string",
+          "findings": "array|null",
+          "lease_expires_at": "string|null",
+          "reason": "string|null",
+          "reason_code": "string|null",
+          "recorded_at": "string",
+          "schema_version": "string",
+          "step_id": "string"
+        },
+        "type": "object"
+      }
+    ],
+    "finish-run": [
+      {
+        "keys": {
+          "diagnostics": "array",
+          "gates": "array",
+          "ok": "boolean",
+          "stopped_at": "string|null"
+        },
+        "type": "object"
+      }
+    ],
+    "finish-step": [
+      {
+        "keys": {
+          "completed": "boolean",
+          "diagnostics": "array",
+          "verification_status": "string",
+          "verified": "boolean"
+        },
+        "type": "object"
+      }
+    ],
+    "lint-handoff": [
+      {
+        "keys": {
+          "findings": "array"
+        },
+        "type": "object"
+      }
+    ],
+    "lock-plan": [
+      {
+        "keys": {
+          "errors": "array",
+          "path": "string|null",
+          "status": "string"
+        },
+        "type": "object"
+      }
+    ],
+    "next-action": [
+      {
+        "keys": {
+          "args": "array|null",
+          "blocking": "boolean",
+          "command": "string|null",
+          "diagnostics": "array",
+          "gate": "string|null",
+          "reason": "string",
+          "state": "string",
+          "step_id": "string|null"
+        },
+        "type": "object"
+      }
+    ],
+    "next-step": [
+      {
+        "keys": {
+          "action": "string",
+          "evidence_ids": "array",
+          "expected_diff": "array",
+          "files": "array",
+          "id": "string",
+          "preconditions": "array",
+          "validation": "array"
+        },
+        "type": "object"
+      },
+      {
+        "type": "null"
+      }
+    ],
+    "pack inspect": [
+      {
+        "keys": {
+          "errors": "array",
+          "id": "string|null",
+          "manifest_sha256": "string|null",
+          "profiles": "array|null",
+          "status": "string",
+          "version": "string|null"
+        },
+        "type": "object"
+      }
+    ],
+    "reclaim-step": [
+      {
+        "keys": {
+          "agent_id": "string|null",
+          "amends_attempt": "string|null",
+          "amends_completed_at": "string|null",
+          "attempt_id": "string",
+          "event": "string",
+          "findings": "array|null",
+          "lease_expires_at": "string|null",
+          "reason": "string|null",
+          "reason_code": "string|null",
+          "recorded_at": "string",
+          "schema_version": "string",
+          "step_id": "string"
+        },
+        "type": "object"
+      }
+    ],
+    "recommend-workflow": [
+      {
+        "keys": {
+          "errors": "array",
+          "reason": "string|null",
+          "recommended": "object|null",
+          "selected": "object|null",
+          "selection_mode": "string|null",
+          "status": "string"
+        },
+        "type": "object"
+      }
+    ],
+    "record-command": [
+      {
+        "keys": {
+          "attempt_id": "string",
+          "command": "array",
+          "cwd": "string",
+          "decision": "string",
+          "env_names": "array",
+          "exit_code": "integer",
+          "finished_at": "string",
+          "gate": "string|null",
+          "id": "string",
+          "provenance": "string",
+          "risk": "object",
+          "schema_version": "string",
+          "started_at": "string",
+          "stderr_path": "string",
+          "stderr_sha256": "string",
+          "stderr_truncated": "boolean",
+          "stdout_path": "string",
+          "stdout_sha256": "string",
+          "stdout_truncated": "boolean",
+          "step_id": "string",
+          "timed_out": "boolean",
+          "timeout_seconds": "number|null",
+          "truncated": "boolean"
+        },
+        "type": "object"
+      }
+    ],
+    "record-file-change": [
+      {
+        "items": {
+          "keys": {
+            "after_sha256": "string|null",
+            "attempt_id": "string",
+            "before_git_blob": "string|null",
+            "change_kind": "string",
+            "diff_algorithm": "string",
+            "diff_command_version": "string",
+            "diff_engine": "string",
+            "diff_unified": "integer",
+            "hunk_attribution": "string",
+            "hunks": "array",
+            "id": "string",
+            "path": "string",
+            "previous_path": "string|null",
+            "recorded_at": "string",
+            "schema_version": "string",
+            "step_id": "string"
+          },
+          "type": "object"
+        },
+        "type": "array"
+      }
+    ],
+    "record-review": [
+      {
+        "keys": {
+          "active_blocking": "array",
+          "findings": "array",
+          "gate_status": "string",
+          "manifest_sha256": "string",
+          "recorded_at": "string",
+          "review_run_id": "string",
+          "schema_version": "string",
+          "source": "string"
+        },
+        "type": "object"
+      }
+    ],
+    "renew-lease": [
+      {
+        "keys": {
+          "agent_id": "string|null",
+          "amends_attempt": "string|null",
+          "amends_completed_at": "string|null",
+          "attempt_id": "string",
+          "event": "string",
+          "findings": "array|null",
+          "lease_expires_at": "string|null",
+          "reason": "string|null",
+          "reason_code": "string|null",
+          "recorded_at": "string",
+          "schema_version": "string",
+          "step_id": "string"
+        },
+        "type": "object"
+      }
+    ],
+    "replay-gates": [
+      {
+        "keys": {
+          "errors": "array",
+          "receipts": "array",
+          "recorded": "boolean",
+          "status": "string",
+          "warnings": "array"
+        },
+        "type": "object"
+      }
+    ],
+    "review-manifest": [
+      {
+        "keys": {
+          "active_blocking": "array",
+          "artifacts": "object",
+          "depth_profile": "string",
+          "findings": "array",
+          "gate_status": "string",
+          "review_run_id": "string",
+          "schema_version": "string"
+        },
+        "type": "object"
+      }
+    ],
+    "run": [
+      {
+        "keys": {
+          "attempt_id": "string",
+          "command": "array",
+          "cwd": "string",
+          "decision": "string",
+          "env_names": "array",
+          "exit_code": "integer",
+          "finished_at": "string",
+          "gate": "string|null",
+          "id": "string",
+          "provenance": "string",
+          "risk": "object",
+          "schema_version": "string",
+          "started_at": "string",
+          "stderr_path": "string",
+          "stderr_sha256": "string",
+          "stderr_truncated": "boolean",
+          "stdout_path": "string",
+          "stdout_sha256": "string",
+          "stdout_truncated": "boolean",
+          "step_id": "string",
+          "timed_out": "boolean",
+          "timeout_seconds": "number|null",
+          "truncated": "boolean"
+        },
+        "type": "object"
+      }
+    ],
+    "runtime-status": [
+      {
+        "keys": {
+          "created_at": "string|null",
+          "findings": "array",
+          "id": "string|null",
+          "mcp_servers": "array|null",
+          "routes": "array|null",
+          "runtime_config_sha256": "string|null",
+          "runtimes": "array|null",
+          "schema_version": "string|null",
+          "status": "string|null"
+        },
+        "type": "object"
+      }
+    ],
+    "verify-run": [
+      {
+        "keys": {
+          "attempt_id": "string|null",
+          "findings": "array",
+          "id": "string",
+          "recorded_at": "string",
+          "replay": "boolean",
+          "schema_version": "string",
+          "scope": "string",
+          "status": "string",
+          "step_id": "string|null",
+          "strict": "boolean"
+        },
+        "type": "object"
+      }
+    ],
+    "verify-step": [
+      {
+        "keys": {
+          "attempt_id": "string|null",
+          "findings": "array",
+          "id": "string",
+          "recorded_at": "string",
+          "replay": "boolean",
+          "schema_version": "string",
+          "scope": "string",
+          "status": "string",
+          "step_id": "string|null",
+          "strict": "boolean"
+        },
+        "type": "object"
+      }
+    ]
+  },
+  "schema_version": "1.0.0"
+}

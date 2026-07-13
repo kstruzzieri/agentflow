@@ -57,6 +57,41 @@ EXECUTION_ARTIFACT_SCHEMA_VERSIONS = {
     "verification-runs": VERIFICATION_RUNS_SCHEMA_VERSION,
 }
 
+# Working-state ingestion policy. Historical cross-major proof compatibility is
+# handled only by verify-proof; no generic reader inherits that promise.
+POLICY_EXACT = "exact"
+POLICY_SAME_MAJOR = "same_major"
+POLICY_NONE = "none"
+# Fallback used by validate_schema_version for artifacts outside this table
+# (e.g. the transient task-brief intake); named so the default is a visible
+# decision, not an accident of a .get() call.
+DEFAULT_COMPATIBILITY_POLICY = POLICY_SAME_MAJOR
+
+# Every declared artifact is classified explicitly (no comprehension fill), so
+# adding an artifact forces a policy decision here and the guard test in
+# test_schema_contracts can actually fail on an unclassified one.
+ARTIFACT_COMPATIBILITY_POLICIES = {
+    "plan-lock": POLICY_SAME_MAJOR,
+    "evidence": POLICY_SAME_MAJOR,
+    "assumptions": POLICY_SAME_MAJOR,
+    "amendments": POLICY_SAME_MAJOR,
+    "context-receipts": POLICY_SAME_MAJOR,
+    "failures": POLICY_SAME_MAJOR,
+    "drift-report": POLICY_SAME_MAJOR,
+    "proof-pack": POLICY_NONE,
+    "runtime-config": POLICY_SAME_MAJOR,
+    "runtime-snapshot": POLICY_SAME_MAJOR,
+    "workflow-contract": POLICY_SAME_MAJOR,
+    "capability-receipts": POLICY_SAME_MAJOR,
+    "review-runs": POLICY_SAME_MAJOR,
+    "aggregation": POLICY_SAME_MAJOR,
+    "execution-contract": POLICY_EXACT,
+    "step-runs": POLICY_SAME_MAJOR,
+    "command-receipts": POLICY_SAME_MAJOR,
+    "file-receipts": POLICY_SAME_MAJOR,
+    "verification-runs": POLICY_SAME_MAJOR,
+}
+
 # Derived summaries and transient intake files are intentionally excluded.
 BASE_ARTIFACT_PATHS = {
     "plan-lock": ".agent/plan.lock.json",

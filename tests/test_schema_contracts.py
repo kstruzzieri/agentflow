@@ -9,6 +9,7 @@ from agentflow.aggregate import SOURCE_ID_RE
 from agentflow.contracts import (
     ADAPTERS,
     ARTIFACT_PATHS,
+    ARTIFACT_COMPATIBILITY_POLICIES,
     ARTIFACT_SCHEMA_VERSIONS,
     BASE_ARTIFACT_PATHS,
     CAPABILITY_RECEIPTS_SCHEMA_VERSION,
@@ -74,6 +75,25 @@ def artifact_schema_version(artifact: str) -> str:
 
 
 class SchemaContractTests(unittest.TestCase):
+    def test_every_declared_artifact_has_one_compatibility_policy(self) -> None:
+        # The policy table is a hand-written literal (not derived from the
+        # schema-version dicts), so this equality genuinely fails when a new
+        # artifact is declared without an explicit policy decision.
+        declared = set(ARTIFACT_SCHEMA_VERSIONS) | set(EXECUTION_ARTIFACT_SCHEMA_VERSIONS)
+        self.assertEqual(set(ARTIFACT_COMPATIBILITY_POLICIES), declared)
+        self.assertEqual(
+            set(ARTIFACT_COMPATIBILITY_POLICIES.values()),
+            {"exact", "same_major", "none"},
+        )
+        strict = {
+            name: policy
+            for name, policy in ARTIFACT_COMPATIBILITY_POLICIES.items()
+            if policy != "same_major"
+        }
+        self.assertEqual(
+            strict, {"execution-contract": "exact", "proof-pack": "none"}
+        )
+
     def test_runtime_config_enums_match_python_constants(self) -> None:
         schema = load_schema("runtime-config.schema.json")
         defs = schema["$defs"]

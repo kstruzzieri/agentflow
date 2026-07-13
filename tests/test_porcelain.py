@@ -111,6 +111,21 @@ class TestNextActionEarlyStates(unittest.TestCase):
             self.assertEqual(action.args, ["init"])
             self.assertTrue(action.blocking)
 
+    def test_incompatible_plan_schema_raises_instead_of_uninitialized(self):
+        # The plan exists but is version-incompatible; reporting "uninitialized"
+        # with an `agentflow init` remediation would be wrong on both counts, so
+        # the gate error propagates (the CLI turns it into a clean diagnostic).
+        with TemporaryDirectory() as d:
+            root = Path(d)
+            cli.main(["init", "--root", str(root)])
+            plan_path = root / ".agent/plan.lock.json"
+            plan = json.loads(plan_path.read_text())
+            plan["schema_version"] = "9.0.0"
+            plan_path.write_text(json.dumps(plan))
+
+            with self.assertRaisesRegex(ValueError, "plan-lock.*incompatible"):
+                porcelain.next_action(root)
+
     def test_plan_unlocked_when_lock_false(self):
         with TemporaryDirectory() as d:
             root = Path(d)

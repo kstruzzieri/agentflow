@@ -403,7 +403,10 @@ class EffectiveReviewPolicyTests(unittest.TestCase):
         (root / ".agent").mkdir(parents=True)
         if proof_policy is not None:
             (root / ".agent/execution.contract.json").write_text(
-                json.dumps({"proof_policy": proof_policy}), encoding="utf-8"
+                json.dumps(
+                    {"schema_version": "0.3.0", "proof_policy": proof_policy}
+                ),
+                encoding="utf-8",
             )
         return root
 
@@ -480,10 +483,16 @@ class WorkflowContractReviewPolicyTests(unittest.TestCase):
         (root / ".agent").mkdir(parents=True)
         if exec_proof_policy is not None:
             (root / ".agent/execution.contract.json").write_text(
-                json.dumps({"proof_policy": exec_proof_policy}), encoding="utf-8"
+                json.dumps(
+                    {
+                        "schema_version": "0.3.0",
+                        "proof_policy": exec_proof_policy,
+                    }
+                ),
+                encoding="utf-8",
             )
         if review_depth is not None or wf_proof_policy is not None:
-            contract = {}
+            contract = {"schema_version": "0.1.0"}
             if review_depth is not None:
                 contract["review_depth"] = review_depth
             if wf_proof_policy is not None:
@@ -820,7 +829,7 @@ class RequiredReviewSatisfiedCheckTests(unittest.TestCase):
         create_initial_artifacts(root)
         init_execution_artifacts(root)
         if review_depth is not None or wf_proof_policy is not None:
-            contract = {}
+            contract = {"schema_version": "0.1.0"}
             if review_depth is not None:
                 contract["review_depth"] = review_depth
             if wf_proof_policy is not None:
@@ -905,7 +914,13 @@ class RequiredReviewSatisfiedCheckTests(unittest.TestCase):
                 tmp, review_depth="none", wf_proof_policy={"require_review_run": True}
             )
             (root / ".agent/execution.contract.json").write_text(
-                json.dumps({"proof_policy": {"review_gate": "ignore"}}), encoding="utf-8"
+                json.dumps(
+                    {
+                        "schema_version": "0.3.0",
+                        "proof_policy": {"review_gate": "ignore"},
+                    }
+                ),
+                encoding="utf-8",
             )
             summary = review_summary(root)
             checks = review_checks(root, summary)
@@ -941,7 +956,10 @@ class RequiredReviewDepthTests(unittest.TestCase):
         root = Path(tmp)
         agent = root / ".agent"
         agent.mkdir(exist_ok=True)
-        contract = {"proof_policy": {"require_review_run": require_run}}
+        contract = {
+            "schema_version": "0.1.0",
+            "proof_policy": {"require_review_run": require_run},
+        }
         # required_depth=None means "a run is required but no depth floor". Depth
         # "none" resolves to a non-None required_review_depth, so omit review_depth
         # entirely to keep required_review_depth None while require_review_run holds.
