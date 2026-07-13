@@ -5,11 +5,11 @@ on:
     tags: ["v*"]
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
-  release:
-    name: Build and publish release artifacts
+  guard:
+    name: Validate release metadata
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
@@ -17,6 +17,28 @@ jobs:
       - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         with:
           python-version: "3.11"
+
+      - name: Check tag, versions, and CHANGELOG
+        run: python3 scripts/check_release.py --tag "$GITHUB_REF_NAME"
+
+  release:
+    name: Build and publish release artifacts
+    needs: guard
+    permissions:
+      contents: write
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: "3.11"
+
+      - name: Validate release and extract notes
+        run: >-
+          python3 scripts/check_release.py
+          --tag "$GITHUB_REF_NAME"
+          --notes-file "$RUNNER_TEMP/release-notes.md"
 
       - name: Run unit tests
         run: PYTHONPATH=src python3 -m unittest discover -s tests
@@ -41,4 +63,4 @@ jobs:
           gh release create "$GITHUB_REF_NAME" \
             dist/agentflow.pyz dist/agentflow-mcp.pyz dist/SHA256SUMS \
             --title "$GITHUB_REF_NAME" \
-            --generate-notes
+            --notes-file "$RUNNER_TEMP/release-notes.md"

@@ -15,7 +15,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest]
+        os: ["ubuntu-latest", "macos-latest"]
         python-version: ["3.11", "3.12", "3.13"]
     env:
       AGENTFLOW_PROOF_ROOT: tests/fixtures/proof-bundle
@@ -27,6 +27,9 @@ jobs:
       - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         with:
           python-version: ${{ matrix.python-version }}
+
+      - name: Check version declarations
+        run: python3 scripts/check_release.py
 
       - name: Run unit tests
         run: PYTHONPATH=src python3 -m unittest discover -s tests -v
@@ -76,6 +79,9 @@ jobs:
             find "$bundle" -mindepth 1 -maxdepth 1 ! -name .git -exec rm -rf {} +
             copy_tree "$proof_root" "$bundle"
           fi
+
+      - name: Run CI proof example
+        run: PYTHONPATH=src PYTHON=python3 sh examples/ci-proof/smoke.sh "$RUNNER_TEMP/proof-bundle"
 
       - name: verify-run
         run: PYTHONPATH=src python3 -m agentflow verify-run --no-record --root "$RUNNER_TEMP/proof-bundle"

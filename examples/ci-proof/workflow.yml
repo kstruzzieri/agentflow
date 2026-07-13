@@ -1,0 +1,22 @@
+name: Verify Agentflow proof
+
+on: [push, pull_request]
+
+permissions:
+  contents: read
+
+jobs:
+  proof:
+    runs-on: ubuntu-latest
+    env:
+      PROOF_ROOT: tests/fixtures/proof-bundle
+    steps:
+      # Pinned to commit SHAs; refresh the pins when you copy this workflow.
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: "3.11"
+      - run: |
+          PYTHONPATH=src python3 -m agentflow verify-run --no-record --root "$PROOF_ROOT"
+          PYTHONPATH=src python3 -m agentflow verify-proof --root "$PROOF_ROOT"
+          PYTHONPATH=src python3 -m agentflow verify-proof --strict --root "$PROOF_ROOT"
