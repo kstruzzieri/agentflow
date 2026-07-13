@@ -88,10 +88,11 @@ The release guard requires Python 3.11 or newer because it reads
    release; run `sha256sum -c SHA256SUMS`, then
    `python3 agentflow.pyz --version`.
 
-> **Do not bump the version ahead of a release.** CI validates the declared
-> version against a dated `## [X.Y.Z] - YYYY-MM-DD` CHANGELOG heading on every
-> run, so raising the version declarations before that dated section exists
-> turns the whole suite red. Change the version only in the release pull
+> **Do not bump the version ahead of a release.** Ordinary CI checks only that
+> the version declarations agree and permits `## [Unreleased]` to contain
+> pending notes. The `check_release.py --tag` guard and tag-triggered `Release`
+> workflow additionally require the matching dated CHANGELOG heading and an
+> empty `Unreleased` section. Change the version only in the release pull
 > request, together with the CHANGELOG move in step 3.
 
 ## Phase 2: standalone binaries (PyInstaller)

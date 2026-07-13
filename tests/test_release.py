@@ -67,6 +67,15 @@ class ReleaseGuardTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(result.stdout.strip(), "version declarations agree: 0.4.0")
 
+    def test_version_check_allows_pending_unreleased_notes(self) -> None:
+        self._write_fixture(
+            changelog="# Changelog\n\n## [Unreleased]\n\n- Pending.\n"
+        )
+
+        result = self._run()
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+
     def test_version_check_rejects_pyproject_mismatch(self) -> None:
         self._write_fixture(project_version="0.4.1")
 
@@ -293,36 +302,22 @@ class ReleaseGuardTests(unittest.TestCase):
     sys.version_info < (3, 11), "release guard requires Python 3.11+"
 )
 class RepositoryReleaseDisciplineTests(unittest.TestCase):
-    def test_repository_release_guard_accepts_declared_version(self) -> None:
-        # Derive the tag from the declared version so this contract survives
-        # every future bump: the documented procedure moves Unreleased notes
-        # into a dated heading in the same commit that changes the version.
+    def test_repository_version_guard_accepts_declared_version(self) -> None:
         import tomllib
 
         declared = tomllib.loads(
             (REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8")
         )["project"]["version"]
-        with tempfile.TemporaryDirectory() as tmp:
-            notes = Path(tmp) / "notes.md"
-            result = subprocess.run(
-                [
-                    sys.executable,
-                    str(SCRIPT),
-                    "--root",
-                    str(REPO_ROOT),
-                    "--tag",
-                    f"v{declared}",
-                    "--notes-file",
-                    str(notes),
-                ],
-                capture_output=True,
-                text=True,
-            )
+        result = subprocess.run(
+            [sys.executable, str(SCRIPT), "--root", str(REPO_ROOT)],
+            capture_output=True,
+            text=True,
+        )
 
-            self.assertEqual(result.returncode, 0, result.stderr)
-            text = notes.read_text(encoding="utf-8")
-            self.assertTrue(text.strip(), "release notes must not be empty")
-            self.assertNotIn("## [", text)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(
+            result.stdout.strip(), f"version declarations agree: {declared}"
+        )
 
     def test_changelog_contains_unreleased_and_backfilled_releases(self) -> None:
         text = (REPO_ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
@@ -336,7 +331,7 @@ class RepositoryReleaseDisciplineTests(unittest.TestCase):
             encoding="utf-8"
         )
 
-        check = text.index("python3 scripts/check_release.py")
+        check = text.index("run: python3 scripts/check_release.py\n")
         tests = text.index("PYTHONPATH=src python3 -m unittest discover")
         self.assertLess(check, tests)
 
@@ -349,10 +344,20 @@ class RepositoryReleaseDisciplineTests(unittest.TestCase):
         release = text.index("\n  release:")
         self.assertLess(guard, release)
         self.assertIn("permissions:\n  contents: read", text[:guard])
+        guard_job = text[guard:release]
+        self.assertIn(
+            'run: python3 scripts/check_release.py --tag "$GITHUB_REF_NAME"\n',
+            guard_job,
+        )
         release_job = text[release:]
         self.assertIn("needs: guard", release_job)
         self.assertIn("contents: write", release_job)
-        self.assertIn("--notes-file", release_job)
+        self.assertIn('python3 scripts/check_release.py', release_job)
+        self.assertIn('--tag "$GITHUB_REF_NAME"', release_job)
+        self.assertIn(
+            '--notes-file "$RUNNER_TEMP/release-notes.md"', release_job
+        )
+        self.assertNotIn("|| true", text)
         self.assertNotIn("--generate-notes", text)
 
     def test_packaging_docs_name_release_order_and_python_floor(self) -> None:
@@ -371,6 +376,12 @@ class RepositoryReleaseDisciplineTests(unittest.TestCase):
         positions = [text.index(value) for value in ordered]
         self.assertEqual(positions, sorted(positions))
         self.assertIn("Python 3.11 or newer", text)
+        compact = text.replace("\n> ", " ")
+        self.assertIn(
+            "Ordinary CI checks only that the version declarations agree",
+            compact,
+        )
+        self.assertIn("tag-triggered `Release` workflow", compact)
 
 
 if __name__ == "__main__":
