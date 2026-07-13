@@ -9,6 +9,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from agentflow.artifacts import append_jsonl, try_read_json, write_json
+from agentflow.contracts import PLAN_SCHEMA_VERSION
 from agentflow.viewer import collect_view_model, render_html
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -195,6 +196,7 @@ def _write_fixture(root: Path, with_execution: bool = True) -> None:
     write_json(
         root / ".agent/plan.lock.json",
         {
+            "schema_version": PLAN_SCHEMA_VERSION,
             "objective": "Fixture objective.",
             "scope": ["Fixture scope."],
             "validation_gates": ["fixture gate"],

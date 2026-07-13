@@ -299,6 +299,10 @@ def command_validate_plan(args: argparse.Namespace) -> int:
     except (FileNotFoundError, json.JSONDecodeError) as exc:
         print(f"invalid plan: {exc}", file=sys.stderr)
         return 1
+    except ValueError as exc:
+        print("plan invalid")
+        print(f"- {exc}")
+        return 1
 
     errors = validate_plan(plan)
     if errors:
