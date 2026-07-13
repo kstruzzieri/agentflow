@@ -8,7 +8,7 @@ from pathlib import Path
 from agentflow.cli import build_parser
 from agentflow.events import project_events
 from agentflow.execution import doctor
-from agentflow.porcelain import next_action
+from agentflow.porcelain import Action, next_action
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -70,7 +70,7 @@ JSON_OUTPUTS = {
     "replay-gates": [{"type": "object", "keys": {"status": "string", "errors": "array", "warnings": "array", "receipts": "array", "recorded": "boolean"}}],
     "runtime-status": [{"type": "object", "keys": {"schema_version": "string|null", "id": "string|null", "status": "string|null", "runtimes": "array|null", "mcp_servers": "array|null", "routes": "array|null", "findings": "array", "runtime_config_sha256": "string|null", "created_at": "string|null"}}],
     "events": [{"type": "array", "items": {"type": "object", "keys": {"timestamp": "string", "type": "string", "step_id": "string|null", "attempt_id": "string|null", "source": "object", "data": "object"}}}],
-    "next-action": [{"type": "object", "keys": {"state": "string", "reason": "string", "blocking": "boolean", "command": "string|null", "args": "array|null", "step_id": "string|null", "diagnostics": "array"}}],
+    "next-action": [{"type": "object", "keys": {"state": "string", "reason": "string", "blocking": "boolean", "command": "string|null", "args": "array|null", "step_id": "string|null", "gate": "string|null", "diagnostics": "array"}}],
     "finish-step": [{"type": "object", "keys": {"verification_status": "string", "verified": "boolean", "completed": "boolean", "diagnostics": "array"}}],
     "finish-run": [{"type": "object", "keys": {"ok": "boolean", "gates": "array", "stopped_at": "string|null", "diagnostics": "array"}}],
 }
@@ -154,17 +154,20 @@ class StabilityPolicyTests(unittest.TestCase):
                 if line.strip()
             ]
 
-        samples = {
-            "doctor": doctor(root),
-            "events": project_events(root),
-            "next-action": next_action(root).to_dict(),
-            "claim-step": rows("step-runs.jsonl")[0],
-            "run": rows("command-receipts.jsonl")[0],
-            "record-file-change": [rows("file-receipts.jsonl")[0]],
-            "verify-run": rows("verification-runs.jsonl")[0],
-            "runtime-status": rows("runtime-snapshots.jsonl")[0],
-        }
-        for command, payload in samples.items():
+        samples = [
+            ("doctor", doctor(root)),
+            ("events", project_events(root)),
+            ("next-action", next_action(root).to_dict()),
+            ("next-action", Action(
+                "validation_missing", "validation gate is unmet", gate="test gate"
+            ).to_dict()),
+            ("claim-step", rows("step-runs.jsonl")[0]),
+            ("run", rows("command-receipts.jsonl")[0]),
+            ("record-file-change", [rows("file-receipts.jsonl")[0]]),
+            ("verify-run", rows("verification-runs.jsonl")[0]),
+            ("runtime-status", rows("runtime-snapshots.jsonl")[0]),
+        ]
+        for command, payload in samples:
             with self.subTest(command=command):
                 self.assertJsonContract(command, payload)
 

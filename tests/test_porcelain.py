@@ -111,6 +111,20 @@ class TestNextActionEarlyStates(unittest.TestCase):
             self.assertEqual(action.args, ["init"])
             self.assertTrue(action.blocking)
 
+    def test_uninitialized_when_plan_schema_is_newer_major(self):
+        with TemporaryDirectory() as d:
+            root = Path(d)
+            cli.main(["init", "--root", str(root)])
+            plan_path = root / ".agent/plan.lock.json"
+            plan = json.loads(plan_path.read_text())
+            plan["schema_version"] = "1.0.0"
+            plan_path.write_text(json.dumps(plan))
+
+            action = porcelain.next_action(root)
+
+            self.assertEqual(action.state, "uninitialized")
+            self.assertEqual(action.args, ["init"])
+
     def test_plan_unlocked_when_lock_false(self):
         with TemporaryDirectory() as d:
             root = Path(d)

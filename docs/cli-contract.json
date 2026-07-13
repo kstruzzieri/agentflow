@@ -2887,6 +2887,7 @@
           "blocking": "boolean",
           "command": "string|null",
           "diagnostics": "array",
+          "gate": "string|null",
           "reason": "string",
           "state": "string",
           "step_id": "string|null"

@@ -11,7 +11,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from .artifacts import read_jsonl
+from .artifacts import read_json, read_jsonl
 from .execution import (
     attempt_is_verified,
     complete_step,
@@ -77,8 +77,8 @@ def _load_plan(root: Path) -> Optional[Dict[str, Any]]:
     if not plan_path.exists():
         return None
     try:
-        return json.loads(plan_path.read_text())
-    except (OSError, json.JSONDecodeError):
+        return read_json(plan_path)
+    except (OSError, json.JSONDecodeError, ValueError):
         return None
 
 
