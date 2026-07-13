@@ -369,8 +369,8 @@ class ReviewSchemaTests(unittest.TestCase):
         # #124: proof coverage grows requirements/criterion_status_counts and
         # review-runs rows grow plan_sha256, so both artifacts bump per the
         # #82 growth convention.
-        self.assertEqual(PROOF_PACK_SCHEMA_VERSION, "0.9.0")
-        self.assertEqual(REVIEW_RUNS_SCHEMA_VERSION, "0.5.0")
+        self.assertEqual(PROOF_PACK_SCHEMA_VERSION, "0.10.0")
+        self.assertEqual(REVIEW_RUNS_SCHEMA_VERSION, "0.6.0")
 
     def test_bumped_versions_still_match_schema_patterns(self) -> None:
         proof_schema = load_schema("proof-pack.schema.json")
@@ -394,6 +394,56 @@ class ReviewSchemaTests(unittest.TestCase):
         from agentflow.contracts import REVIEW_MANIFEST_SCHEMA_VERSION
         from agentflow.review_runner import MANIFEST_SCHEMA_VERSION
         self.assertEqual(REVIEW_MANIFEST_SCHEMA_VERSION, MANIFEST_SCHEMA_VERSION)
+
+    def test_amendment_ready_review_contract_is_versioned_and_documented(self) -> None:
+        from agentflow.contracts import REVIEW_MANIFEST_SCHEMA_VERSION
+
+        self.assertEqual(REVIEW_MANIFEST_SCHEMA_VERSION, "1.0.0")
+        self.assertEqual(REVIEW_RUNS_SCHEMA_VERSION, "0.6.0")
+        self.assertEqual(PROOF_PACK_SCHEMA_VERSION, "0.10.0")
+        manifest = load_schema("review-manifest.schema.json")
+        ledger = load_schema("review-runs.schema.json")
+        proof = load_schema("proof-pack.schema.json")
+        self.assertIn("amendment_ready", manifest["properties"])
+        self.assertIn("amendment_ready", ledger["properties"])
+        finding = manifest["properties"]["findings"]["properties"]["index"]["items"]
+        for field in ("owning_step", "claim", "location", "suggested_fix"):
+            self.assertIn(field, finding["properties"])
+        self.assertTrue(ledger["properties"]["findings"]["additionalProperties"])
+        self.assertTrue(
+            proof["$defs"]["reviewRunSummary"]["properties"]["findings"]
+            ["additionalProperties"]
+        )
+        self.assertEqual(
+            ledger["allOf"][0]["then"]["properties"]["findings"]["$ref"],
+            "#/$defs/findingsProjection",
+        )
+        self.assertEqual(
+            proof["$defs"]["reviewRunSummary"]["allOf"][0]["then"]
+            ["properties"]["findings"]["$ref"],
+            "#/$defs/reviewFindingsProjection",
+        )
+        self.assertEqual(
+            set(ledger["$defs"]["findingsProjection"]["required"]),
+            {"counts_by_severity", "counts_by_status", "index"},
+        )
+        self.assertEqual(
+            set(proof["$defs"]["reviewFindingsProjection"]["required"]),
+            {"counts_by_severity", "counts_by_status", "index"},
+        )
+        self.assertNotIn("required", proof["$defs"]["reviewRunSummary"])
+
+    def test_legacy_manifest_rows_remain_extensible_but_v1_fields_are_explicit(self) -> None:
+        schema = load_schema("review-manifest.schema.json")
+        finding = schema["properties"]["findings"]["properties"]["index"]["items"]
+        self.assertTrue(finding["additionalProperties"])
+        v1_item = schema["allOf"][0]["then"]["properties"]["findings"][
+            "properties"
+        ]["index"]["items"]
+        self.assertEqual(
+            set(v1_item["propertyNames"]["enum"]),
+            set(finding["properties"]),
+        )
 
     def test_depth_profile_enum_matches_workflow_review_depths(self) -> None:
         from agentflow.contracts import WORKFLOW_REVIEW_DEPTHS
@@ -431,7 +481,7 @@ class ReviewSchemaTests(unittest.TestCase):
 
 class LeaseSchemaContractTests(unittest.TestCase):
     def test_lease_schema_versions_bumped(self) -> None:
-        self.assertEqual(PROOF_PACK_SCHEMA_VERSION, "0.9.0")
+        self.assertEqual(PROOF_PACK_SCHEMA_VERSION, "0.10.0")
         self.assertEqual(DRIFT_REPORT_SCHEMA_VERSION, "0.2.2")
         self.assertEqual(STEP_RUNS_SCHEMA_VERSION, "0.5.0")
 

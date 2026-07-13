@@ -1,10 +1,13 @@
 from __future__ import annotations
 
 import json
+import hashlib
 import os
 import tempfile
 import unittest
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
+from unittest.mock import patch
 
 from agentflow.artifacts import create_initial_artifacts, plan_binding_sha256
 from agentflow.contracts import (
@@ -21,6 +24,7 @@ from agentflow.review import (
     join_review_gate,
     normalize_artifact_path,
     parse_finding_ref,
+    record_review_run,
     review_checks,
     review_summary,
     validate_manifest,
@@ -128,6 +132,53 @@ def good_manifest() -> dict:
     }
 
 
+def amendment_manifest(step_id: str = "P1") -> dict:
+    manifest = good_manifest()
+    manifest["schema_version"] = "1.0.0"
+    manifest["amendment_ready"] = True
+    manifest["findings"] = {
+        "counts_by_severity": {"high": 1},
+        "counts_by_status": {"accepted": 1},
+        "index": [{
+            "finding_id": "BP-001",
+            "severity": "high",
+            "status": "accepted",
+            "owning_step": step_id,
+            "claim": "The verifier skips an integrity check.",
+            "location": {"path": "src/agentflow/proof.py", "line": 10, "line_end": 12},
+            "suggested_fix": "Validate the omitted artifact before accepting proof.",
+        }],
+    }
+    return manifest
+
+
+def _write_locked_plan(root: Path, *step_ids: str) -> None:
+    plan_path = root / ".agent/plan.lock.json"
+    plan = json.loads(plan_path.read_text(encoding="utf-8"))
+    plan.update({
+        "objective": "Validate review ownership.",
+        "scope": ["Review findings."],
+        "invariants": ["Ownership is explicit."],
+        "allowed_files": ["src/**"],
+        "validation_gates": ["python3 -m unittest"],
+        "rollback_plan": "Delete the fixture.",
+        "locked": True,
+    })
+    plan["steps"] = [
+        {
+            "id": step_id,
+            "action": "Repair the finding.",
+            "files": ["src/**"],
+            "preconditions": [],
+            "expected_diff": ["Finding repaired."],
+            "validation": ["python3 -m unittest"],
+            "evidence_ids": [],
+        }
+        for step_id in step_ids
+    ]
+    plan_path.write_text(json.dumps(plan), encoding="utf-8")
+
+
 class ValidateManifestTests(unittest.TestCase):
     def test_accepts_good_manifest(self) -> None:
         validate_manifest(good_manifest())  # no raise
@@ -174,9 +225,9 @@ class ValidateManifestTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             validate_manifest(m)
 
-    def test_rejects_major_bump_schema_version(self) -> None:
+    def test_rejects_unsupported_major_schema_version(self) -> None:
         m = good_manifest()
-        m["schema_version"] = "1.0.0"
+        m["schema_version"] = "2.0.0"
         with self.assertRaises(ValueError):
             validate_manifest(m)
 
@@ -205,6 +256,84 @@ class ValidateManifestTests(unittest.TestCase):
         m["schema_version"] = "0.1.0\n"
         with self.assertRaises(ValueError):
             validate_manifest(m)
+
+    def test_accepts_amendment_ready_manifest(self) -> None:
+        validate_manifest(amendment_manifest())
+
+    def test_new_manifest_requires_active_repair_context(self) -> None:
+        for field in ("owning_step", "claim", "suggested_fix"):
+            with self.subTest(field=field):
+                manifest = amendment_manifest()
+                del manifest["findings"]["index"][0][field]
+                with self.assertRaises(ValueError):
+                    validate_manifest(manifest)
+
+    def test_new_manifest_rejects_malformed_location(self) -> None:
+        manifest = amendment_manifest()
+        manifest["findings"]["index"][0]["location"] = {
+            "path": "x.py", "line": 4, "line_end": 3
+        }
+        with self.assertRaises(ValueError):
+            validate_manifest(manifest)
+
+    def test_legacy_manifest_cannot_claim_amendment_readiness(self) -> None:
+        manifest = good_manifest()
+        manifest["amendment_ready"] = True
+        with self.assertRaises(ValueError):
+            validate_manifest(manifest)
+
+    def test_legacy_manifest_rejects_non_boolean_amendment_readiness(self) -> None:
+        manifest = good_manifest()
+        manifest["amendment_ready"] = "false"
+        with self.assertRaises(ValueError):
+            validate_manifest(manifest)
+
+    def test_new_manifest_rejects_duplicate_finding_ids(self) -> None:
+        manifest = amendment_manifest()
+        duplicate = dict(manifest["findings"]["index"][0])
+        duplicate["owning_step"] = "P2"
+        manifest["findings"]["index"].append(duplicate)
+        with self.assertRaisesRegex(ValueError, "duplicate finding_id"):
+            validate_manifest(manifest)
+
+    def test_legacy_manifest_preserves_duplicate_finding_compatibility(self) -> None:
+        manifest = good_manifest()
+        manifest["findings"]["index"].append(
+            dict(manifest["findings"]["index"][0])
+        )
+        validate_manifest(manifest)
+
+    def test_new_manifest_requires_consistent_projection_counts(self) -> None:
+        for missing in ("counts_by_severity", "counts_by_status", "index"):
+            with self.subTest(missing=missing):
+                manifest = amendment_manifest()
+                del manifest["findings"][missing]
+                with self.assertRaises(ValueError):
+                    validate_manifest(manifest)
+        for field in ("counts_by_severity", "counts_by_status"):
+            with self.subTest(field=field):
+                manifest = amendment_manifest()
+                manifest["findings"][field] = {"open": 99}
+                with self.assertRaisesRegex(ValueError, "does not match"):
+                    validate_manifest(manifest)
+
+    def test_new_manifest_rejects_unsupported_or_mistyped_projection_fields(self) -> None:
+        variants = [
+            ("row", "fix_commit", 123),
+            ("row", "arbitrary", "not canonical"),
+            ("findings", "arbitrary", []),
+        ]
+        for target, field, value in variants:
+            with self.subTest(target=target, field=field):
+                manifest = amendment_manifest()
+                container = (
+                    manifest["findings"]["index"][0]
+                    if target == "row"
+                    else manifest["findings"]
+                )
+                container[field] = value
+                with self.assertRaises(ValueError):
+                    validate_manifest(manifest)
 
 
 class NormalizeArtifactPathTests(unittest.TestCase):
@@ -250,7 +379,7 @@ class BuildReviewRunRecordTests(unittest.TestCase):
             create_initial_artifacts(root)
             manifest_path = _write_state(root, good_manifest())
             record = build_review_run_record(root, manifest_path)
-            self.assertEqual(record["schema_version"], "0.5.0")
+            self.assertEqual(record["schema_version"], "0.6.0")
             self.assertEqual(record["review_run_id"], "RR-20260620T180000Z-ab12cd34")
             self.assertEqual(record["gate_status"], "pass")
             self.assertEqual(record["active_blocking"], [])
@@ -319,6 +448,28 @@ class BuildReviewRunRecordTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 build_review_run_record(root, manifest_path)
 
+    def test_existing_ledger_rejects_duplicate_review_run_ids(self) -> None:
+        from agentflow.artifacts import append_jsonl
+        from agentflow.review import read_review_runs
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            create_initial_artifacts(root)
+            record = {
+                "schema_version": "0.5.0",
+                "review_run_id": "RR-20260620T180000Z-ab12cd34",
+                "recorded_at": "2026-06-20T18:00:00+00:00",
+                "state_dir": "docs/ai/state/main",
+                "manifest_path": "docs/ai/state/main/review-manifest.json",
+                "manifest_sha256": "0" * 64,
+                "gate_status": "pass",
+                "artifacts": [],
+            }
+            append_jsonl(root / ".agent/review-runs.jsonl", record)
+            append_jsonl(root / ".agent/review-runs.jsonl", record)
+            with self.assertRaisesRegex(ValueError, "duplicate review_run_id"):
+                read_review_runs(root)
+
     def test_rejects_missing_manifest(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -374,6 +525,119 @@ class BuildReviewRunRecordTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 build_review_run_record(root, manifest_path)
 
+    def test_preserves_validated_amendment_projection(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            create_initial_artifacts(root)
+            _write_locked_plan(root, "P1")
+            manifest_path = _write_state(root, amendment_manifest())
+            record = build_review_run_record(root, manifest_path)
+            self.assertTrue(record["amendment_ready"])
+            self.assertEqual(record["findings"], amendment_manifest()["findings"])
+
+    def test_hashes_the_same_manifest_bytes_that_were_parsed(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            create_initial_artifacts(root)
+            _write_locked_plan(root, "P1")
+            manifest_path = _write_state(root, amendment_manifest())
+            original_bytes = manifest_path.read_bytes()
+            original_sha = hashlib.sha256(original_bytes).hexdigest()
+            from agentflow.review import sha256_file as real_sha256_file
+
+            def mutate_before_hash(path: Path) -> str:
+                if path == manifest_path:
+                    changed = amendment_manifest()
+                    changed["findings"]["index"][0]["claim"] = "Changed between reads."
+                    manifest_path.write_text(json.dumps(changed), encoding="utf-8")
+                return real_sha256_file(path)
+
+            with patch("agentflow.review.sha256_file", side_effect=mutate_before_hash):
+                record = build_review_run_record(root, manifest_path)
+            self.assertEqual(record["manifest_sha256"], original_sha)
+
+    def test_rejects_structurally_invalid_locked_plan(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            create_initial_artifacts(root)
+            plan_path = root / ".agent/plan.lock.json"
+            plan_path.write_text(
+                json.dumps(
+                    {
+                        "schema_version": "0.3.0",
+                        "locked": True,
+                        "steps": [{"id": "P1"}, {"id": "P1"}],
+                    }
+                ),
+                encoding="utf-8",
+            )
+            manifest_path = _write_state(root, amendment_manifest())
+            with self.assertRaisesRegex(ValueError, "locked plan is invalid"):
+                build_review_run_record(root, manifest_path)
+
+    def test_concurrent_duplicate_review_ids_append_once(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            create_initial_artifacts(root)
+            _write_locked_plan(root, "P1")
+            manifest_path = _write_state(root, amendment_manifest())
+
+            def record_once(_: int) -> str:
+                try:
+                    return record_review_run(root, manifest_path)["review_run_id"]
+                except ValueError as exc:
+                    return str(exc)
+
+            with ThreadPoolExecutor(max_workers=8) as pool:
+                results = list(pool.map(record_once, range(16)))
+            self.assertEqual(
+                results.count(amendment_manifest()["review_run_id"]),
+                1,
+            )
+            self.assertEqual(
+                len((root / ".agent/review-runs.jsonl").read_text().splitlines()),
+                1,
+            )
+
+    def test_integrity_rejects_ledger_projection_mismatch(self) -> None:
+        from agentflow.artifacts import append_jsonl
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            create_initial_artifacts(root)
+            _write_locked_plan(root, "P1")
+            manifest_path = _write_state(root, amendment_manifest())
+            record = build_review_run_record(root, manifest_path)
+            record["findings"]["index"][0]["claim"] = "Tampered ledger claim."
+            append_jsonl(root / ".agent/review-runs.jsonl", record)
+            findings = verify_review_integrity(root)
+            self.assertTrue(
+                any(
+                    item["severity"] == "error"
+                    and "projection mismatch" in item["message"]
+                    for item in findings
+                )
+            )
+
+    def test_rejects_unknown_owning_step_before_append(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            create_initial_artifacts(root)
+            _write_locked_plan(root, "P1")
+            manifest_path = _write_state(root, amendment_manifest("P404"))
+            with self.assertRaisesRegex(ValueError, "unknown owning_step"):
+                build_review_run_record(root, manifest_path)
+            self.assertEqual((root / ".agent/review-runs.jsonl").read_text(), "")
+
+    def test_legacy_manifest_is_explicitly_not_amendment_ready(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            create_initial_artifacts(root)
+            manifest_path = _write_state(root, good_manifest())
+            record = build_review_run_record(root, manifest_path)
+            self.assertFalse(record["amendment_ready"])
+            self.assertNotIn("owning_step", record["findings"]["index"][0])
+
 
 class ReviewSummaryTests(unittest.TestCase):
     def test_non_dict_finding_ref_is_skipped(self) -> None:
@@ -395,6 +659,32 @@ class ReviewSummaryTests(unittest.TestCase):
             self.assertIsInstance(summary, dict)
             self.assertEqual(summary["correlations"], [])
             self.assertEqual(summary["unresolved_finding_refs"], [])
+
+    def test_proof_summary_preserves_finding_projection_and_readiness(self) -> None:
+        from agentflow.artifacts import append_jsonl
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            create_initial_artifacts(root)
+            projection = amendment_manifest()["findings"]
+            append_jsonl(
+                root / ".agent/review-runs.jsonl",
+                {
+                    "schema_version": "0.6.0",
+                    "review_run_id": "RR-20260620T180000Z-ab12cd34",
+                    "recorded_at": "2026-06-20T18:00:00+00:00",
+                    "state_dir": "docs/ai/state/main",
+                    "manifest_path": "docs/ai/state/main/review-manifest.json",
+                    "manifest_sha256": "0" * 64,
+                    "gate_status": "pass",
+                    "amendment_ready": True,
+                    "findings": projection,
+                    "artifacts": [],
+                },
+            )
+            run = review_summary(root)["review_runs"][0]
+            self.assertTrue(run["amendment_ready"])
+            self.assertEqual(run["findings"], projection)
 
 
 class EffectiveReviewPolicyTests(unittest.TestCase):

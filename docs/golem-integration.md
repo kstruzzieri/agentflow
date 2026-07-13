@@ -101,9 +101,14 @@ Notes for the adapter:
 - Post-completion fixes go through `amend-step` (optionally with
   `--finding RR-...#ID` to correlate a review finding). A completed step
   rejects a fresh `claim-step`.
-- The review cycle (`record-review`, finding-linked amendments) is optional
-  and documented in [docs/agent-workflow.md](agent-workflow.md); a first
-  adapter can defer it.
+- The review cycle (`record-review`, finding-linked amendments) is optional and
+  documented in [docs/agent-workflow.md](agent-workflow.md). An adapter that
+  implements it must consume only review runs with `amendment_ready: true`, use
+  each active row's validated `owning_step`, `claim`, optional `location`, and
+  `suggested_fix`, and preserve `RR-...#finding-id`. It must not infer ownership
+  from filenames, model output, or legacy manifests. Runs marked
+  `amendment_ready: false` remain display-only until authoritative context is
+  produced; a first adapter may defer the review cycle entirely.
 
 ## Optional Requirement Traceability
 

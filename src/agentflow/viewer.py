@@ -282,6 +282,60 @@ def _residual_warnings_body(proof: Dict[str, Any], collect_warnings: List[str]) 
     return _items(warnings, "No residual warnings.")
 
 
+def _finding_location(value: Any) -> str:
+    if not isinstance(value, dict):
+        return ""
+    path = value.get("path")
+    if not isinstance(path, str):
+        return ""
+    line = value.get("line")
+    line_end = value.get("line_end")
+    if not isinstance(line, int):
+        return path
+    suffix = f":{line}"
+    if isinstance(line_end, int) and line_end != line:
+        suffix += f"-{line_end}"
+    return path + suffix
+
+
+def _review_findings_body(proof: Dict[str, Any]) -> str:
+    review = proof.get("review") if isinstance(proof.get("review"), dict) else {}
+    runs = [run for run in _list(review.get("review_runs")) if isinstance(run, dict)]
+    if not runs:
+        return "<p>No review runs recorded.</p>"
+    rows: List[List[Any]] = []
+    for run in runs:
+        findings = run.get("findings") if isinstance(run.get("findings"), dict) else {}
+        index = [row for row in _list(findings.get("index")) if isinstance(row, dict)]
+        if not index:
+            rows.append([
+                run.get("review_run_id", ""),
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "yes" if run.get("amendment_ready") is True else "no",
+            ])
+            continue
+        for finding in index:
+            rows.append([
+                run.get("review_run_id", ""),
+                finding.get("finding_id", ""),
+                finding.get("status", ""),
+                finding.get("owning_step", ""),
+                finding.get("claim", ""),
+                _finding_location(finding.get("location")),
+                finding.get("suggested_fix", ""),
+                "yes" if run.get("amendment_ready") is True else "no",
+            ])
+    return _table(
+        ["Review", "Finding", "Status", "Owner", "Claim", "Location", "Suggested fix", "Amendment ready"],
+        rows,
+    )
+
+
 def _hashes_body(proof: Dict[str, Any]) -> str:
     rows = [
         [item.get("path", ""), _Raw(f'<span class="hash">{_esc(item.get("sha256", ""))}</span>')]
@@ -315,6 +369,7 @@ def render_html(model: Dict[str, Any]) -> str:
         _section("Drift Audit", _drift_body(model.get("drift"))),
         _section("Checks", _checks_body(proof)),
         _section("Residual Warnings", _residual_warnings_body(proof, model.get("warnings", []))),
+        _section("Review Findings", _review_findings_body(proof)),
         _section("Proof Hashes", _hashes_body(proof)),
     ]
     meta_line = (

@@ -26,6 +26,9 @@ Use this checklist before calling a task complete.
 - Focused tests or inspections were run for each plan step.
 - Broader checks were run when shared behavior changed.
 - Failed commands were compressed into failure signatures before retrying.
+- Every active review finding has a locked-plan `owning_step`, claim, and
+  actionable `suggested_fix`; optional locations use the documented shape.
+- Legacy review runs are treated as `amendment_ready: false`, never inferred.
 - The review depth matches the selected workflow profile: when the
   `workflow.contract.json` `review_depth` is `spec_quality` or `deep`, a review
   run is recorded so `required_review_satisfied` passes. A `spec_quality`

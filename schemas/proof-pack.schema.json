@@ -245,12 +245,101 @@
     "review": {
       "type": "object",
       "properties": {
-        "review_runs": { "type": "array", "items": { "type": "object", "additionalProperties": true } },
+        "review_runs": { "type": "array", "items": { "$ref": "#/$defs/reviewRunSummary" } },
         "latest_review_run_id": { "type": ["string", "null"] },
         "correlations": { "type": "array", "items": { "type": "object", "additionalProperties": true } },
         "unresolved_finding_refs": { "type": "array", "items": { "type": "object", "additionalProperties": true } },
         "policy": { "$ref": "#/$defs/reviewPolicy" }
       },
+      "additionalProperties": true
+    },
+    "reviewFindingLocation": {
+      "type": "object",
+      "required": ["path"],
+      "properties": {
+        "path": { "type": "string", "minLength": 1 },
+        "line": { "type": "integer", "minimum": 1 },
+        "line_end": { "type": "integer", "minimum": 1 }
+      },
+      "dependentRequired": { "line_end": ["line"] },
+      "additionalProperties": false
+    },
+    "reviewFinding": {
+      "type": "object",
+      "required": ["finding_id", "severity", "status"],
+      "properties": {
+        "finding_id": { "type": "string", "minLength": 1 },
+        "severity": { "enum": ["critical", "high", "medium", "low"] },
+        "status": { "enum": ["open", "accepted", "fixed", "rejected", "superseded"] },
+        "steelman_verdict": { "type": "string" },
+        "superseded_by": { "type": "string" },
+        "fix_commit": { "type": "string" },
+        "owning_step": { "type": "string", "minLength": 1 },
+        "claim": { "type": "string", "minLength": 1 },
+        "location": { "$ref": "#/$defs/reviewFindingLocation" },
+        "suggested_fix": { "type": "string", "minLength": 1 }
+      },
+      "additionalProperties": true
+    },
+    "reviewFindingsProjection": {
+      "type": "object",
+      "required": ["counts_by_severity", "counts_by_status", "index"],
+      "properties": {
+        "counts_by_severity": { "type": "object", "additionalProperties": { "type": "integer", "minimum": 0 } },
+        "counts_by_status": { "type": "object", "additionalProperties": { "type": "integer", "minimum": 0 } },
+        "index": { "type": "array", "items": { "$ref": "#/$defs/reviewFinding" } }
+      },
+      "additionalProperties": true
+    },
+    "reviewRunSummary": {
+      "type": "object",
+      "properties": {
+        "review_run_id": { "type": "string" },
+        "plan_sha256": { "type": ["string", "null"] },
+        "gate_status": { "enum": ["pass", "warn", "fail"] },
+        "active_blocking": { "type": "array", "items": { "type": "string" } },
+        "counts_by_severity": { "type": "object" },
+        "counts_by_status": { "type": "object" },
+        "amendment_ready": { "type": "boolean" },
+        "findings": { "type": "object", "additionalProperties": true },
+        "artifacts": { "type": "array", "items": { "type": "object" } },
+        "depth_profile": { "enum": ["none", "light", "standard", "spec_quality", "deep"] }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": { "amendment_ready": { "const": true } },
+            "required": ["amendment_ready"]
+          },
+          "then": {
+            "required": ["findings"],
+            "properties": {
+              "findings": {
+                "$ref": "#/$defs/reviewFindingsProjection",
+                "propertyNames": { "enum": ["counts_by_severity", "counts_by_status", "index"] },
+                "properties": {
+                  "index": {
+                    "items": {
+                      "propertyNames": {
+                        "enum": ["finding_id", "severity", "status", "steelman_verdict", "superseded_by", "fix_commit", "owning_step", "claim", "location", "suggested_fix"]
+                      },
+                      "allOf": [
+                        {
+                          "if": {
+                            "properties": { "status": { "enum": ["open", "accepted"] } },
+                            "required": ["status"]
+                          },
+                          "then": { "required": ["owning_step", "claim", "suggested_fix"] }
+                        }
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      ],
       "additionalProperties": true
     },
     "reviewPolicy": {

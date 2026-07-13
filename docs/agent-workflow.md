@@ -143,9 +143,10 @@ recomputes the derived `criteria_satisfied` check, so deleting or editing that
 check cannot bypass a failed criterion even if the core checksum is recomputed.
 
 This additive extension keeps the plan-lock schema version unchanged (optional
-plan fields only) but grows canonical proof content and review-run rows, so
-`PROOF_PACK_SCHEMA_VERSION` bumps to `0.9.0` and `REVIEW_RUNS_SCHEMA_VERSION`
-to `0.5.0` per the schema-growth convention. Older artifacts stay readable
+plan fields only) but grows canonical proof content and review-run rows. That
+extension introduced proof schema `0.9.0` and review-run schema `0.5.0`; later
+additive review projection fields advance the current versions independently.
+Older artifacts stay readable
 (same major, lower minor). A legacy plan without `requirements` emits neither
 traceability coverage key nor the `criteria_satisfied` check, preserving its
 prior execution and proof output.
@@ -347,7 +348,7 @@ for the full `deep` path) is:
    -> findings-final.yaml, gate.yaml, synthesis.md, review-manifest.json
 2. agentflow record-review --manifest .../review-manifest.json
    -> RR-... record in .agent/review-runs.jsonl
-      (current plan + manifest + artifacts hashed)
+      (current plan + manifest + artifacts hashed; amendment projection retained)
 3. For each finding that needs a fix (amendment opens the attempt and sets the
    pointer — no re-claim):
      agentflow amend-step P3 --agent "$USER" --reason "address review finding BP-001" --reason-code review_feedback --finding RR-...#BP-001
@@ -359,16 +360,28 @@ for the full `deep` path) is:
    (BP-001 status:fixed, active_blocking shrinks)
    -> agentflow record-review --manifest ...   (new RR-... record; append-only)
 5. agentflow build-proof
-   -> proof pack surfaces review runs + finding<->amendment correlations
+   -> proof pack and view-proof surface review runs, amendment readiness,
+      finding context, and finding<->amendment correlations
 6. agentflow verify-proof
    -> rehashes the review-runs ledger (via proof files) AND, as an extra pass,
       rehashes the source artifacts from the hashes inside each review-run
       record; reports review_gate per policy
 ```
 
-`record-review` reads only the manifest; it hashes the current plan, the
-YAML/Markdown artifacts, and the manifest, then appends a record to
-`.agent/review-runs.jsonl` without parsing or re-adjudicating any finding.
+Current v1.0 manifests declare `amendment_ready: true`. Active `open` and
+`accepted` rows require `owning_step`, `claim`, and `suggested_fix`; `location`
+is optional. `record-review` reads only the manifest, validates each supplied
+owner against the current locked plan, hashes the plan, YAML/Markdown artifacts,
+and manifest, then atomically appends the intact projection to
+`.agent/review-runs.jsonl` without parsing or re-adjudicating YAML. Validation,
+duplicate-ID, ownership, or artifact failure appends nothing.
+
+Manifest v0.0-v0.2 remains recordable and verifiable. Its ledger and proof
+projection explicitly report `amendment_ready: false`, retain existing finding
+fields, and never synthesize an owner. Inactive findings in v1.0 remain visible
+without requiring amendment fields. The proof core binds the complete review
+summary, `verify-proof` rehashes its source ledger and artifacts, and
+`view-proof --html` renders the amendment context.
 `amend-step --finding RR-...#ID` links an amendment attempt to the finding it
 resolves, and `build-proof`/`verify-proof` surface and re-hash the review
 evidence.

@@ -8,12 +8,13 @@ finding's verdict.
 
 from __future__ import annotations
 
-import re
 import hashlib
+import json
+import re
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from .artifacts import plan_binding_sha256, read_jsonl, try_read_json, utc_now
+from .artifacts import append_jsonl, plan_binding_sha256, read_jsonl, try_read_json, utc_now
 from .contracts import (
     REVIEW_DEPTH_POLICY,
     REVIEW_GATE_POLICIES,
@@ -24,16 +25,38 @@ from .contracts import (
     review_depth_satisfies,
     strict_mode,
 )
+from .locks import file_lock
+from .validation import validate_plan
 
 REVIEW_RUN_ID_PATTERN = re.compile(r"^RR-[0-9]{8}T[0-9]{6}Z-[0-9a-f]{8}$")
 SHA256_PATTERN = re.compile(r"^[0-9a-f]{64}$")
 # Mirrors schemas/review-manifest.schema.json: schema_version pattern. The
 # hand-rolled validator is the only enforced gate (stdlib-only, no jsonschema),
 # so it must reject versions the published schema would reject.
-MANIFEST_SCHEMA_VERSION_PATTERN = re.compile(r"^0\.[0-2]\.[0-9]+$")
+MANIFEST_SCHEMA_VERSION_PATTERN = re.compile(
+    r"^(?:0\.[0-2]\.[0-9]+|1\.0\.[0-9]+)$"
+)
 GATE_STATUSES = ("pass", "warn", "fail")
 SEVERITIES = ("critical", "high", "medium", "low")
 STATUSES = ("open", "accepted", "fixed", "rejected", "superseded")
+ACTIVE_STATUSES = frozenset({"open", "accepted"})
+AMENDMENT_FINDING_FIELDS = frozenset(
+    {
+        "finding_id",
+        "severity",
+        "status",
+        "steelman_verdict",
+        "superseded_by",
+        "fix_commit",
+        "owning_step",
+        "claim",
+        "location",
+        "suggested_fix",
+    }
+)
+AMENDMENT_FINDINGS_FIELDS = frozenset(
+    {"counts_by_severity", "counts_by_status", "index"}
+)
 
 # ratchet-v1 ordering over the review-gate policy membership set
 # REVIEW_GATE_POLICIES (contracts.py). Higher index = stricter.
@@ -85,6 +108,53 @@ def _require_str(obj: Dict[str, Any], key: str) -> str:
     return value
 
 
+def _manifest_is_amendment_ready(schema_version: str) -> bool:
+    return schema_version.startswith("1.")
+
+
+def _manifest_from_bytes(raw: bytes) -> Dict[str, Any]:
+    try:
+        text = raw.decode("utf-8")
+    except UnicodeDecodeError as exc:
+        raise ValueError(f"review manifest is not UTF-8: {exc}") from exc
+    try:
+        manifest = json.loads(text)
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"malformed review manifest JSON: {exc}") from exc
+    if not isinstance(manifest, dict):
+        raise ValueError("review manifest must be a JSON object")
+    return manifest
+
+
+def _durable_findings(manifest: Dict[str, Any]) -> Dict[str, Any]:
+    findings = manifest.get("findings", {})
+    if not _manifest_is_amendment_ready(manifest["schema_version"]):
+        return findings
+    return {
+        field: findings[field]
+        for field in AMENDMENT_FINDINGS_FIELDS
+        if field in findings
+    }
+
+
+def _validate_location(location: Any) -> None:
+    if not isinstance(location, dict):
+        raise ValueError("finding location must be an object")
+    unknown = set(location) - {"path", "line", "line_end"}
+    if unknown:
+        raise ValueError(f"finding location contains unsupported fields: {sorted(unknown)}")
+    _require_str(location, "path")
+    line = location.get("line")
+    line_end = location.get("line_end")
+    for field, value in (("line", line), ("line_end", line_end)):
+        if value is not None and (isinstance(value, bool) or not isinstance(value, int) or value < 1):
+            raise ValueError(f"finding location {field} must be a positive integer")
+    if line_end is not None and line is None:
+        raise ValueError("finding location line_end requires line")
+    if line is not None and line_end is not None and line_end < line:
+        raise ValueError("finding location line_end must be greater than or equal to line")
+
+
 def validate_manifest(manifest: Any) -> None:
     """Validate the shape and enums of a review-manifest.json object."""
     if not isinstance(manifest, dict):
@@ -119,14 +189,75 @@ def validate_manifest(manifest: Any) -> None:
     index = findings.get("index", [])
     if not isinstance(index, list):
         raise ValueError("findings.index must be a list")
+    amendment_ready = _manifest_is_amendment_ready(schema_version)
+    if amendment_ready:
+        if manifest.get("amendment_ready") is not True:
+            raise ValueError("schema_version 1.0 manifests require amendment_ready=true")
+        missing_findings = AMENDMENT_FINDINGS_FIELDS - set(findings)
+        if missing_findings:
+            raise ValueError(
+                f"findings missing required fields: {sorted(missing_findings)}"
+            )
+        unknown_findings = set(findings) - AMENDMENT_FINDINGS_FIELDS
+        if unknown_findings:
+            raise ValueError(
+                f"findings contains unsupported fields: {sorted(unknown_findings)}"
+            )
+    elif "amendment_ready" in manifest and manifest["amendment_ready"] is not False:
+        raise ValueError("legacy manifests require amendment_ready=false when present")
+    for field in ("counts_by_severity", "counts_by_status"):
+        counts = findings.get(field)
+        if counts is not None and (
+            not isinstance(counts, dict)
+            or any(
+                isinstance(value, bool) or not isinstance(value, int) or value < 0
+                for value in counts.values()
+            )
+        ):
+            raise ValueError(f"findings.{field} must map strings to non-negative integers")
+    finding_ids = set()
     for row in index:
         if not isinstance(row, dict):
             raise ValueError("findings.index rows must be objects")
-        _require_str(row, "finding_id")
+        finding_id = _require_str(row, "finding_id")
+        if amendment_ready and finding_id in finding_ids:
+            raise ValueError(f"duplicate finding_id: {finding_id}")
+        finding_ids.add(finding_id)
         if row.get("severity") not in SEVERITIES:
             raise ValueError(f"finding severity invalid: {row.get('severity')!r}")
         if row.get("status") not in STATUSES:
             raise ValueError(f"finding status invalid: {row.get('status')!r}")
+        if not amendment_ready:
+            continue
+        unknown = set(row) - AMENDMENT_FINDING_FIELDS
+        if unknown:
+            raise ValueError(f"finding contains unsupported fields: {sorted(unknown)}")
+        if row["status"] in ACTIVE_STATUSES:
+            for field in ("owning_step", "claim", "suggested_fix"):
+                _require_str(row, field)
+        else:
+            for field in ("owning_step", "claim", "suggested_fix"):
+                if field in row:
+                    _require_str(row, field)
+        for field in ("steelman_verdict", "superseded_by", "fix_commit"):
+            if field in row and not isinstance(row[field], str):
+                raise ValueError(f"finding {field} must be a string")
+        if "location" in row:
+            _validate_location(row["location"])
+    if amendment_ready:
+        expected_severity: Dict[str, int] = {}
+        expected_status: Dict[str, int] = {}
+        for row in index:
+            severity = row["severity"]
+            status = row["status"]
+            expected_severity[severity] = expected_severity.get(severity, 0) + 1
+            expected_status[status] = expected_status.get(status, 0) + 1
+        for field, expected in (
+            ("counts_by_severity", expected_severity),
+            ("counts_by_status", expected_status),
+        ):
+            if findings[field] != expected:
+                raise ValueError(f"findings.{field} does not match findings.index")
     artifacts = manifest.get("artifacts")
     if not isinstance(artifacts, list) or not artifacts:
         raise ValueError("artifacts must be a non-empty list")
@@ -137,6 +268,32 @@ def validate_manifest(manifest: Any) -> None:
     depth_profile = manifest.get("depth_profile")
     if depth_profile is not None and depth_profile not in WORKFLOW_REVIEW_DEPTHS:
         raise ValueError(f"depth_profile invalid: {depth_profile!r}")
+
+
+def validate_manifest_against_plan(manifest: Dict[str, Any], plan: Any) -> None:
+    """Validate amendment ownership against the current locked plan."""
+    schema_version = manifest["schema_version"]
+    if not _manifest_is_amendment_ready(schema_version):
+        return
+    if not isinstance(plan, dict) or plan.get("locked") is not True:
+        raise ValueError("amendment-ready review manifest requires a locked plan")
+    plan_errors = validate_plan(plan)
+    if plan_errors:
+        raise ValueError(f"locked plan is invalid: {'; '.join(plan_errors)}")
+    steps = plan.get("steps")
+    if not isinstance(steps, list):
+        raise ValueError("locked plan steps must be a list")
+    step_ids = {
+        step.get("id")
+        for step in steps
+        if isinstance(step, dict) and isinstance(step.get("id"), str) and step.get("id")
+    }
+    for row in manifest["findings"].get("index", []):
+        owner = row.get("owning_step")
+        if owner is not None and owner not in step_ids:
+            raise ValueError(
+                f"finding {row.get('finding_id')} has unknown owning_step: {owner}"
+            )
 
 
 def normalize_artifact_path(root: Path, state_dir: str, relative: str) -> str:
@@ -185,6 +342,7 @@ def read_review_runs(root: Path) -> List[Dict[str, Any]]:
         "gate_status",
         "artifacts",
     )
+    seen_review_run_ids = set()
     for index, row in enumerate(rows, start=1):
         if not isinstance(row, dict):
             raise ValueError(f"review-runs line {index} must be a JSON object")
@@ -194,11 +352,19 @@ def read_review_runs(root: Path) -> List[Dict[str, Any]]:
         review_run_id = row.get("review_run_id")
         if not isinstance(review_run_id, str) or not REVIEW_RUN_ID_PATTERN.fullmatch(review_run_id):
             raise ValueError(f"review-runs line {index} has invalid review_run_id")
+        if review_run_id in seen_review_run_ids:
+            raise ValueError(
+                f"review-runs line {index} has duplicate review_run_id: {review_run_id}"
+            )
+        seen_review_run_ids.add(review_run_id)
         if row.get("gate_status") not in GATE_STATUSES:
             raise ValueError(f"review-runs line {index} has invalid gate_status")
         depth_profile = row.get("depth_profile")
         if depth_profile is not None and depth_profile not in WORKFLOW_REVIEW_DEPTHS:
             raise ValueError(f"review-runs line {index} has invalid depth_profile")
+        amendment_ready = row.get("amendment_ready")
+        if amendment_ready is not None and not isinstance(amendment_ready, bool):
+            raise ValueError(f"review-runs line {index} has invalid amendment_ready")
         plan_sha256 = row.get("plan_sha256")
         if plan_sha256 is not None and (
             not isinstance(plan_sha256, str)
@@ -227,11 +393,10 @@ def build_review_run_record(root: Path, manifest_path: Path) -> Dict[str, Any]:
     disagreement, or duplicate-id problem so nothing is appended on failure.
     """
     try:
-        manifest, read_error = try_read_json(manifest_path)
+        manifest_bytes = manifest_path.read_bytes()
     except OSError as exc:
         raise ValueError(f"unreadable review manifest: {exc}") from exc
-    if manifest is None:
-        raise ValueError(f"unreadable review manifest: {read_error}")
+    manifest = _manifest_from_bytes(manifest_bytes)
     validate_manifest(manifest)
 
     state_dir = manifest["state_dir"]
@@ -252,6 +417,7 @@ def build_review_run_record(root: Path, manifest_path: Path) -> Dict[str, Any]:
     plan, plan_error = try_read_json(plan_path)
     if not isinstance(plan, dict):
         raise ValueError(plan_error or "plan lock must be a JSON object")
+    validate_manifest_against_plan(manifest, plan)
 
     artifacts: List[Dict[str, str]] = []
     for entry in manifest["artifacts"]:
@@ -270,15 +436,25 @@ def build_review_run_record(root: Path, manifest_path: Path) -> Dict[str, Any]:
         "recorded_at": utc_now(),
         "state_dir": state_dir,
         "manifest_path": manifest_rel,
-        "manifest_sha256": sha256_file(manifest_path),
+        "manifest_sha256": hashlib.sha256(manifest_bytes).hexdigest(),
         "plan_sha256": plan_binding_sha256(plan),
         "policy": manifest.get("policy"),
         "gate_status": manifest["gate_status"],
         "active_blocking": list(manifest.get("active_blocking", [])),
         "depth_profile": recorded_review_depth(manifest.get("depth_profile")),
-        "findings": manifest.get("findings", {}),
+        "amendment_ready": _manifest_is_amendment_ready(manifest["schema_version"]),
+        "findings": _durable_findings(manifest),
         "artifacts": artifacts,
     }
+    return record
+
+
+def record_review_run(root: Path, manifest_path: Path) -> Dict[str, Any]:
+    """Build and append one review run while holding the duplicate-id lock."""
+    ledger_path = root / ".agent/review-runs.jsonl"
+    with file_lock(ledger_path.with_suffix(ledger_path.suffix + ".lock")):
+        record = build_review_run_record(root, manifest_path)
+        append_jsonl(ledger_path, record)
     return record
 
 
@@ -423,6 +599,8 @@ def _run_summary(record: Dict[str, Any]) -> Dict[str, Any]:
         "active_blocking": list(record.get("active_blocking", []) or []),
         "counts_by_severity": findings.get("counts_by_severity", {}),
         "counts_by_status": findings.get("counts_by_status", {}),
+        "amendment_ready": bool(record.get("amendment_ready", False)),
+        "findings": findings,
         "artifacts": record.get("artifacts", []),
         "depth_profile": recorded_review_depth(record.get("depth_profile")),
     }
@@ -665,10 +843,40 @@ def verify_review_integrity(
                         "message": f"review manifest unavailable for rehash: {manifest_rel}",
                     }
                 )
-            elif sha256_file(manifest_path) != manifest_expected:
-                findings.append(
-                    {"severity": "error", "message": f"review manifest hash mismatch: {manifest_rel}"}
-                )
+            else:
+                try:
+                    manifest_bytes = manifest_path.read_bytes()
+                except OSError as exc:
+                    findings.append(
+                        {"severity": "error", "message": f"review manifest unreadable: {exc}"}
+                    )
+                    manifest_bytes = None
+                if manifest_bytes is not None:
+                    actual_sha256 = hashlib.sha256(manifest_bytes).hexdigest()
+                    if actual_sha256 != manifest_expected:
+                        findings.append(
+                            {"severity": "error", "message": f"review manifest hash mismatch: {manifest_rel}"}
+                        )
+                    else:
+                        try:
+                            manifest = _manifest_from_bytes(manifest_bytes)
+                            validate_manifest(manifest)
+                        except ValueError as exc:
+                            findings.append(
+                                {"severity": "error", "message": f"review manifest invalid: {exc}"}
+                            )
+                        else:
+                            if record.get("findings", {}) != _durable_findings(manifest):
+                                findings.append(
+                                    {"severity": "error", "message": f"review findings projection mismatch: {manifest_rel}"}
+                                )
+                            expected_ready = _manifest_is_amendment_ready(
+                                manifest["schema_version"]
+                            )
+                            if record.get("amendment_ready", False) is not expected_ready:
+                                findings.append(
+                                    {"severity": "error", "message": f"review amendment readiness mismatch: {manifest_rel}"}
+                                )
 
         for entry in record.get("artifacts", []):
             rel = entry.get("path")

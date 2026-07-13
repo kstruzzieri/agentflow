@@ -19,16 +19,57 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 from .git import current_branch
-from .review import SEVERITIES, STATUSES, WORKFLOW_REVIEW_DEPTHS, validate_manifest
+from .review import (
+    SEVERITIES,
+    STATUSES,
+    WORKFLOW_REVIEW_DEPTHS,
+    validate_manifest,
+    validate_manifest_against_plan,
+)
 
-MANIFEST_SCHEMA_VERSION = "0.2.0"
+MANIFEST_SCHEMA_VERSION = "1.0.0"
 MANIFEST_FILENAME = "review-manifest.json"
 
 # status values that make a finding inactive (never block, never warn)
 INACTIVE_STATUSES = frozenset({"fixed", "rejected", "superseded"})
+ACTIVE_STATUSES = frozenset(STATUSES) - INACTIVE_STATUSES
 
 # Optional per-finding fields carried from the sidecar into the manifest index.
 OPTIONAL_INDEX_FIELDS = ("steelman_verdict", "superseded_by", "fix_commit")
+
+
+def _non_empty_string(value: Any) -> bool:
+    return isinstance(value, str) and bool(value.strip())
+
+
+def _validate_repair_context(finding: Dict[str, Any], required: bool) -> None:
+    fid = finding["id"]
+    refs = finding.get("agentflow_refs")
+    owner = refs.get("plan_step") if isinstance(refs, dict) else None
+    for field, value in (
+        ("claim", finding.get("claim")),
+        ("suggested_fix", finding.get("suggested_fix")),
+        ("agentflow_refs.plan_step", owner),
+    ):
+        if required and not _non_empty_string(value):
+            raise ValueError(f"finding {fid} {field} must be a non-empty string")
+        if value is not None and not _non_empty_string(value):
+            raise ValueError(f"finding {fid} {field} must be a non-empty string")
+
+    file_value = finding.get("file")
+    line = finding.get("line")
+    line_end = finding.get("line_end")
+    if file_value is not None and not _non_empty_string(file_value):
+        raise ValueError(f"finding {fid} file must be a non-empty string")
+    if (line is not None or line_end is not None) and file_value is None:
+        raise ValueError(f"finding {fid} line requires file")
+    for field, value in (("line", line), ("line_end", line_end)):
+        if value is not None and (isinstance(value, bool) or not isinstance(value, int) or value < 1):
+            raise ValueError(f"finding {fid} {field} must be a positive integer")
+    if line_end is not None and line is None:
+        raise ValueError(f"finding {fid} line_end requires line")
+    if line is not None and line_end is not None and line_end < line:
+        raise ValueError(f"finding {fid} line_end must be greater than or equal to line")
 
 # Required review artifacts. The runner fails closed when any is absent so a
 # manifest cannot be recorded with only the compact JSON sidecar hashed.
@@ -106,6 +147,7 @@ def load_findings(path: Path) -> List[Dict[str, Any]]:
             value = row.get(field)
             if value is not None and not isinstance(value, str):
                 raise ValueError(f"finding {fid} {field} must be a string")
+        _validate_repair_context(row, row["status"] in ACTIVE_STATUSES)
     return findings
 
 
@@ -250,6 +292,20 @@ def project_findings(findings: List[Dict[str, Any]]) -> Dict[str, Any]:
             value = finding.get(field)
             if value:
                 row[field] = value
+        refs = finding.get("agentflow_refs")
+        owner = refs.get("plan_step") if isinstance(refs, dict) else None
+        if owner:
+            row["owning_step"] = owner
+        if finding.get("claim"):
+            row["claim"] = finding["claim"]
+        if finding.get("file"):
+            location: Dict[str, Any] = {"path": finding["file"]}
+            for field in ("line", "line_end"):
+                if finding.get(field) is not None:
+                    location[field] = finding[field]
+            row["location"] = location
+        if finding.get("suggested_fix"):
+            row["suggested_fix"] = finding["suggested_fix"]
         index.append(row)
     return {
         "counts_by_severity": counts_by_severity,
@@ -281,6 +337,7 @@ def build_manifest(
         "gate_status": gate_status,
         "active_blocking": list(active_blocking),
         "depth_profile": depth_profile,
+        "amendment_ready": True,
         "findings": projection,
         "artifacts": artifacts,
     }
@@ -419,7 +476,7 @@ def produce_manifest(
         required_extra=DEPTH_REQUIRED_ARTIFACTS[depth_profile],
     )
 
-    return build_manifest(
+    manifest = build_manifest(
         review_run_id=mint_review_run_id(),
         state_dir=state_rel,
         policy_name=policy_name,
@@ -429,6 +486,15 @@ def produce_manifest(
         artifacts=artifacts,
         depth_profile=depth_profile,
     )
+    plan_path = root / ".agent/plan.lock.json"
+    try:
+        plan = json.loads(plan_path.read_text(encoding="utf-8"))
+    except OSError as exc:
+        raise ValueError(f"locked plan unavailable: {exc}") from exc
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"locked plan is malformed JSON: {exc}") from exc
+    validate_manifest_against_plan(manifest, plan)
+    return manifest
 
 
 def exit_code_for(

@@ -127,7 +127,7 @@ class ProofCompatibilityMatrixTests(unittest.TestCase):
 
     def test_newer_schema_rejection_is_upgrade_not_tamper_or_shape(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
-            result = verify_fixture(mutated_current_fixture(tmp, "0.10.0", drop_meta=True))
+            result = verify_fixture(mutated_current_fixture(tmp, "0.11.0", drop_meta=True))
 
         output = result.stdout + result.stderr
         self.assertNotEqual(result.returncode, 0)

@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Amendment-ready review-manifest v1.0 fields with locked-plan ownership
+  validation, durable ledger/proof projection, and HTML proof viewing.
+
+### Changed
+
+- Legacy review manifests remain recordable and verifiable but are explicitly
+  marked non-amendment-ready; proof-pack schema is now 0.10.0 and review-run
+  rows are 0.6.0. The manifest schema uses a new major because amendment-ready
+  rows add required repair context.
+
 ## [0.4.0] - 2026-07-10
 
 ### Added
