@@ -74,7 +74,7 @@ from .recommend import (
     validate_brief,
 )
 from .receipts import record_command, record_file_change, replay_gates, run_command
-from .review import build_review_run_record, parse_finding_ref, review_evidence_entries
+from .review import parse_finding_ref, record_review_run, review_evidence_entries
 from .review_runner import MANIFEST_FILENAME, exit_code_for, produce_manifest
 from .runtime import build_runtime_status
 from .validation import (
@@ -479,11 +479,10 @@ def command_record_review(args: argparse.Namespace) -> int:
     if not manifest_path.is_absolute():
         manifest_path = root / manifest_path
     try:
-        record = build_review_run_record(root, manifest_path)
+        record = record_review_run(root, manifest_path)
     except ValueError as exc:
         print(f"invalid review manifest: {exc}", file=sys.stderr)
         return 1
-    append_jsonl(root / ".agent/review-runs.jsonl", record)
     if args.emit_evidence:
         for entry in review_evidence_entries(record):
             append_jsonl(root / ".agent/evidence.jsonl", entry)

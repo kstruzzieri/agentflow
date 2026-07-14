@@ -68,6 +68,40 @@ class StabilityPolicyTests(unittest.TestCase):
             ("record-file-change", [rows("file-receipts.jsonl")[0]]),
             ("verify-run", rows("verification-runs.jsonl")[0]),
             ("runtime-status", rows("runtime-snapshots.jsonl")[0]),
+            (
+                "record-review",
+                {
+                    "schema_version": "0.6.0",
+                    "review_run_id": "RR-20260713T000000Z-1234abcd",
+                    "recorded_at": "2026-07-13T00:00:00+00:00",
+                    "state_dir": "docs/ai/state/main",
+                    "manifest_path": "docs/ai/state/main/review-manifest.json",
+                    "manifest_sha256": "0" * 64,
+                    "plan_sha256": "1" * 64,
+                    "policy": "main",
+                    "gate_status": "pass",
+                    "active_blocking": [],
+                    "depth_profile": "deep",
+                    "amendment_ready": True,
+                    "findings": {"index": []},
+                    "artifacts": [],
+                },
+            ),
+            (
+                "review-manifest",
+                {
+                    "schema_version": "1.0.0",
+                    "review_run_id": "RR-20260713T000000Z-1234abcd",
+                    "state_dir": "docs/ai/state/main",
+                    "policy": "main",
+                    "gate_status": "pass",
+                    "active_blocking": [],
+                    "depth_profile": "deep",
+                    "amendment_ready": True,
+                    "findings": {"index": []},
+                    "artifacts": [{"path": "findings-final.json"}],
+                },
+            ),
         ]
         for command, payload in samples:
             with self.subTest(command=command):

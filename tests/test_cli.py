@@ -860,7 +860,7 @@ class AgentflowCliTests(unittest.TestCase):
 
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             proof = json.loads((cwd / ".agent/proof-pack.json").read_text(encoding="utf-8"))
-            self.assertEqual(proof["bundle_version"], "0.9.0")
+            self.assertEqual(proof["bundle_version"], "0.10.0")
             self.assertIn(".agent/plan.lock.json", proof["generated_from"])
             self.assertEqual(proof["coverage"]["missing_plan_evidence_ids"], ["E1"])
             check_ids = [check["id"] for check in proof["checks"]]
@@ -1094,7 +1094,20 @@ class AgentflowCliTests(unittest.TestCase):
         state = cwd / "docs/ai/state/main"
         state.mkdir(parents=True)
         manifest_path = state / "review-manifest.json"
-        manifest_path.write_text('{"schema_version": "0.1.0"}\n', encoding="utf-8")
+        manifest_path.write_text(
+            json.dumps(
+                {
+                    "schema_version": "0.1.0",
+                    "review_run_id": "RR-20260620T180000Z-ab12cd34",
+                    "state_dir": "docs/ai/state/main",
+                    "gate_status": "fail",
+                    "active_blocking": ["BP-001"],
+                    "findings": {"index": []},
+                    "artifacts": [{"path": "findings-final.json"}],
+                }
+            ),
+            encoding="utf-8",
+        )
         (cwd / ".agent/review-runs.jsonl").write_text(
             json.dumps(
                 {
@@ -2120,10 +2133,18 @@ class RecordReviewCliTests(unittest.TestCase):
 class ReviewManifestCommandTest(unittest.TestCase):
     def _setup(self, findings: list) -> Path:
         root = Path(tempfile.mkdtemp())
+        normalized = []
+        for source in findings:
+            row = dict(source)
+            if row.get("status") in ("open", "accepted"):
+                row.setdefault("claim", "Broken behavior.")
+                row.setdefault("suggested_fix", "Repair it.")
+                row.setdefault("agentflow_refs", {"plan_step": "P1"})
+            normalized.append(row)
         state = root / "docs/ai/state/feat-7"
         state.mkdir(parents=True)
         (state / "findings-final.json").write_text(
-            json.dumps({"findings": findings}), encoding="utf-8")
+            json.dumps({"findings": normalized}), encoding="utf-8")
         (state / "findings-final.yaml").write_text("findings: []\n", encoding="utf-8")
         (state / "synthesis.md").write_text("# Synthesis\n", encoding="utf-8")
         (state / "gate.yaml").write_text("status: pass\n", encoding="utf-8")
@@ -2136,6 +2157,10 @@ class ReviewManifestCommandTest(unittest.TestCase):
             },
         }
         (root / "docs/ai/config.json").write_text(json.dumps(config), encoding="utf-8")
+        (root / ".agent").mkdir()
+        plan = valid_plan()
+        plan["locked"] = True
+        (root / ".agent/plan.lock.json").write_text(json.dumps(plan), encoding="utf-8")
         return root
 
     def test_write_emits_valid_manifest_file(self) -> None:
@@ -2223,6 +2248,28 @@ class ReviewManifestCommandTest(unittest.TestCase):
         )
         self.assertEqual(record.returncode, 0, record.stderr)
         self.assertIn("recorded review run RR-", record.stdout)
+
+    def test_json_exposes_amendment_ready_projection(self) -> None:
+        finding = {
+            "id": "A",
+            "severity": "high",
+            "status": "accepted",
+            "claim": "The verifier omits a hash.",
+            "suggested_fix": "Hash the missing artifact.",
+            "file": "src/agentflow/proof.py",
+            "line": 10,
+            "agentflow_refs": {"plan_step": "P1"},
+        }
+        root = self._setup([finding])
+        result = run_agentflow(
+            root, "review-manifest", "--root", str(root),
+            "--state-dir", "docs/ai/state/feat-7", "--branch", "feat/7-evidence",
+            "--json",
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        payload = json.loads(result.stdout)
+        self.assertTrue(payload["amendment_ready"])
+        self.assertEqual(payload["findings"]["index"][0]["owning_step"], "P1")
 
 
 class AuditDriftHunkCliTests(unittest.TestCase):
@@ -3096,6 +3143,10 @@ class ReviewManifestDepthProfileCliTests(unittest.TestCase):
                 "branch_modifiers": {"*": {"gate": "default"}},
                 "gate_policy": {"default": {"blocks_on": ["high"], "warns_on": ["medium"]}},
             }), encoding="utf-8")
+            (root / ".agent").mkdir()
+            plan = valid_plan()
+            plan["locked"] = True
+            (root / ".agent/plan.lock.json").write_text(json.dumps(plan), encoding="utf-8")
             env = {**os.environ, "PYTHONPATH": "src"}
             res = subprocess.run(
                 [sys.executable, "-m", "agentflow", "review-manifest",

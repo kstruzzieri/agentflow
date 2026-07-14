@@ -434,7 +434,7 @@ def _verify_requirement_coverage(
             expected = {}
         else:
             evidence = read_jsonl(root / ".agent/evidence.jsonl")
-            review = review_summary(root)
+            review = review_summary(root, plan)
             expected = build_requirement_coverage(
                 plan,
                 evidence,
@@ -484,7 +484,13 @@ def _verify_requirement_coverage(
 
 
 def build_proof(root: Path, plan_path: Path, strict: bool = False) -> Dict[str, Any]:
-    plan = read_json(plan_path)
+    resolved_root = root.resolve()
+    resolved_plan_path = plan_path.resolve()
+    try:
+        plan_source = resolved_plan_path.relative_to(resolved_root).as_posix()
+    except ValueError as exc:
+        raise ValueError("plan path escapes root") from exc
+    plan = read_json(resolved_plan_path)
     traceability_errors = validate_requirement_traceability(plan)
     if traceability_errors:
         raise ValueError(
@@ -493,7 +499,7 @@ def build_proof(root: Path, plan_path: Path, strict: bool = False) -> Dict[str, 
     evidence = read_jsonl(root / ".agent/evidence.jsonl")
     context_receipts = read_jsonl(root / ".agent/context-receipts.jsonl")
     failures = read_jsonl(root / ".agent/failures.jsonl")
-    review = review_summary(root)
+    review = review_summary(root, plan)
     runtime_config_path = root / ".agent/runtime.config.json"
     runtime_config: Optional[Dict[str, Any]]
     runtime_config_warning = None
@@ -572,7 +578,7 @@ def build_proof(root: Path, plan_path: Path, strict: bool = False) -> Dict[str, 
                 workflow_summary = workflow_contract_summary(workflow_contract)
                 checks.append({"id": "workflow_contract_valid", "status": "passed"})
 
-    generated_from = artifact_files(root)
+    generated_from = sorted(set(artifact_files(root) + [plan_source]))
     files = [
         {"path": relative_path, "sha256": sha256_file(root / relative_path)}
         for relative_path in generated_from

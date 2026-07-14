@@ -44,13 +44,21 @@ Emit the machine sidecar `findings-final.json` next to `findings-final.yaml`:
 {
   "findings": [
     { "id": "BP-001", "severity": "high", "status": "accepted",
-      "steelman_verdict": "confirmed" }
+      "steelman_verdict": "confirmed",
+      "claim": "verify-proof omits a required artifact",
+      "suggested_fix": "Require and hash the artifact before accepting proof.",
+      "file": "src/agentflow/proof.py", "line": 120, "line_end": 132,
+      "agentflow_refs": { "plan_step": "P2" } }
   ]
 }
 ```
 
 Include exactly `id`, final `severity`, `status`, and (when set)
-`steelman_verdict`, `superseded_by`, and `fix_commit` for each finding.
+`steelman_verdict`, `superseded_by`, and `fix_commit` for each finding. Active
+`open` and `accepted` findings additionally require `claim`, `suggested_fix`,
+and `agentflow_refs.plan_step`; include `file`, `line`, and `line_end` only for
+the primary location. Inactive findings may omit amendment context. Do not copy
+arbitrary YAML properties into this sidecar.
 
 Then produce the manifest deterministically (do not hand-project it):
 
@@ -64,7 +72,8 @@ agentflow review-manifest --root . \
 computes the finding-policy gate over final severity (excluding
 fixed/rejected/superseded), projects counts/index, requires
 `findings-final.yaml`, `synthesis.md`, and `gate.yaml` to be present, lists
-artifacts, and writes `review-manifest.json`.
+artifacts, validates every supplied owner against the locked plan, and writes a
+v1.0 `review-manifest.json` with `amendment_ready: true`.
 
 `gate.yaml` remains the full pass-4 readiness gate. It must still record missing
 inputs, unknown worktree state, missing verification evidence, failed proof

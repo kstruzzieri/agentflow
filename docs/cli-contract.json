@@ -3017,13 +3017,19 @@
       {
         "keys": {
           "active_blocking": "array",
-          "findings": "array",
+          "amendment_ready": "boolean",
+          "artifacts": "array",
+          "depth_profile": "string",
+          "findings": "object",
           "gate_status": "string",
+          "manifest_path": "string",
           "manifest_sha256": "string",
+          "plan_sha256": "string",
+          "policy": "string|null",
           "recorded_at": "string",
           "review_run_id": "string",
           "schema_version": "string",
-          "source": "string"
+          "state_dir": "string"
         },
         "type": "object"
       }
@@ -3063,12 +3069,15 @@
       {
         "keys": {
           "active_blocking": "array",
-          "artifacts": "object",
+          "amendment_ready": "boolean",
+          "artifacts": "array",
           "depth_profile": "string",
-          "findings": "array",
+          "findings": "object",
           "gate_status": "string",
+          "policy": "string",
           "review_run_id": "string",
-          "schema_version": "string"
+          "schema_version": "string",
+          "state_dir": "string"
         },
         "type": "object"
       }

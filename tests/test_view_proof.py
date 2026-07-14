@@ -43,6 +43,23 @@ def sample_model() -> dict:
                 {"id": "unused_evidence_ids", "status": "warning", "count": 1},
                 {"id": "dangling_supports", "status": "failed", "count": 2},
             ],
+            "review": {
+                "review_runs": [{
+                    "review_run_id": "RR-20260712T120000Z-ab12cd34",
+                    "gate_status": "fail",
+                    "amendment_ready": True,
+                    "findings": {"index": [{
+                        "finding_id": "BP-001",
+                        "severity": "high",
+                        "status": "accepted",
+                        "owning_step": "P1",
+                        "claim": "The proof omits an artifact.",
+                        "location": {"path": "src/agentflow/proof.py", "line": 10, "line_end": 12},
+                        "suggested_fix": "Require and hash the artifact.",
+                    }]},
+                    "artifacts": [],
+                }]
+            },
         },
         "plan": {
             "objective": "Ship the fixture feature.",
@@ -101,12 +118,26 @@ class RenderHtmlTests(unittest.TestCase):
             "Drift Audit",
             "Checks",
             "Residual Warnings",
+            "Review Findings",
             "Proof Hashes",
         ):
             self.assertIn(f"<h2>{heading}</h2>", html_out)
         self.assertIn("Ship the fixture feature.", html_out)
         self.assertIn("Touch only fixture files.", html_out)
         self.assertIn("c0ffee", html_out)
+
+    def test_amendment_ready_finding_context_is_visible(self) -> None:
+        html_out = render_html(sample_model())
+        for value in (
+            "RR-20260712T120000Z-ab12cd34",
+            "BP-001",
+            "P1",
+            "The proof omits an artifact.",
+            "src/agentflow/proof.py:10-12",
+            "Require and hash the artifact.",
+            "yes",
+        ):
+            self.assertIn(value, html_out)
 
     def test_banner_names_verify_proof_as_authoritative(self) -> None:
         html_out = render_html(sample_model())

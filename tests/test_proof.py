@@ -1118,7 +1118,7 @@ class CoverageTests(unittest.TestCase):
                 "workflow_contract",
             ],
         )
-        self.assertEqual(PROOF_PACK_SCHEMA_VERSION, "0.9.0")
+        self.assertEqual(PROOF_PACK_SCHEMA_VERSION, "0.10.0")
 
     def _write_snapshot_ledger(self, root: Path) -> None:
         snapshot = {
@@ -1704,8 +1704,26 @@ class ReviewProofTests(unittest.TestCase):
         init_execution_artifacts(root)
         write_json(
             root / ".agent/plan.lock.json",
-            {"schema_version": "0.3.0", "objective": "o", "scope": ["s"],
-             "steps": [{"id": "P1", "evidence_ids": []}], "evidence_ids": []},
+            {
+                "schema_version": "0.3.0", "objective": "o", "scope": ["s"],
+                "non_goals": [], "invariants": ["i"],
+                "allowed_files": [".agent/**"], "blocked_files": [],
+                "validation_gates": ["python3 -m unittest"],
+                "rollback_plan": "r", "risk_level": "low",
+                "drift_budget": {
+                    "unrelated_edits": 0, "new_dependencies": 0,
+                    "formatting_drift": "minimal",
+                    "architecture_drift": "requires_approval",
+                    "test_weakening": 0,
+                },
+                "steps": [{
+                    "id": "P1", "action": "a", "files": [".agent/**"],
+                    "preconditions": ["p"], "expected_diff": ["d"],
+                    "validation": ["python3 -m unittest"], "evidence_ids": [],
+                }],
+                "evidence_ids": [], "locked": True,
+                "locked_at": "2026-06-01T00:00:00+00:00",
+            },
         )
         append_jsonl(
             root / ".agent/review-runs.jsonl",
@@ -1779,6 +1797,72 @@ class ReviewProofTests(unittest.TestCase):
             self.assertIn("policy", canonical_core(proof)["review"])
             before = core_sha256(proof)
             proof["review"]["policy"]["proof_strict_effective"] = True
+            self.assertNotEqual(core_sha256(proof), before)
+
+    def test_amendment_projection_is_preserved_and_hash_bound(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = self._fixture_with_review(tmp)
+            selected_plan = json.loads(
+                (root / ".agent/plan.lock.json").read_text(encoding="utf-8")
+            )
+            selected_plan["objective"] = "selected plan"
+            selected_plan_path = root / "selected-plan.json"
+            write_json(selected_plan_path, selected_plan)
+            ledger_path = root / ".agent/review-runs.jsonl"
+            run = json.loads(ledger_path.read_text(encoding="utf-8"))
+            run["schema_version"] = REVIEW_RUNS_SCHEMA_VERSION
+            run["amendment_ready"] = True
+            run["plan_sha256"] = plan_binding_sha256(selected_plan)
+            run["findings"] = {
+                "counts_by_severity": {"high": 1},
+                "counts_by_status": {"accepted": 1},
+                "index": [{
+                    "finding_id": "BP-001",
+                    "severity": "high",
+                    "status": "accepted",
+                    "owning_step": "P1",
+                    "claim": "Broken proof integrity.",
+                    "suggested_fix": "Hash the missing artifact.",
+                }]
+            }
+            state = root / "docs/ai/state/main"
+            state.mkdir(parents=True, exist_ok=True)
+            manifest_path = state / "review-manifest.json"
+            manifest_path.write_text(
+                json.dumps(
+                    {
+                        "schema_version": "1.0.0",
+                        "review_run_id": run["review_run_id"],
+                        "state_dir": "docs/ai/state/main",
+                        "gate_status": run["gate_status"],
+                        "active_blocking": run.get("active_blocking", []),
+                        "amendment_ready": True,
+                        "findings": run["findings"],
+                        "artifacts": [{"path": "findings-final.json"}],
+                    }
+                ),
+                encoding="utf-8",
+            )
+            run["manifest_sha256"] = sha256_file(manifest_path)
+            ledger_path.write_text(json.dumps(run) + "\n", encoding="utf-8")
+            proof = build_proof(root, selected_plan_path)
+            self.assertIn("selected-plan.json", proof["generated_from"])
+            projected = proof["review"]["review_runs"][0]
+            self.assertTrue(projected["amendment_ready"])
+            self.assertEqual(projected["findings"], run["findings"])
+            write_json(root / ".agent/proof-pack.json", proof)
+            selected_plan["objective"] = "tampered after proof build"
+            write_json(selected_plan_path, selected_plan)
+            findings = verify_proof(root, root / ".agent/proof-pack.json")
+            self.assertTrue(
+                any(
+                    finding["message"] == "hash mismatch for selected-plan.json"
+                    for finding in findings
+                ),
+                findings,
+            )
+            before = core_sha256(proof)
+            projected["findings"]["index"][0]["claim"] = "tampered"
             self.assertNotEqual(core_sha256(proof), before)
 
 
@@ -1952,7 +2036,20 @@ class VerifyReviewTests(unittest.TestCase):
         state = root / "docs/ai/state/main"
         state.mkdir(parents=True)
         manifest_path = state / "review-manifest.json"
-        manifest_path.write_text('{"schema_version": "0.1.0"}\n', encoding="utf-8")
+        manifest_path.write_text(
+            json.dumps(
+                {
+                    "schema_version": "0.1.0",
+                    "review_run_id": "RR-20260620T180000Z-ab12cd34",
+                    "state_dir": "docs/ai/state/main",
+                    "gate_status": gate_status,
+                    "active_blocking": active or [],
+                    "findings": {"index": []},
+                    "artifacts": [{"path": "findings-final.yaml"}],
+                }
+            ),
+            encoding="utf-8",
+        )
         from agentflow.review import sha256_file
         artifacts = []
         if with_artifact:
@@ -1987,6 +2084,29 @@ class VerifyReviewTests(unittest.TestCase):
             findings = verify_proof(root, root / ".agent/proof-pack.json")
             errors = [f for f in findings if f["severity"] == "error"]
             self.assertTrue(any("review manifest" in f["message"] for f in errors))
+
+    def test_ledger_projection_tamper_fails_even_after_rebuilding_proof(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = self._fixture(tmp)
+            ledger_path = root / ".agent/review-runs.jsonl"
+            record = json.loads(ledger_path.read_text(encoding="utf-8"))
+            record["findings"] = {
+                "index": [{
+                    "finding_id": "BP-001",
+                    "severity": "high",
+                    "status": "fixed",
+                }]
+            }
+            ledger_path.write_text(json.dumps(record) + "\n", encoding="utf-8")
+            write_proof_metadata(root, build_proof(root, root / ".agent/plan.lock.json"))
+            findings = verify_proof(root, root / ".agent/proof-pack.json")
+            self.assertTrue(
+                any(
+                    finding["severity"] == "error"
+                    and "projection mismatch" in finding["message"]
+                    for finding in findings
+                )
+            )
 
     def test_artifact_absent_is_warning_by_default(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -2225,7 +2345,7 @@ class StuckProofTests(unittest.TestCase):
             self.assertIn("stuck", canonical_core(proof))
 
     def test_proof_schema_version_is_bumped(self) -> None:
-        self.assertEqual(PROOF_PACK_SCHEMA_VERSION, "0.9.0")
+        self.assertEqual(PROOF_PACK_SCHEMA_VERSION, "0.10.0")
 
 
 class AggregationProvenanceProofTests(unittest.TestCase):
@@ -2532,7 +2652,7 @@ class ProofSchemaGateTests(unittest.TestCase):
             root = Path(tmp)
             create_initial_artifacts(root)
             proof = build_proof(root, root / ".agent/plan.lock.json")
-            proof["schema_version"] = "0.10.0"
+            proof["schema_version"] = "0.11.0"
             proof_path = write_proof_metadata(root, proof)
 
             findings = verify_proof(root, proof_path)
@@ -2547,7 +2667,7 @@ class ProofSchemaGateTests(unittest.TestCase):
             root = Path(tmp)
             create_initial_artifacts(root)
             proof = build_proof(root, root / ".agent/plan.lock.json")
-            proof["schema_version"] = "0.10.0"
+            proof["schema_version"] = "0.11.0"
             del proof["meta"]
             proof_path = write_proof_metadata(root, proof)
 

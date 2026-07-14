@@ -33,7 +33,14 @@ class LoadFindingsTest(unittest.TestCase):
 
     def test_loads_valid_findings(self) -> None:
         path = self._write({"findings": [
-            {"id": "BP-001", "severity": "high", "status": "accepted"},
+            {
+                "id": "BP-001",
+                "severity": "high",
+                "status": "accepted",
+                "claim": "Broken behavior.",
+                "suggested_fix": "Repair it.",
+                "agentflow_refs": {"plan_step": "P1"},
+            },
         ]})
         findings = review_runner.load_findings(path)
         self.assertEqual(findings[0]["id"], "BP-001")
@@ -84,6 +91,59 @@ class LoadFindingsTest(unittest.TestCase):
         with self.assertRaises(ValueError):
             review_runner.load_findings(path)
 
+    def test_active_finding_requires_amendment_context(self) -> None:
+        valid = {
+            "id": "A",
+            "severity": "high",
+            "status": "accepted",
+            "claim": "The verifier skips an integrity check.",
+            "suggested_fix": "Validate the missing artifact before accepting proof.",
+            "file": "src/agentflow/proof.py",
+            "line": 10,
+            "line_end": 12,
+            "agentflow_refs": {"plan_step": "P1", "evidence_ids": ["E1"]},
+        }
+        findings = review_runner.load_findings(self._write({"findings": [valid]}))
+        self.assertEqual(findings, [valid])
+
+        for missing in ("claim", "suggested_fix", "agentflow_refs"):
+            with self.subTest(missing=missing):
+                row = dict(valid)
+                row.pop(missing)
+                with self.assertRaises(ValueError):
+                    review_runner.load_findings(self._write({"findings": [row]}))
+
+    def test_active_finding_rejects_malformed_repair_context(self) -> None:
+        base = {
+            "id": "A",
+            "severity": "high",
+            "status": "open",
+            "claim": "Broken behavior.",
+            "suggested_fix": "Repair it.",
+            "agentflow_refs": {"plan_step": "P1"},
+        }
+        variants = [
+            {**base, "claim": ""},
+            {**base, "suggested_fix": []},
+            {**base, "agentflow_refs": {"plan_step": ""}},
+            {**base, "line": 0},
+            {**base, "file": "x.py", "line": 4, "line_end": 3},
+            {**base, "file": 42},
+        ]
+        for row in variants:
+            with self.subTest(row=row):
+                with self.assertRaises(ValueError):
+                    review_runner.load_findings(self._write({"findings": [row]}))
+
+    def test_inactive_finding_does_not_require_amendment_context(self) -> None:
+        for status in ("fixed", "rejected", "superseded"):
+            with self.subTest(status=status):
+                row = {"id": status, "severity": "high", "status": status}
+                self.assertEqual(
+                    review_runner.load_findings(self._write({"findings": [row]})),
+                    [row],
+                )
+
 
 def _sample_config() -> dict:
     return {
@@ -99,6 +159,39 @@ def _sample_config() -> dict:
             "advisory_only": {"blocks_on": [], "warns_on": ["critical", "high", "medium"]},
         },
     }
+
+
+def _write_valid_locked_plan(root: Path) -> None:
+    plan = {
+        "schema_version": "0.3.0",
+        "objective": "Validate review ownership.",
+        "scope": ["Review findings."],
+        "non_goals": [],
+        "invariants": ["Ownership is explicit."],
+        "allowed_files": ["src/**"],
+        "blocked_files": [],
+        "validation_gates": ["python3 -m unittest"],
+        "rollback_plan": "Delete the fixture.",
+        "risk_level": "low",
+        "drift_budget": {
+            "unrelated_edits": 0,
+            "new_dependencies": 0,
+            "formatting_drift": "minimal",
+            "architecture_drift": "requires_approval",
+        },
+        "steps": [{
+            "id": "P1",
+            "action": "Repair the finding.",
+            "files": ["src/**"],
+            "preconditions": [],
+            "expected_diff": ["Finding repaired."],
+            "validation": ["python3 -m unittest"],
+            "evidence_ids": [],
+        }],
+        "evidence_ids": [],
+        "locked": True,
+    }
+    (root / ".agent/plan.lock.json").write_text(json.dumps(plan), encoding="utf-8")
 
 
 class ResolveGatePolicyTest(unittest.TestCase):
@@ -280,6 +373,34 @@ class ProjectFindingsTest(unittest.TestCase):
         self.assertEqual(row["steelman_verdict"], "superseded")
         self.assertNotIn("fix_commit", row)  # empty optional fields are omitted
 
+    def test_projects_only_supported_amendment_fields_deterministically(self) -> None:
+        projection = review_runner.project_findings([
+            {
+                "id": "A",
+                "severity": "high",
+                "status": "accepted",
+                "claim": "The proof omits an artifact.",
+                "suggested_fix": "Require and hash the artifact.",
+                "file": "src/agentflow/proof.py",
+                "line": 10,
+                "line_end": 12,
+                "agentflow_refs": {"plan_step": "P1", "evidence_ids": ["E1"]},
+                "arbitrary_yaml_field": "must not leak",
+            }
+        ])
+        self.assertEqual(
+            projection["index"],
+            [{
+                "finding_id": "A",
+                "severity": "high",
+                "status": "accepted",
+                "owning_step": "P1",
+                "claim": "The proof omits an artifact.",
+                "location": {"path": "src/agentflow/proof.py", "line": 10, "line_end": 12},
+                "suggested_fix": "Require and hash the artifact.",
+            }],
+        )
+
 
 class BuildArtifactsTest(unittest.TestCase):
     def _state_dir(self, names: list) -> Path:
@@ -321,7 +442,14 @@ class BuildArtifactsTest(unittest.TestCase):
 class BuildManifestTest(unittest.TestCase):
     def test_assembles_valid_manifest(self) -> None:
         projection = review_runner.project_findings([
-            {"id": "A", "severity": "high", "status": "accepted"},
+            {
+                "id": "A",
+                "severity": "high",
+                "status": "accepted",
+                "claim": "Broken behavior.",
+                "suggested_fix": "Repair it.",
+                "agentflow_refs": {"plan_step": "P1"},
+            },
         ])
         manifest = review_runner.build_manifest(
             review_run_id="RR-20260622T101010Z-0a1b2c3d",
@@ -369,14 +497,24 @@ class CurrentBranchTest(unittest.TestCase):
 class ProduceManifestTest(unittest.TestCase):
     def _root_with(self, branch_dir: str, findings: list) -> Path:
         root = Path(tempfile.mkdtemp())
+        normalized = []
+        for source in findings:
+            row = dict(source)
+            if row.get("status") in ("open", "accepted"):
+                row.setdefault("claim", "Broken behavior.")
+                row.setdefault("suggested_fix", "Repair it.")
+                row.setdefault("agentflow_refs", {"plan_step": "P1"})
+            normalized.append(row)
         state = root / "docs/ai/state" / branch_dir
         state.mkdir(parents=True)
         (state / "findings-final.json").write_text(
-            json.dumps({"findings": findings}), encoding="utf-8")
+            json.dumps({"findings": normalized}), encoding="utf-8")
         (state / "findings-final.yaml").write_text("findings: []\n", encoding="utf-8")
         (state / "synthesis.md").write_text("# Synthesis\n", encoding="utf-8")
         (state / "gate.yaml").write_text("status: pass\n", encoding="utf-8")
         (root / "config.json").write_text(json.dumps(_sample_config()), encoding="utf-8")
+        (root / ".agent").mkdir()
+        _write_valid_locked_plan(root)
         return root
 
     def test_produces_manifest_with_resolved_gate(self) -> None:
@@ -437,7 +575,14 @@ class ProduceManifestTest(unittest.TestCase):
         state = root / "docs/ai/state/feat-7"
         (state / "custom.json").write_text(
             json.dumps({"findings": [
-                {"id": "HIGH", "severity": "high", "status": "open"},
+                {
+                    "id": "HIGH",
+                    "severity": "high",
+                    "status": "open",
+                    "claim": "Broken behavior.",
+                    "suggested_fix": "Repair it.",
+                    "agentflow_refs": {"plan_step": "P1"},
+                },
             ]}),
             encoding="utf-8",
         )
@@ -547,6 +692,8 @@ class DepthProfileArtifactTests(unittest.TestCase):
             "branch_modifiers": {"*": {"gate": "default"}},
             "gate_policy": {"default": {"blocks_on": ["high"], "warns_on": ["medium"]}},
         }), encoding="utf-8")
+        (root / ".agent").mkdir()
+        _write_valid_locked_plan(root)
         return root, cfg
 
     def test_deep_requires_full_four_pass(self):

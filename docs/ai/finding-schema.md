@@ -112,11 +112,36 @@ artifacts, plan steps, evidence, and receipts.
 
 ## Machine projection: review-manifest.json
 
-Pass 4 emits a compact `findings-final.json` sidecar beside `findings-final.yaml`,
-one object per final finding with exactly `id`, final `severity`, `status`, and
-(when set) `steelman_verdict`, `superseded_by`, and `fix_commit`, wrapped as
-`{"findings": [ ... ]}`. Pass 4 then runs `agentflow review-manifest` to produce
-`review-manifest.json` from that sidecar — do not hand-project the manifest.
+Pass 4 emits a compact `findings-final.json` sidecar beside `findings-final.yaml`.
+Every row contains `id`, final `severity`, and `status`, plus the supported
+adjudication fields `steelman_verdict`, `superseded_by`, and `fix_commit` when
+set. Active `open` and `accepted` rows also contain the finding `claim`,
+`suggested_fix`, and `agentflow_refs.plan_step`; copy `file`, `line`, and
+`line_end` when the primary location exists. Do not copy other YAML fields.
+
+`agentflow review-manifest` validates the sidecar against the current locked
+plan and emits manifest schema v1.0 with `amendment_ready: true`. The new major
+reflects the required repair context; each active
+`findings.index` row has this canonical machine shape:
+
+```json
+{
+  "finding_id": "BP-001",
+  "severity": "high",
+  "status": "accepted",
+  "owning_step": "P2",
+  "claim": "verify-proof omits a required artifact",
+  "location": {"path": "src/agentflow/proof.py", "line": 120, "line_end": 132},
+  "suggested_fix": "Require and hash the artifact before accepting proof."
+}
+```
+
+`location` is optional. Inactive `fixed`, `rejected`, and `superseded` rows may
+omit all amendment fields. Missing or malformed active context and any supplied
+owner absent from the locked plan fail before output or ledger mutation.
+Manifest v0.0-v0.2 inputs remain recordable and verifiable, but their durable
+review-run record and proof summary set `amendment_ready: false`; Agentflow never
+guesses or backfills an owner for them. Do not hand-project the manifest.
 Agentflow hashes the YAML/Markdown artifacts and the manifest, then writes a
 durable record to `.agent/review-runs.jsonl`; it never parses the YAML and never
 re-adjudicates a finding. `review-manifest.gate_status` is the deterministic
