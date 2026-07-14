@@ -51,9 +51,10 @@ def _validate_repair_context(finding: Dict[str, Any], required: bool) -> None:
         ("suggested_fix", finding.get("suggested_fix")),
         ("agentflow_refs.plan_step", owner),
     ):
-        if required and not _non_empty_string(value):
-            raise ValueError(f"finding {fid} {field} must be a non-empty string")
-        if value is not None and not _non_empty_string(value):
+        if value is None:
+            if required:
+                raise ValueError(f"finding {fid} {field} must be a non-empty string")
+        elif not _non_empty_string(value):
             raise ValueError(f"finding {fid} {field} must be a non-empty string")
 
     file_value = finding.get("file")

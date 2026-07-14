@@ -873,7 +873,7 @@ def verify_review_integrity(
                             expected_ready = _manifest_is_amendment_ready(
                                 manifest["schema_version"]
                             )
-                            if record.get("amendment_ready", False) is not expected_ready:
+                            if bool(record.get("amendment_ready", False)) != expected_ready:
                                 findings.append(
                                     {"severity": "error", "message": f"review amendment readiness mismatch: {manifest_rel}"}
                                 )
