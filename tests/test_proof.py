@@ -1704,8 +1704,26 @@ class ReviewProofTests(unittest.TestCase):
         init_execution_artifacts(root)
         write_json(
             root / ".agent/plan.lock.json",
-            {"schema_version": "0.3.0", "objective": "o", "scope": ["s"],
-             "steps": [{"id": "P1", "evidence_ids": []}], "evidence_ids": []},
+            {
+                "schema_version": "0.3.0", "objective": "o", "scope": ["s"],
+                "non_goals": [], "invariants": ["i"],
+                "allowed_files": [".agent/**"], "blocked_files": [],
+                "validation_gates": ["python3 -m unittest"],
+                "rollback_plan": "r", "risk_level": "low",
+                "drift_budget": {
+                    "unrelated_edits": 0, "new_dependencies": 0,
+                    "formatting_drift": "minimal",
+                    "architecture_drift": "requires_approval",
+                    "test_weakening": 0,
+                },
+                "steps": [{
+                    "id": "P1", "action": "a", "files": [".agent/**"],
+                    "preconditions": ["p"], "expected_diff": ["d"],
+                    "validation": ["python3 -m unittest"], "evidence_ids": [],
+                }],
+                "evidence_ids": [], "locked": True,
+                "locked_at": "2026-06-01T00:00:00+00:00",
+            },
         )
         append_jsonl(
             root / ".agent/review-runs.jsonl",
@@ -1784,10 +1802,17 @@ class ReviewProofTests(unittest.TestCase):
     def test_amendment_projection_is_preserved_and_hash_bound(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = self._fixture_with_review(tmp)
+            selected_plan = json.loads(
+                (root / ".agent/plan.lock.json").read_text(encoding="utf-8")
+            )
+            selected_plan["objective"] = "selected plan"
+            selected_plan_path = root / "selected-plan.json"
+            write_json(selected_plan_path, selected_plan)
             ledger_path = root / ".agent/review-runs.jsonl"
             run = json.loads(ledger_path.read_text(encoding="utf-8"))
             run["schema_version"] = REVIEW_RUNS_SCHEMA_VERSION
             run["amendment_ready"] = True
+            run["plan_sha256"] = plan_binding_sha256(selected_plan)
             run["findings"] = {
                 "counts_by_severity": {"high": 1},
                 "counts_by_status": {"accepted": 1},
@@ -1820,10 +1845,22 @@ class ReviewProofTests(unittest.TestCase):
             )
             run["manifest_sha256"] = sha256_file(manifest_path)
             ledger_path.write_text(json.dumps(run) + "\n", encoding="utf-8")
-            proof = build_proof(root, root / ".agent/plan.lock.json")
+            proof = build_proof(root, selected_plan_path)
+            self.assertIn("selected-plan.json", proof["generated_from"])
             projected = proof["review"]["review_runs"][0]
             self.assertTrue(projected["amendment_ready"])
             self.assertEqual(projected["findings"], run["findings"])
+            write_json(root / ".agent/proof-pack.json", proof)
+            selected_plan["objective"] = "tampered after proof build"
+            write_json(selected_plan_path, selected_plan)
+            findings = verify_proof(root, root / ".agent/proof-pack.json")
+            self.assertTrue(
+                any(
+                    finding["message"] == "hash mismatch for selected-plan.json"
+                    for finding in findings
+                ),
+                findings,
+            )
             before = core_sha256(proof)
             projected["findings"]["index"][0]["claim"] = "tampered"
             self.assertNotEqual(core_sha256(proof), before)

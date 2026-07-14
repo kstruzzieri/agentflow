@@ -590,7 +590,9 @@ def _amendment_receipts(root: Path, step_id: Any, attempt_id: Any) -> Dict[str, 
     return {"command": [c for c in commands if c], "file": [f for f in files if f]}
 
 
-def _run_summary(record: Dict[str, Any]) -> Dict[str, Any]:
+def _run_summary(
+    record: Dict[str, Any], current_plan_sha256: Optional[str]
+) -> Dict[str, Any]:
     findings = record.get("findings", {}) if isinstance(record.get("findings"), dict) else {}
     return {
         "review_run_id": record.get("review_run_id"),
@@ -599,18 +601,41 @@ def _run_summary(record: Dict[str, Any]) -> Dict[str, Any]:
         "active_blocking": list(record.get("active_blocking", []) or []),
         "counts_by_severity": findings.get("counts_by_severity", {}),
         "counts_by_status": findings.get("counts_by_status", {}),
-        "amendment_ready": bool(record.get("amendment_ready", False)),
+        "amendment_ready": (
+            record.get("amendment_ready") is True
+            and current_plan_sha256 is not None
+            and record.get("plan_sha256") == current_plan_sha256
+        ),
         "findings": findings,
         "artifacts": record.get("artifacts", []),
         "depth_profile": recorded_review_depth(record.get("depth_profile")),
     }
 
 
-def review_summary(root: Path) -> Dict[str, Any]:
+def review_summary(
+    root: Path, plan: Optional[Dict[str, Any]] = None
+) -> Dict[str, Any]:
     """Build the proof ``review`` block from the ledger and amendment events."""
     from .execution import read_step_events
 
     runs = read_review_runs(root)
+    current_plan_sha256 = None
+    if plan is None:
+        plan_path = root / ".agent/plan.lock.json"
+        if plan_path.is_file():
+            try:
+                plan, _ = try_read_json(plan_path)
+            except OSError:
+                plan = None
+    try:
+        if (
+            isinstance(plan, dict)
+            and plan.get("locked") is True
+            and not validate_plan(plan)
+        ):
+            current_plan_sha256 = plan_binding_sha256(plan)
+    except (TypeError, ValueError):
+        current_plan_sha256 = None
     by_id = {
         r["review_run_id"]: r
         for r in runs
@@ -647,7 +672,7 @@ def review_summary(root: Path) -> Dict[str, Any]:
                 }
             )
     return {
-        "review_runs": [_run_summary(r) for r in runs],
+        "review_runs": [_run_summary(r, current_plan_sha256) for r in runs],
         "latest_review_run_id": runs[-1].get("review_run_id") if runs else None,
         "correlations": correlations,
         "unresolved_finding_refs": unresolved,

@@ -640,6 +640,34 @@ class BuildReviewRunRecordTests(unittest.TestCase):
 
 
 class ReviewSummaryTests(unittest.TestCase):
+    def test_plan_change_downgrades_amendment_readiness(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            create_initial_artifacts(root)
+            _write_locked_plan(root, "P1")
+            manifest_path = _write_state(root, amendment_manifest())
+            record = record_review_run(root, manifest_path)
+            self.assertTrue(record["amendment_ready"])
+
+            _write_locked_plan(root, "P2")
+
+            run = review_summary(root)["review_runs"][0]
+            self.assertFalse(run["amendment_ready"])
+
+    def test_malformed_current_plan_downgrades_amendment_readiness(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            create_initial_artifacts(root)
+            _write_locked_plan(root, "P1")
+            record_review_run(root, _write_state(root, amendment_manifest()))
+            plan_path = root / ".agent/plan.lock.json"
+            plan = json.loads(plan_path.read_text(encoding="utf-8"))
+            plan["evidence_ids"] = [[]]
+            plan_path.write_text(json.dumps(plan), encoding="utf-8")
+
+            run = review_summary(root)["review_runs"][0]
+            self.assertFalse(run["amendment_ready"])
+
     def test_non_dict_finding_ref_is_skipped(self) -> None:
         from agentflow.artifacts import append_jsonl
 
@@ -666,6 +694,10 @@ class ReviewSummaryTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             create_initial_artifacts(root)
+            _write_locked_plan(root, "P1")
+            plan = json.loads(
+                (root / ".agent/plan.lock.json").read_text(encoding="utf-8")
+            )
             projection = amendment_manifest()["findings"]
             append_jsonl(
                 root / ".agent/review-runs.jsonl",
@@ -676,6 +708,7 @@ class ReviewSummaryTests(unittest.TestCase):
                     "state_dir": "docs/ai/state/main",
                     "manifest_path": "docs/ai/state/main/review-manifest.json",
                     "manifest_sha256": "0" * 64,
+                    "plan_sha256": plan_binding_sha256(plan),
                     "gate_status": "pass",
                     "amendment_ready": True,
                     "findings": projection,
