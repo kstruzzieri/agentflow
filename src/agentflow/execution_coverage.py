@@ -176,7 +176,12 @@ def verify_step(
 ) -> Dict[str, Any]:
     step = _step_by_id(plan, step_id)
     resolved_attempt = resolve_attempt(root, step_id, attempt_id)
-    result: Dict[str, Any] = {"status": "passed", "errors": [], "warnings": []}
+    result: Dict[str, Any] = {
+        "status": "passed",
+        "errors": [],
+        "warnings": [],
+        "gates": [],
+    }
     policy = _proof_policy(root)
     effective_strict = strict or bool(policy.get("strict_by_default"))
     require_command_receipts = effective_strict or bool(
@@ -205,35 +210,52 @@ def verify_step(
         if isinstance(receipt.get("gate"), str)
     }
     for gate in _gates_for_step(step):
+        gate_result = {
+            "kind": gate["kind"],
+            "label": gate.get("gate") or gate.get("evidence_id") or gate.get("describe", ""),
+            "status": "satisfied",
+            "receipt_id": None,
+            "evidence_id": gate.get("evidence_id"),
+        }
+        result["gates"].append(gate_result)
         if gate["kind"] == "command":
             receipt = _matching_command_receipt(gate, receipts, receipt_by_gate)
             if receipt is None:
+                gate_result["status"] = "missing"
                 _add_finding(
                     result,
                     "error" if require_command_receipts else "warning",
                     f"missing command receipt for gate: {gate['gate']}",
                 )
                 continue
+            gate_result["receipt_id"] = receipt.get("id")
             if _receipt_timed_out(receipt):
+                gate_result["status"] = "failed"
                 _add_finding(result, "error", _timeout_message(gate["gate"], receipt))
             elif receipt.get("exit_code") != 0:
+                gate_result["status"] = "failed"
                 _add_finding(
                     result,
                     "error",
                     f"gate {gate['gate']} recorded exit code {receipt.get('exit_code')}",
                 )
             if require_trusted_receipts and receipt.get("provenance") not in TRUSTED_PROVENANCE_VALUES:
+                gate_result["status"] = "failed"
                 _add_finding(result, "error", f"gate {gate['gate']} uses attested provenance")
         elif gate["kind"] == "inspection":
             evidence_id = gate.get("evidence_id")
             if evidence_id not in evidence:
+                gate_result["status"] = "missing"
                 _add_finding(result, "error", f"inspection evidence id {evidence_id} is missing")
         else:
             receipt = receipt_by_gate.get(gate["gate"])
             if receipt:
+                gate_result["receipt_id"] = receipt.get("id")
                 if _receipt_timed_out(receipt):
+                    gate_result["status"] = "failed"
                     _add_finding(result, "error", _timeout_message(gate["gate"], receipt))
                 elif receipt.get("exit_code") != 0:
+                    gate_result["status"] = "failed"
                     _add_finding(
                         result,
                         "error",
@@ -243,8 +265,10 @@ def verify_step(
                     require_trusted_receipts
                     and receipt.get("provenance") not in TRUSTED_PROVENANCE_VALUES
                 ):
+                    gate_result["status"] = "failed"
                     _add_finding(result, "error", f"gate {gate['gate']} uses attested provenance")
             elif not any(evidence_id in evidence for evidence_id in step.get("evidence_ids", [])):
+                gate_result["status"] = "missing"
                 _add_finding(
                     result,
                     "error"
