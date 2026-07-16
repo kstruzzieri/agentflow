@@ -83,7 +83,7 @@ def _cmd(args: List[str]) -> str:
     return "agentflow " + " ".join(rendered)
 
 
-def _load_plan(root: Path) -> Optional[Dict[str, Any]]:
+def _load_plan(root: Path) -> Optional[Any]:
     plan_path = root / ".agent/plan.lock.json"
     if not plan_path.exists():
         return None
@@ -342,7 +342,15 @@ def resumability_projection(
             "execution contract must be a JSON object",
             ".agent/execution.contract.json",
         )
-    contract_errors = validate_execution_contract(contract)
+    try:
+        contract_errors = validate_execution_contract(contract)
+    except (AttributeError, KeyError, TypeError, ValueError) as exc:
+        return _diagnose(
+            projection,
+            "execution_contract_invalid",
+            str(exc),
+            ".agent/execution.contract.json",
+        )
     if contract_errors:
         return _diagnose(
             projection,
@@ -468,6 +476,7 @@ def resumability_projection(
             attempt_id,
             strict=strict,
             record=False,
+            include_gates=True,
         ).get("gates", [])
         projection["recovery_actions"] = _project_recovery_actions(
             step_id,
@@ -586,6 +595,13 @@ def next_action(
                    command=_cmd(["init"]), args=["init"]),
             projection,
         )
+    if not isinstance(plan, dict):
+        return _invalid_action(_diagnose(
+            _base_resumability(None, agent_id),
+            "plan_invalid",
+            ".agent/plan.lock.json top-level value must be a JSON object",
+            ".agent/plan.lock.json",
+        ))
     if not plan.get("locked"):
         projection = _diagnose(
             _base_resumability(plan, agent_id),

@@ -173,6 +173,7 @@ def verify_step(
     strict: bool = False,
     replay: bool = False,
     record: bool = True,
+    include_gates: bool = False,
 ) -> Dict[str, Any]:
     step = _step_by_id(plan, step_id)
     resolved_attempt = resolve_attempt(root, step_id, attempt_id)
@@ -180,8 +181,10 @@ def verify_step(
         "status": "passed",
         "errors": [],
         "warnings": [],
-        "gates": [],
     }
+    gate_results: List[Dict[str, Any]] = []
+    if include_gates:
+        result["gates"] = gate_results
     policy = _proof_policy(root)
     effective_strict = strict or bool(policy.get("strict_by_default"))
     require_command_receipts = effective_strict or bool(
@@ -217,7 +220,7 @@ def verify_step(
             "receipt_id": None,
             "evidence_id": gate.get("evidence_id"),
         }
-        result["gates"].append(gate_result)
+        gate_results.append(gate_result)
         if gate["kind"] == "command":
             receipt = _matching_command_receipt(gate, receipts, receipt_by_gate)
             if receipt is None:
