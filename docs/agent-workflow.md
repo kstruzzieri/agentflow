@@ -311,6 +311,12 @@ semantics.
   missing validation, unverified step, uncompleted step, failing drift,
   unverified run, missing/stale/failing proof, complete). It prints a copy-paste
   `agentflow ...` command; `--json` emits the same as a parseable object.
+  The additive `resumability` object reports locked contract hashes, the
+  actionable step and open attempt, owner and evaluated lease state,
+  attempt-scoped receipts and gates, structured diagnostics, and the
+  `claim`/`continue`/`renew`/`reclaim`/break-glass `fail` actions allowed for
+  `--agent` (or `AGENTFLOW_AGENT_ID`). Break-glass failure is always marked
+  `automatic: false`.
   `next-action` is advisory and always exits zero (reporting a blocking state is
   still a successful report); `--strict` only promotes warnings to failures when
   classifying which state to report.
@@ -325,7 +331,7 @@ A typical run discovers the next step, verifies and completes it, then runs the
 terminal gates:
 
 ```bash
-agentflow next-action          # report the single next required action
+agentflow next-action --agent "$USER"  # report action and actor-specific recovery
 agentflow finish-step P1       # verify-step then complete-step
 agentflow finish-run           # audit-drift -> verify-run -> build-proof -> verify-proof
 ```

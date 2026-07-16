@@ -11,6 +11,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Amendment-ready review-manifest v1.0 fields with locked-plan ownership
   validation, durable ledger/proof projection, and HTML proof viewing.
+- Authoritative, actor-aware resumability state in `next-action --json` and
+  its MCP mapping, including lease evaluation, attempt-scoped receipts and
+  gates, structured diagnostics, and explicitly marked break-glass recovery.
 
 ### Changed
 

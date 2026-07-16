@@ -465,6 +465,14 @@ class PorcelainToolTests(unittest.TestCase):
     def test_next_action_argv_strict(self) -> None:
         self.assertEqual(m._argv_next_action({"root": "."}), ["next-action", "--json", "--root", "."])
         self.assertIn("--strict", m._argv_next_action({"strict": True}))
+        self.assertEqual(
+            m._argv_next_action({"agent": "worker-a"}),
+            ["next-action", "--json", "--root", ".", "--agent", "worker-a"],
+        )
+        self.assertIn(
+            "agent",
+            m.TOOLS_BY_NAME["next_action"].input_schema["properties"],
+        )
 
     def test_finish_step_argv_flags(self) -> None:
         argv = m._argv_finish_step({"step": "P1", "attempt": "A1", "strict": True, "replay": True})
@@ -480,8 +488,16 @@ class PorcelainToolTests(unittest.TestCase):
 
     def test_next_action_tool_exposes_parsed_data(self) -> None:
         tmp = tempfile.mkdtemp()
-        result = call("tools/call", name="next_action", arguments={"root": tmp})["result"]
+        result = call(
+            "tools/call",
+            name="next_action",
+            arguments={"root": tmp, "agent": "worker-mcp"},
+        )["result"]
         self.assertEqual(result["structuredContent"]["data"]["state"], "uninitialized")
+        self.assertEqual(
+            result["structuredContent"]["data"]["resumability"]["agent_id"],
+            "worker-mcp",
+        )
 
     def test_finish_run_tool_exposes_parsed_data(self) -> None:
         tmp = tempfile.mkdtemp()

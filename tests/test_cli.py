@@ -22,9 +22,11 @@ def run_agentflow(
     cwd: Path,
     *args: str,
     input_text: str | None = None,
+    env_overrides: dict[str, str] | None = None,
 ) -> subprocess.CompletedProcess:
     env = os.environ.copy()
     env["PYTHONPATH"] = str(ROOT / "src")
+    env.update(env_overrides or {})
     return subprocess.run(
         [sys.executable, "-m", "agentflow", *args],
         cwd=str(cwd),
@@ -1409,9 +1411,7 @@ class AgentflowCliTests(unittest.TestCase):
             self.assertIn("incompatible", result.stdout)
             self.assertNotIn("Traceback", result.stderr)
 
-    def test_next_action_incompatible_plan_is_clean_error(self) -> None:
-        # The cli.main safety net: version-gate rejections surface as a clean
-        # one-line diagnostic, never a traceback.
+    def test_next_action_incompatible_plan_is_structured_state(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             cwd = Path(tmp)
             self.assertEqual(run_agentflow(cwd, "init").returncode, 0)
@@ -1420,11 +1420,19 @@ class AgentflowCliTests(unittest.TestCase):
             plan["schema_version"] = "9.0.0"
             plan_path.write_text(json.dumps(plan), encoding="utf-8")
 
-            result = run_agentflow(cwd, "next-action")
+            result = run_agentflow(cwd, "next-action", "--json")
 
-            self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
-            self.assertIn("error:", result.stderr)
-            self.assertIn("incompatible", result.stderr)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            payload = json.loads(result.stdout)
+            self.assertEqual(payload["state"], "state_invalid")
+            self.assertEqual(
+                payload["resumability"]["diagnostics"][0]["code"],
+                "plan_invalid",
+            )
+            self.assertFalse(any(
+                action["allowed"]
+                for action in payload["resumability"]["recovery_actions"]
+            ))
             self.assertNotIn("Traceback", result.stderr)
 
     @unittest.skipIf(shutil.which("git") is None, "git is not available")
@@ -1872,11 +1880,34 @@ class PorcelainCommandTests(unittest.TestCase):
     def test_next_action_json_uninitialized(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             cwd = Path(tmp)
-            result = run_agentflow(cwd, "next-action", "--json")
+            result = run_agentflow(
+                cwd,
+                "next-action",
+                "--json",
+                "--agent",
+                "worker-explicit",
+            )
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             payload = json.loads(result.stdout)
             self.assertEqual(payload["state"], "uninitialized")
             self.assertTrue(payload["blocking"])
+            self.assertEqual(
+                payload["resumability"]["agent_id"],
+                "worker-explicit",
+            )
+
+    def test_next_action_agent_defaults_from_environment(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            cwd = Path(tmp)
+            result = run_agentflow(
+                cwd,
+                "next-action",
+                "--json",
+                env_overrides={"AGENTFLOW_AGENT_ID": "worker-env"},
+            )
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            payload = json.loads(result.stdout)
+            self.assertEqual(payload["resumability"]["agent_id"], "worker-env")
 
     def test_finish_run_reports_blocked_on_uninitialized_root(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

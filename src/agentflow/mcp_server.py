@@ -232,6 +232,8 @@ def _argv_verify_proof(a: Dict[str, Any]) -> List[str]:
 
 def _argv_next_action(a: Dict[str, Any]) -> List[str]:
     argv = ["next-action", "--json", *_root(a)]
+    if a.get("agent"):
+        argv += ["--agent", str(a["agent"])]
     if a.get("strict"):
         argv += ["--strict"]
     return argv
@@ -425,7 +427,11 @@ TOOLS: List[Tool] = [
     Tool(
         "next_action",
         "Report the next required Agentflow action as a command and JSON.",
-        _object_schema({"strict": {"type": "boolean", "description": "Treat warnings as failures."}, **_ROOT_PROP}),
+        _object_schema({
+            **_AGENT_PROP,
+            "strict": {"type": "boolean", "description": "Treat warnings as failures."},
+            **_ROOT_PROP,
+        }),
         _argv_next_action,
     ),
     Tool(

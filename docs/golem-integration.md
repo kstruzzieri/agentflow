@@ -90,11 +90,13 @@ Notes for the adapter:
 - `run --gate` takes one exact gate label at a time. For legacy plans, choose
   the matching string from `steps[].validation`; do not pass the full
   validation list.
-- `next-action --json` is the state probe. It reports the single next
-  required action (including a copy-paste command) for whatever state
-  `.agent/` is in, and always exits zero. When Golem is unsure of the state —
-  crash recovery, resumed run, user intervention — ask `next-action` instead
-  of guessing.
+- `next-action --json --agent <worker-id>` is the state probe. It reports the
+  existing advisory action plus an authoritative `resumability` object derived
+  from the locked plan, execution contract, and attempt-scoped ledgers. Consume
+  its step/attempt owner, evaluated lease, receipts, gates, diagnostics, and
+  allowed recovery actions instead of reconstructing those rules. It always
+  exits zero; malformed or ambiguous state has diagnostics and no allowed
+  action, while `fail` is explicitly marked as non-automatic break-glass.
 - Record file changes as they happen, not batched at the end. Hunk-level
   attribution fingerprints each diff hunk; an unrecorded edit inside an
   allowed file fails drift under the default `enforce` policy.
@@ -153,7 +155,8 @@ field and no requirements ledger.
 Golem can shell out to the `agentflow` CLI or speak MCP (stdio or Streamable
 HTTP) to the bundled server ([docs/mcp.md](mcp.md)). Both hit the same
 in-process CLI; MCP returns parsed JSON in `structuredContent.data`, which is
-usually more convenient for an adapter.
+usually more convenient for an adapter. The `next_action` MCP tool accepts the
+same optional `agent` identity and returns the same `resumability` projection.
 
 All seventeen MCP tools are state-transition or read-only operations on
 `.agent/` and are safe for Golem to call autonomously:
@@ -231,7 +234,7 @@ inventing its own locking on top of `.agent/`.
 | --- | --- |
 | `agentflow --version` fails | Report "Agentflow unavailable" with install hint; do not fall back to an unproofed run silently |
 | `lock-plan` returns `status: "invalid"` | Surface the structured `errors` to the planning layer; regenerate the plan |
-| `.agent/` state unclear (crash, resume) | Run `next-action --json`; execute or surface the reported command |
+| `.agent/` state unclear (crash, resume) | Run `next-action --json --agent <worker-id>`; follow only an allowed non-break-glass recovery action, or surface diagnostics |
 | Gate command times out | The receipt records `decision: "timeout"`; the step will not verify — fix the gate or the timeout in `execution.contract.json` |
 | `finish-run` stops at a gate | `--json` reports `stopped_at`; resolve that gate before re-running |
 
@@ -239,8 +242,9 @@ inventing its own locking on top of `.agent/`.
 
 - [go-llm#209](https://github.com/kstruzzieri/go-llm/issues/209) — parent:
   Agentflow-backed task mode in Golem
-- [#20](https://github.com/kstruzzieri/agentflow/issues/20) /
-  [#30](https://github.com/kstruzzieri/agentflow/issues/30) — deferred
-  parallelism designs
+- [#20](https://github.com/kstruzzieri/agentflow/issues/20) — authoritative
+  read-only resumability projection
+- [#30](https://github.com/kstruzzieri/agentflow/issues/30) — deferred
+  parallelism design
 - [#19](https://github.com/kstruzzieri/agentflow/issues/19) — MCP/runtime
   status as read-only evidence

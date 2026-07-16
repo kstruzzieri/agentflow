@@ -1231,6 +1231,17 @@
       },
       {
         "choices": null,
+        "default": null,
+        "multiple": false,
+        "names": [
+          "--agent"
+        ],
+        "nargs": null,
+        "required": false,
+        "takes_value": true
+      },
+      {
+        "choices": null,
         "default": false,
         "multiple": false,
         "names": [
@@ -2889,6 +2900,121 @@
           "diagnostics": "array",
           "gate": "string|null",
           "reason": "string",
+          "resumability": {
+            "keys": {
+              "agent_id": "string|null",
+              "attempt": {
+                "keys": {
+                  "id": "string",
+                  "open": "boolean",
+                  "owner": "string|null",
+                  "state": "string|null"
+                },
+                "type": "object|null"
+              },
+              "contract": {
+                "keys": {
+                  "execution_contract_sha256": "string|null",
+                  "execution_schema_version": "string|null",
+                  "locked": "boolean",
+                  "locked_at": "string|null",
+                  "plan_schema_version": "string|null",
+                  "plan_sha256": "string|null"
+                },
+                "type": "object"
+              },
+              "diagnostics": {
+                "items": {
+                  "keys": {
+                    "artifact": "string",
+                    "code": "string",
+                    "message": "string"
+                  },
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              "gates": {
+                "items": {
+                  "keys": {
+                    "evidence_id": "string|null",
+                    "kind": "string",
+                    "label": "string",
+                    "receipt_id": "string|null",
+                    "status": "string"
+                  },
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              "lease": {
+                "keys": {
+                  "exclusive": "boolean",
+                  "expires_at": "string|null",
+                  "grace_seconds": "integer|null",
+                  "policy": "string|null",
+                  "state": "string",
+                  "ttl_minutes": "integer|null"
+                },
+                "type": "object"
+              },
+              "receipts": {
+                "keys": {
+                  "commands": {
+                    "items": {
+                      "keys": {
+                        "command": "array|null",
+                        "decision": "string|null",
+                        "exit_code": "integer|null",
+                        "finished_at": "string|null",
+                        "gate": "string|null",
+                        "id": "string",
+                        "provenance": "string|null",
+                        "timed_out": "boolean"
+                      },
+                      "type": "object"
+                    },
+                    "type": "array"
+                  },
+                  "files": {
+                    "items": {
+                      "keys": {
+                        "change_kind": "string|null",
+                        "id": "string",
+                        "path": "string|null",
+                        "recorded_at": "string|null"
+                      },
+                      "type": "object"
+                    },
+                    "type": "array"
+                  }
+                },
+                "type": "object"
+              },
+              "recovery_actions": {
+                "items": {
+                  "keys": {
+                    "action": "string",
+                    "allowed": "boolean",
+                    "automatic": "boolean",
+                    "break_glass": "boolean",
+                    "reason": "string"
+                  },
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              "step": {
+                "keys": {
+                  "completed": "boolean",
+                  "id": "string",
+                  "state": "string"
+                },
+                "type": "object|null"
+              }
+            },
+            "type": "object|null"
+          },
           "state": "string",
           "step_id": "string|null"
         },
