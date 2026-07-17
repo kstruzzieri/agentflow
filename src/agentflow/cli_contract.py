@@ -47,6 +47,121 @@ VERIFICATION = {
     "step_id": "string|null", "attempt_id": "string|null", "strict": "boolean",
     "replay": "boolean", "findings": "array", "recorded_at": "string",
 }
+RESUMABILITY = {
+    "type": "object|null",
+    "keys": {
+        "contract": {
+            "type": "object",
+            "keys": {
+                "plan_schema_version": "string|null",
+                "plan_sha256": "string|null",
+                "locked": "boolean",
+                "locked_at": "string|null",
+                "execution_schema_version": "string|null",
+                "execution_contract_sha256": "string|null",
+            },
+        },
+        "agent_id": "string|null",
+        "step": {
+            "type": "object|null",
+            "keys": {
+                "id": "string",
+                "state": "string",
+                "completed": "boolean",
+            },
+        },
+        "attempt": {
+            "type": "object|null",
+            "keys": {
+                "id": "string",
+                "state": "string|null",
+                "owner": "string|null",
+                "open": "boolean",
+            },
+        },
+        "lease": {
+            "type": "object",
+            "keys": {
+                "policy": "string|null",
+                "ttl_minutes": "integer|null",
+                "grace_seconds": "integer|null",
+                "expires_at": "string|null",
+                "state": "string",
+                "exclusive": "boolean",
+            },
+        },
+        "receipts": {
+            "type": "object",
+            "keys": {
+                "commands": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "keys": {
+                            "id": "string",
+                            "gate": "string|null",
+                            "command": "array|null",
+                            "exit_code": "integer|null",
+                            "decision": "string|null",
+                            "timed_out": "boolean",
+                            "provenance": "string|null",
+                            "finished_at": "string|null",
+                        },
+                    },
+                },
+                "files": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "keys": {
+                            "id": "string",
+                            "path": "string|null",
+                            "change_kind": "string|null",
+                            "recorded_at": "string|null",
+                        },
+                    },
+                },
+            },
+        },
+        "gates": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "keys": {
+                    "kind": "string",
+                    "label": "string",
+                    "status": "string",
+                    "receipt_id": "string|null",
+                    "evidence_id": "string|null",
+                },
+            },
+        },
+        "recovery_actions": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "keys": {
+                    "action": "string",
+                    "allowed": "boolean",
+                    "automatic": "boolean",
+                    "break_glass": "boolean",
+                    "reason": "string",
+                },
+            },
+        },
+        "diagnostics": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "keys": {
+                    "code": "string",
+                    "message": "string",
+                    "artifact": "string",
+                },
+            },
+        },
+    },
+}
 
 JSON_OUTPUTS = {
     "pack inspect": [{"type": "object", "keys": {"status": "string", "errors": "array", "id": "string|null", "version": "string|null", "profiles": "array|null", "manifest_sha256": "string|null"}}],
@@ -75,7 +190,7 @@ JSON_OUTPUTS = {
     "replay-gates": [{"type": "object", "keys": {"status": "string", "errors": "array", "warnings": "array", "receipts": "array", "recorded": "boolean"}}],
     "runtime-status": [{"type": "object", "keys": {"schema_version": "string|null", "id": "string|null", "status": "string|null", "runtimes": "array|null", "mcp_servers": "array|null", "routes": "array|null", "findings": "array", "runtime_config_sha256": "string|null", "created_at": "string|null"}}],
     "events": [{"type": "array", "items": {"type": "object", "keys": {"timestamp": "string", "type": "string", "step_id": "string|null", "attempt_id": "string|null", "source": "object", "data": "object"}}}],
-    "next-action": [{"type": "object", "keys": {"state": "string", "reason": "string", "blocking": "boolean", "command": "string|null", "args": "array|null", "step_id": "string|null", "gate": "string|null", "diagnostics": "array"}}],
+    "next-action": [{"type": "object", "keys": {"state": "string", "reason": "string", "blocking": "boolean", "command": "string|null", "args": "array|null", "step_id": "string|null", "gate": "string|null", "diagnostics": "array", "resumability": RESUMABILITY}}],
     "finish-step": [{"type": "object", "keys": {"verification_status": "string", "verified": "boolean", "completed": "boolean", "diagnostics": "array"}}],
     "finish-run": [{"type": "object", "keys": {"ok": "boolean", "gates": "array", "stopped_at": "string|null", "diagnostics": "array"}}],
 }

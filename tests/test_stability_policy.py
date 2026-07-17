@@ -28,17 +28,27 @@ class StabilityPolicyTests(unittest.TestCase):
             }
             return any(checks[name](value) for name in names)
 
-        def matches(value: object, variant: dict[str, object]) -> bool:
-            if not is_type(value, variant["type"]):
+        def declared_type(declared: object) -> str:
+            return declared if isinstance(declared, str) else declared["type"]
+
+        def matches(value: object, declared: object) -> bool:
+            kind = declared_type(declared)
+            if not is_type(value, kind):
                 return False
-            if variant["type"] == "object":
-                keys = variant["keys"]
-                required = {key for key, kind in keys.items() if "null" not in kind}
+            if isinstance(declared, str) or value is None:
+                return True
+            if "object" in kind.split("|"):
+                keys = declared["keys"]
+                required = {
+                    key
+                    for key, child in keys.items()
+                    if "null" not in declared_type(child).split("|")
+                }
                 if not required.issubset(value) or not set(value).issubset(keys):
                     return False
-                return all(is_type(item, keys[key]) for key, item in value.items())
-            if variant["type"] == "array" and "items" in variant:
-                return all(matches(item, variant["items"]) for item in value)
+                return all(matches(item, keys[key]) for key, item in value.items())
+            if "array" in kind.split("|") and "items" in declared:
+                return all(matches(item, declared["items"]) for item in value)
             return True
 
         self.assertTrue(
@@ -56,10 +66,13 @@ class StabilityPolicyTests(unittest.TestCase):
                 if line.strip()
             ]
 
+        next_action_payload = next_action(root).to_dict()
+        self.assertIsInstance(next_action_payload["resumability"], dict)
+
         samples = [
             ("doctor", doctor(root)),
             ("events", project_events(root)),
-            ("next-action", next_action(root).to_dict()),
+            ("next-action", next_action_payload),
             ("next-action", Action(
                 "validation_missing", "validation gate is unmet", gate="test gate"
             ).to_dict()),
@@ -106,6 +119,29 @@ class StabilityPolicyTests(unittest.TestCase):
         for command, payload in samples:
             with self.subTest(command=command):
                 self.assertJsonContract(command, payload)
+
+    def test_next_action_contract_documents_resumability_shape(self) -> None:
+        resumability = JSON_OUTPUTS["next-action"][0]["keys"]["resumability"]
+        self.assertEqual(resumability["type"], "object|null")
+        self.assertEqual(
+            set(resumability["keys"]),
+            {
+                "contract",
+                "agent_id",
+                "step",
+                "attempt",
+                "lease",
+                "receipts",
+                "gates",
+                "recovery_actions",
+                "diagnostics",
+            },
+        )
+        recovery = resumability["keys"]["recovery_actions"]["items"]
+        self.assertEqual(
+            set(recovery["keys"]),
+            {"action", "allowed", "automatic", "break_glass", "reason"},
+        )
 
     def test_cli_contract_manifest_matches_parser_and_covers_json_modes(self) -> None:
         manifest = json.loads((ROOT / "docs/cli-contract.json").read_text(encoding="utf-8"))

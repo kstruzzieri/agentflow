@@ -1232,7 +1232,11 @@ def command_events(args: argparse.Namespace) -> int:
 
 def command_next_action(args: argparse.Namespace) -> int:
     root = Path(args.root).resolve()
-    action = porcelain.next_action(root, strict_mode(args.strict))
+    action = porcelain.next_action(
+        root,
+        strict_mode(args.strict),
+        agent_id=args.agent,
+    )
     if args.json:
         print(json.dumps(action.to_dict(), indent=2, sort_keys=True))
     else:
@@ -2037,6 +2041,10 @@ def build_parser() -> argparse.ArgumentParser:
     next_action_parser = subparsers.add_parser(
         "next-action", help="report the next required Agentflow action")
     next_action_parser.add_argument("--root", default=".")
+    next_action_parser.add_argument(
+        "--agent",
+        default=os.environ.get("AGENTFLOW_AGENT_ID"),
+    )
     next_action_parser.add_argument("--json", action="store_true")
     next_action_parser.add_argument("--strict", action="store_true")
     next_action_parser.set_defaults(func=command_next_action)
