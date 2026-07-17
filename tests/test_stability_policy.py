@@ -1,9 +1,13 @@
 from __future__ import annotations
 
 import json
+import shutil
+import tempfile
 import unittest
 from pathlib import Path
 
+from agentflow import aggregate
+from agentflow.aggregate import Source
 from agentflow.cli_contract import JSON_OUTPUTS, build_cli_contract
 from agentflow.events import project_events
 from agentflow.execution import doctor
@@ -119,6 +123,28 @@ class StabilityPolicyTests(unittest.TestCase):
         for command, payload in samples:
             with self.subTest(command=command):
                 self.assertJsonContract(command, payload)
+
+    def test_aggregate_json_contract_matches_runtime_payloads(self) -> None:
+        current = ROOT / "tests/fixtures/compatibility/current-full"
+        released = ROOT / "tests/fixtures/compatibility/released-v0.4.0"
+        sources = [Source(current, "current", "current")]
+        dry_run = aggregate.analyze(sources, current, base_ref="HEAD")
+        self.assertEqual(dry_run["status"], "ok")
+        with tempfile.TemporaryDirectory(dir=ROOT) as tmp:
+            output = Path(tmp)
+            shutil.copyfile(current / "fixture.txt", output / "fixture.txt")
+            written = aggregate.write_canonical(sources, output, base_ref="HEAD")
+
+        collision_sources = [*sources, Source(released, "released", "released")]
+        dry_collision = aggregate.analyze(collision_sources, current, base_ref="HEAD")
+        self.assertEqual(dry_collision["status"], "collision")
+        write_collision = aggregate.write_canonical(collision_sources, current, base_ref="HEAD")
+        self.assertEqual(written["status"], "ok")
+        self.assertEqual(write_collision, dry_collision)
+
+        for payload in (dry_run, dry_collision, write_collision, written):
+            with self.subTest(status=payload["status"], keys=sorted(payload)):
+                self.assertJsonContract("aggregate-ledgers", payload)
 
     def test_next_action_contract_documents_resumability_shape(self) -> None:
         resumability = JSON_OUTPUTS["next-action"][0]["keys"]["resumability"]

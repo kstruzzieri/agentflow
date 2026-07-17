@@ -2690,12 +2690,17 @@
       {
         "keys": {
           "collisions": "array",
-          "dry_run": "boolean",
-          "output": "string",
-          "rewrites": "array",
-          "source_count": "integer",
+          "planned": "object",
           "sources": "array",
           "status": "string"
+        },
+        "type": "object"
+      },
+      {
+        "keys": {
+          "sources": "array",
+          "status": "string",
+          "written": "object"
         },
         "type": "object"
       }

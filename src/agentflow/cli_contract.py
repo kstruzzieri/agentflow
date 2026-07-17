@@ -184,7 +184,10 @@ JSON_OUTPUTS = {
     "record-file-change": [{"type": "array", "items": {"type": "object", "keys": FILE_RECEIPT}}],
     "verify-step": [{"type": "object", "keys": VERIFICATION}],
     "verify-run": [{"type": "object", "keys": VERIFICATION}],
-    "aggregate-ledgers": [{"type": "object", "keys": {"status": "string", "collisions": "array", "sources": "array", "source_count": "integer", "output": "string", "dry_run": "boolean", "rewrites": "array"}}],
+    "aggregate-ledgers": [
+        {"type": "object", "keys": {"status": "string", "sources": "array", "collisions": "array", "planned": "object"}},
+        {"type": "object", "keys": {"status": "string", "sources": "array", "written": "object"}},
+    ],
     "detect-stuck": [{"type": "object", "keys": {"schema_version": "string", "status": "string", "findings": "array", "thresholds": "object", "recorded_at": "string"}}],
     "lint-handoff": [{"type": "object", "keys": {"findings": "array"}}],
     "replay-gates": [{"type": "object", "keys": {"status": "string", "errors": "array", "warnings": "array", "receipts": "array", "recorded": "boolean"}}],
