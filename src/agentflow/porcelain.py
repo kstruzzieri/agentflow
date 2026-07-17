@@ -13,7 +13,12 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from .artifacts import plan_binding_sha256, read_json, read_jsonl
+from .contracts import CHANGE_KINDS, EXECUTION_ARTIFACT_PATHS, PROVENANCE_VALUES
 from .execution import (
+    ATTEMPT_OPENING_EVENTS,
+    LEASE_EVENTS,
+    OPEN_EVENTS,
+    TERMINAL_EVENTS,
     attempt_deadline,
     attempt_is_expired,
     attempt_is_verified,
@@ -123,6 +128,167 @@ def _denied_recovery_actions(reason: str) -> List[Dict[str, Any]]:
     ]
 
 
+def _receipt_string(
+    row: Dict[str, Any],
+    key: str,
+    relative: str,
+    line_number: int,
+    *,
+    non_empty: bool = True,
+) -> str:
+    value = row.get(key)
+    if not isinstance(value, str) or (non_empty and not value):
+        requirement = "non-empty string" if non_empty else "string"
+        raise ValueError(
+            f"{relative}:{line_number}: receipt {key} must be a {requirement}"
+        )
+    return value
+
+
+def _validate_command_receipt(
+    row: Dict[str, Any],
+    relative: str,
+    line_number: int,
+) -> None:
+    for key in ("id", "step_id", "attempt_id", "provenance"):
+        _receipt_string(row, key, relative, line_number)
+    for key in ("cwd", "started_at", "finished_at"):
+        _receipt_string(row, key, relative, line_number, non_empty=False)
+    if row["provenance"] not in PROVENANCE_VALUES:
+        raise ValueError(
+            f"{relative}:{line_number}: receipt provenance is invalid"
+        )
+    command = row.get("command")
+    if (
+        not isinstance(command, list)
+        or not command
+        or not all(isinstance(item, str) for item in command)
+    ):
+        raise ValueError(
+            f"{relative}:{line_number}: receipt command must be a non-empty string array"
+        )
+    exit_code = row.get("exit_code")
+    if "exit_code" not in row or (
+        exit_code is not None
+        and (not isinstance(exit_code, int) or isinstance(exit_code, bool))
+    ):
+        raise ValueError(
+            f"{relative}:{line_number}: receipt exit_code must be an integer or null"
+        )
+    if not isinstance(row.get("truncated"), bool):
+        raise ValueError(
+            f"{relative}:{line_number}: receipt truncated must be boolean"
+        )
+    gate = row.get("gate")
+    if gate is not None and not isinstance(gate, str):
+        raise ValueError(
+            f"{relative}:{line_number}: receipt gate must be a string or null"
+        )
+
+
+def _validate_file_receipt(
+    row: Dict[str, Any],
+    relative: str,
+    line_number: int,
+) -> None:
+    for key in ("id", "step_id", "attempt_id", "path"):
+        _receipt_string(row, key, relative, line_number)
+    _receipt_string(row, "recorded_at", relative, line_number, non_empty=False)
+    if row.get("change_kind") not in CHANGE_KINDS:
+        raise ValueError(
+            f"{relative}:{line_number}: receipt change_kind is invalid"
+        )
+    for key in ("before_git_blob", "after_sha256"):
+        value = row.get(key)
+        if key not in row or (value is not None and not isinstance(value, str)):
+            raise ValueError(
+                f"{relative}:{line_number}: receipt {key} must be a string or null"
+            )
+
+
+def _projection_ledgers(root: Path) -> Dict[str, List[Dict[str, Any]]]:
+    ledgers: Dict[str, List[Dict[str, Any]]] = {}
+    for name, relative in EXECUTION_ARTIFACT_PATHS.items():
+        if name == "execution-contract":
+            continue
+        path = root / relative
+        if not path.is_file():
+            raise ValueError(f"{relative} is missing")
+        rows = read_jsonl(path)
+        for line_number, row in enumerate(rows, start=1):
+            if not isinstance(row, dict):
+                raise ValueError(
+                    f"{relative}:{line_number}: ledger entry must be a JSON object"
+                )
+            if name == "command-receipts":
+                _validate_command_receipt(row, relative, line_number)
+            elif name == "file-receipts":
+                _validate_file_receipt(row, relative, line_number)
+        ledgers[name] = rows
+    return ledgers
+
+
+def _validate_step_event_identity(
+    events: List[Dict[str, Any]],
+    policy: str,
+) -> None:
+    valid_events = OPEN_EVENTS | TERMINAL_EVENTS | LEASE_EVENTS
+    attempt_steps: Dict[str, str] = {}
+    attempt_owners: Dict[str, Optional[str]] = {}
+    opened_attempts = set()
+    terminal_attempts = set()
+    for line_number, event in enumerate(events, start=1):
+        event_kind = event.get("event")
+        step_id = event.get("step_id")
+        attempt_id = event.get("attempt_id")
+        if event_kind not in valid_events:
+            raise ValueError(
+                f".agent/step-runs.jsonl:{line_number}: invalid event {event_kind!r}"
+            )
+        if not isinstance(step_id, str) or not step_id:
+            raise ValueError(
+                f".agent/step-runs.jsonl:{line_number}: step_id must be a non-empty string"
+            )
+        if not isinstance(attempt_id, str) or not attempt_id:
+            raise ValueError(
+                f".agent/step-runs.jsonl:{line_number}: attempt_id must be a non-empty string"
+            )
+        owner = event.get("agent_id")
+        if owner is not None and not isinstance(owner, str):
+            raise ValueError(
+                f".agent/step-runs.jsonl:{line_number}: agent_id must be a string"
+            )
+        deadline = event.get("lease_expires_at")
+        if deadline is not None and not isinstance(deadline, str):
+            raise ValueError(
+                f".agent/step-runs.jsonl:{line_number}: lease_expires_at must be a string or null"
+            )
+        prior_step = attempt_steps.setdefault(attempt_id, step_id)
+        if prior_step != step_id:
+            raise ValueError(
+                f"attempt {attempt_id} belongs to multiple steps: {prior_step}, {step_id}"
+            )
+        if attempt_id in terminal_attempts:
+            raise ValueError(f"attempt {attempt_id} has events after a terminal event")
+        if event_kind in ATTEMPT_OPENING_EVENTS:
+            if attempt_id in opened_attempts:
+                raise ValueError(f"attempt {attempt_id} has multiple opening events")
+            opened_attempts.add(attempt_id)
+            attempt_owners[attempt_id] = owner
+        elif attempt_id not in opened_attempts and event_kind != "failed":
+            raise ValueError(
+                f"attempt {attempt_id} has no opening event before {event_kind}"
+            )
+        if event_kind in LEASE_EVENTS and policy == "enforce":
+            expected_owner = attempt_owners[attempt_id]
+            if not owner or owner != expected_owner:
+                raise ValueError(
+                    f"attempt {attempt_id} renewed by {owner} instead of {expected_owner}"
+                )
+        if event_kind in TERMINAL_EVENTS:
+            terminal_attempts.add(attempt_id)
+
+
 def _base_resumability(
     plan: Optional[Dict[str, Any]],
     agent_id: Optional[str],
@@ -136,11 +302,15 @@ def _base_resumability(
         "execution_contract_sha256": None,
     }
     if isinstance(plan, dict):
+        schema_version = plan.get("schema_version")
+        locked_at = plan.get("locked_at")
         contract.update({
-            "plan_schema_version": plan.get("schema_version"),
+            "plan_schema_version": (
+                schema_version if isinstance(schema_version, str) else None
+            ),
             "plan_sha256": plan_binding_sha256(plan),
             "locked": plan.get("locked") is True,
-            "locked_at": plan.get("locked_at"),
+            "locked_at": locked_at if isinstance(locked_at, str) else None,
         })
     return {
         "contract": contract,
@@ -310,7 +480,13 @@ def resumability_projection(
     now: Optional[datetime] = None,
 ) -> Dict[str, Any]:
     projection = _base_resumability(plan, agent_id)
-    plan_errors = validate_plan(plan)
+    try:
+        plan_errors = validate_plan(plan)
+    except (AttributeError, KeyError, TypeError, ValueError) as exc:
+        plan_errors = [f"plan structure is invalid: {exc}"]
+    locked_at = plan.get("locked_at")
+    if locked_at is not None and not isinstance(locked_at, str):
+        plan_errors.append("locked_at must be a string or null")
     if plan_errors:
         return _diagnose(
             projection,
@@ -374,6 +550,8 @@ def resumability_projection(
     })
 
     try:
+        ledgers = _projection_ledgers(root)
+        _validate_step_event_identity(ledgers["step-runs"], policy)
         state = read_step_state(root)
         plan_steps = {
             step["id"]: step
@@ -486,7 +664,14 @@ def resumability_projection(
             lease_state,
         )
         return projection
-    except (OSError, ValueError, TypeError, json.JSONDecodeError) as exc:
+    except (
+        AttributeError,
+        KeyError,
+        OSError,
+        TypeError,
+        ValueError,
+        json.JSONDecodeError,
+    ) as exc:
         return _diagnose(
             projection,
             "execution_state_invalid",
@@ -602,7 +787,7 @@ def next_action(
             ".agent/plan.lock.json top-level value must be a JSON object",
             ".agent/plan.lock.json",
         ))
-    if not plan.get("locked"):
+    if plan.get("locked") is not True:
         projection = _diagnose(
             _base_resumability(plan, agent_id),
             "plan_unlocked",
