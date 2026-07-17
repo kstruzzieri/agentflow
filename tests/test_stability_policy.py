@@ -130,15 +130,23 @@ class StabilityPolicyTests(unittest.TestCase):
         sources = [Source(current, "current", "current")]
         dry_run = aggregate.analyze(sources, current, base_ref="HEAD")
         self.assertEqual(dry_run["status"], "ok")
+        collision_sources = [*sources, Source(released, "released", "released")]
+        dry_collision = aggregate.analyze(collision_sources, current, base_ref="HEAD")
+        self.assertEqual(dry_collision["status"], "collision")
+
+        # The scratch output must live inside the repo so base_ref="HEAD"
+        # resolves, and must carry fixture.txt so the file-receipt
+        # precondition hash check sees the same target as the fixture root.
         with tempfile.TemporaryDirectory(dir=ROOT) as tmp:
             output = Path(tmp)
             shutil.copyfile(current / "fixture.txt", output / "fixture.txt")
             written = aggregate.write_canonical(sources, output, base_ref="HEAD")
-
-        collision_sources = [*sources, Source(released, "released", "released")]
-        dry_collision = aggregate.analyze(collision_sources, current, base_ref="HEAD")
-        self.assertEqual(dry_collision["status"], "collision")
-        write_collision = aggregate.write_canonical(collision_sources, current, base_ref="HEAD")
+            # Aim the collision write at the scratch dir, not the committed
+            # fixture tree: if collision detection ever regressed to "ok",
+            # this call would replace its target's .agent/.
+            write_collision = aggregate.write_canonical(
+                collision_sources, output, base_ref="HEAD"
+            )
         self.assertEqual(written["status"], "ok")
         self.assertEqual(write_collision, dry_collision)
 
