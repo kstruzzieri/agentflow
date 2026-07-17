@@ -487,6 +487,108 @@ class TestResumabilityProjection(unittest.TestCase):
                 item["allowed"] for item in action.resumability["recovery_actions"]
             ))
 
+    def test_populated_receipts_and_gates_project_declared_fields(self):
+        with TemporaryDirectory() as d:
+            root = Path(d)
+            _validated(root)
+
+            projection = porcelain.next_action(root, agent_id="tester").resumability
+
+            self.assertEqual(len(projection["receipts"]["commands"]), 1)
+            command = projection["receipts"]["commands"][0]
+            self.assertEqual(
+                set(command),
+                {"id", "gate", "command", "exit_code", "decision",
+                 "timed_out", "provenance", "finished_at"},
+            )
+            self.assertEqual(command["id"], "CR1")
+            self.assertEqual(command["exit_code"], 0)
+            self.assertEqual(command["decision"], "allowed")
+            self.assertFalse(command["timed_out"])
+            self.assertEqual(len(projection["receipts"]["files"]), 1)
+            file_receipt = projection["receipts"]["files"][0]
+            self.assertEqual(
+                set(file_receipt),
+                {"id", "path", "change_kind", "recorded_at"},
+            )
+            self.assertEqual(file_receipt["path"], "src/feature.py")
+            self.assertEqual(projection["gates"][0]["status"], "satisfied")
+            self.assertEqual(projection["gates"][0]["receipt_id"], "CR1")
+
+    def test_ledger_referencing_unknown_step_is_invalid(self):
+        with TemporaryDirectory() as d:
+            root = Path(d)
+            _claimed(root)
+            path = root / ".agent/step-runs.jsonl"
+            rows = [json.loads(line) for line in path.read_text().splitlines()]
+            ghost = dict(rows[0])
+            ghost.update(step_id="P9", attempt_id="A9")
+            path.write_text(
+                "".join(json.dumps(row) + "\n" for row in [*rows, ghost])
+            )
+
+            action = porcelain.next_action(root, agent_id="tester")
+
+            self.assertEqual(action.state, "state_invalid")
+            self.assertIn(
+                "unknown steps: P9",
+                action.resumability["diagnostics"][0]["message"],
+            )
+            self.assertFalse(any(
+                item["allowed"] for item in action.resumability["recovery_actions"]
+            ))
+
+    def test_enforced_attempt_without_owner_is_invalid(self):
+        with TemporaryDirectory() as d:
+            root = Path(d)
+            _ready_repo(root)
+            _set_concurrency(root, lease_policy="enforce")
+            event = {
+                "schema_version": "0.5.0",
+                "event": "claimed",
+                "step_id": "P1",
+                "attempt_id": "A1",
+                "recorded_at": "2026-01-01T00:00:00+00:00",
+            }
+            (root / ".agent/step-runs.jsonl").write_text(json.dumps(event) + "\n")
+
+            action = porcelain.next_action(root, agent_id="tester")
+
+            self.assertEqual(action.state, "state_invalid")
+            self.assertIn(
+                "has no owner",
+                action.resumability["diagnostics"][0]["message"],
+            )
+            self.assertFalse(any(
+                item["allowed"] for item in action.resumability["recovery_actions"]
+            ))
+
+    def test_direct_projection_of_non_dict_plan_is_diagnosed(self):
+        with TemporaryDirectory() as d:
+            root = Path(d)
+            _ready_repo(root)
+
+            projection = porcelain.resumability_projection(root, ["not", "a", "plan"])
+
+            self.assertEqual(projection["diagnostics"][0]["code"], "plan_invalid")
+            self.assertFalse(any(
+                item["allowed"] for item in projection["recovery_actions"]
+            ))
+
+    def test_contract_hash_race_is_diagnosed_not_raised(self):
+        with TemporaryDirectory() as d:
+            root = Path(d)
+            _claimed(root)
+            with mock.patch.object(
+                porcelain, "sha256_path", side_effect=OSError("contract unlinked")
+            ):
+                action = porcelain.next_action(root, agent_id="tester")
+
+            self.assertEqual(action.state, "state_invalid")
+            self.assertFalse(any(
+                item["allowed"] for item in action.resumability["recovery_actions"]
+            ))
+
     def test_completed_event_without_opener_cannot_unlock_dependency(self):
         with TemporaryDirectory() as d:
             root = Path(d)

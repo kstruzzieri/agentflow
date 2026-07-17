@@ -31,7 +31,6 @@ from .execution import (
     next_step,
     read_step_state,
     require_lifecycle_owner,
-    resolve_attempt,
     validate_execution_contract,
 )
 from .execution_coverage import verify_run, verify_step
@@ -474,12 +473,19 @@ def _project_recovery_actions(
 
 def resumability_projection(
     root: Path,
-    plan: Dict[str, Any],
+    plan: Any,
     agent_id: Optional[str] = None,
     strict: bool = False,
     now: Optional[datetime] = None,
 ) -> Dict[str, Any]:
     projection = _base_resumability(plan, agent_id)
+    if not isinstance(plan, dict):
+        return _diagnose(
+            projection,
+            "plan_invalid",
+            ".agent/plan.lock.json top-level value must be a JSON object",
+            ".agent/plan.lock.json",
+        )
     try:
         plan_errors = validate_plan(plan)
     except (AttributeError, KeyError, TypeError, ValueError) as exc:
@@ -535,21 +541,23 @@ def resumability_projection(
             ".agent/execution.contract.json",
         )
 
-    policy = lease_policy(root)
-    ttl = lease_ttl_minutes(root)
-    grace = lease_grace_seconds(root)
-    projection["contract"].update({
-        "execution_schema_version": contract.get("schema_version"),
-        "execution_contract_sha256": sha256_path(contract_path),
-    })
-    projection["lease"].update({
-        "policy": policy,
-        "ttl_minutes": ttl,
-        "grace_seconds": grace,
-        "exclusive": policy == "enforce",
-    })
-
     try:
+        # Inside the fail-closed handler: these re-read .agent files, and a
+        # concurrent unlink between the contract load above and here must
+        # yield a diagnostic, not a traceback.
+        policy = lease_policy(root)
+        ttl = lease_ttl_minutes(root)
+        grace = lease_grace_seconds(root)
+        projection["contract"].update({
+            "execution_schema_version": contract.get("schema_version"),
+            "execution_contract_sha256": sha256_path(contract_path),
+        })
+        projection["lease"].update({
+            "policy": policy,
+            "ttl_minutes": ttl,
+            "grace_seconds": grace,
+            "exclusive": policy == "enforce",
+        })
         ledgers = _projection_ledgers(root)
         _validate_step_event_identity(ledgers["step-runs"], policy)
         state = read_step_state(root)
