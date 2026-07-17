@@ -22,6 +22,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   rows are 0.6.0. The manifest schema uses a new major because amendment-ready
   rows add required repair context.
 
+### Fixed
+
+- The `aggregate-ledgers --json` contract now declares the two payload shapes
+  the runtime actually emits: analysis/collision (`status`, `sources`,
+  `collisions`, `planned`) and successful write (`status`, `sources`,
+  `written`). The previously documented single envelope (`source_count`,
+  `output`, `dry_run`, `rewrites`) never matched runtime output, so no
+  emitted payload changes.
+
 ## [0.4.0] - 2026-07-10
 
 ### Added
