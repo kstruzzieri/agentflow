@@ -24,7 +24,7 @@ Run Agentflow in the isolation appropriate to the task (for example, a container
 
 ### Guarantee
 
-Agentflow keeps the active root `.agent/` directory local and ignored by default. It can build proof metadata with hashes and lets users choose reviewed local-only, CI-uploaded, PR-attached, or committed-proof workflows.
+Agentflow writes workflow artifacts to the active root `.agent/` directory and does not publish them automatically. It can build proof metadata with hashes for reviewed local-only, CI-uploaded, PR-attached, or committed-proof workflows. The repository and operator—not Agentflow—control whether `.agent/` is ignored or published.
 
 ### Non-guarantee
 
@@ -36,25 +36,25 @@ Anyone who can read a published repository, CI artifact, PR attachment, or share
 
 ### Residual user responsibility
 
-Review and, when necessary, redact every `.agent/` file before publishing it. Prefer the smallest proof subset that satisfies the receiving workflow, use bounded artifact retention, and never place secrets in commands or logs that could be captured. See [Agent Artifact Policy](agent-artifacts.md) for the specific files to review.
+Keep `/.agent/` ignored unless deliberately publishing a reviewed proof bundle. Review and, when necessary, redact every `.agent/` file before publishing it. Prefer the smallest proof subset that satisfies the receiving workflow, use bounded artifact retention, and never place secrets in commands or logs that could be captured. See [Agent Artifact Policy](agent-artifacts.md) for the specific files to review.
 
 ## Loopback HTTP MCP transport
 
 ### Guarantee
 
-Agentflow's MCP server uses stdio by default. Its optional HTTP transport binds to `127.0.0.1` by default, warns when asked to bind a non-loopback host, rejects non-localhost browser `Origin` headers, limits request bodies, and exposes only read/query and workflow state-transition tools—not arbitrary command execution.
+Agentflow's MCP server uses stdio by default. Its optional HTTP transport binds to `127.0.0.1` by default, warns when asked to bind a non-loopback host, rejects non-localhost browser `Origin` headers, and limits request bodies. The server does not expose `run` or `record-command`, so a client cannot submit a new arbitrary argv directly. However, `verify_step`, `verify_proof`, and `finish_step` accept `replay`; when requested, Agentflow executes attested command gates already present under the client-selected root.
 
 ### Non-guarantee
 
-The HTTP transport is unauthenticated. Its `Origin` check is a browser defense, not client authentication: non-browser clients can omit that header. Stdio is a local parent-process transport and does not create an HTTP listener; loopback HTTP is a listening service on the local machine. Neither transport makes an untrusted client trustworthy, and the HTTP controls do not authorize exposure to an untrusted LAN, the internet, or another user's local processes.
+The HTTP transport is unauthenticated. Its `Origin` check is a browser defense, not client authentication: non-browser clients can omit that header. Replay runs with the MCP server process's permissions, so the surface is not categorically non-executing even though it rejects client-supplied argv. Stdio is a local parent-process transport and does not create an HTTP listener; loopback HTTP is a listening service on the local machine. Neither transport makes an untrusted client trustworthy, and the HTTP controls do not authorize exposure to an untrusted LAN, the internet, or another user's local processes.
 
 ### Threat assumptions
 
-The local host and the process that starts the server are trusted, the selected bind address is reachable only by intended clients, and any reverse proxy, tunnel, browser extension, or network configuration has been evaluated by the operator.
+The local host, the process that starts the server, and each client-selected root and attested receipt ledger are trusted; the selected bind address is reachable only by intended clients; and any reverse proxy, tunnel, browser extension, or network configuration has been evaluated by the operator.
 
 ### Residual user responsibility
 
-Keep HTTP bound to loopback unless every reachable client and network path is trusted. Do not publish or tunnel the endpoint without adding controls suitable for that deployment. Treat browser integrations, local-network exposure, reverse proxies, and untrusted clients as separate security decisions. See [MCP Server](mcp.md) for transport setup.
+Keep HTTP bound to loopback unless every reachable client and network path is trusted. Treat a client-selected root and its attested command receipts as executable input: review them before allowing replay, and do not let untrusted clients select them. Do not publish or tunnel the endpoint without adding controls suitable for that deployment. Treat browser integrations, local-network exposure, reverse proxies, and untrusted clients as separate security decisions. See [MCP Server](mcp.md) for transport setup.
 
 ## Proof integrity
 

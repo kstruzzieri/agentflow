@@ -12,9 +12,9 @@ Use GitHub's private vulnerability reporting form under the repository's
 any suggested mitigation. Do not open a public issue or include live secrets
 in a report.
 
-If private vulnerability reporting is unavailable, contact the repository
-owner through their GitHub profile to arrange a private channel before sharing
-technical details.
+If private vulnerability reporting is unavailable, email the
+[repository maintainer](mailto:krstruzz@gmail.com) to arrange a private channel
+before sharing technical details.
 
 Agentflow records commands, paths, and command output in local proof artifacts.
 Review [docs/agent-artifacts.md](docs/agent-artifacts.md) before publishing
