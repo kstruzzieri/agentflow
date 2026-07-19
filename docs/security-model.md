@@ -73,4 +73,3 @@ The verifier obtains the intended proof bundle from a trusted channel and can co
 ### Residual user responsibility
 
 Protect the repository, CI system, and proof distribution channel; retain provenance outside the bundle when producer identity matters; and use an external signing or attestation system if authenticity or non-repudiation is a requirement.
-

@@ -11,6 +11,7 @@ ROOT = Path(__file__).resolve().parents[1]
 class PublicProjectContractTests(unittest.TestCase):
     def test_security_model_covers_public_trust_boundaries(self) -> None:
         model = (ROOT / "docs/security-model.md").read_text(encoding="utf-8")
+        readme = (ROOT / "README.md").read_text(encoding="utf-8")
         security = (ROOT / "SECURITY.md").read_text(encoding="utf-8")
 
         for heading in (
@@ -26,6 +27,7 @@ class PublicProjectContractTests(unittest.TestCase):
             "Residual user responsibility",
         ):
             self.assertIn(phrase, model)
+        self.assertIn("docs/security-model.md", readme)
         self.assertIn("docs/security-model.md", security)
 
     def test_community_templates_request_actionable_evidence(self) -> None:
@@ -55,6 +57,7 @@ class PublicProjectContractTests(unittest.TestCase):
         self.assertIn("Contributor Covenant", conduct)
         self.assertIn("version 2.1", conduct)
         self.assertNotIn("[INSERT CONTACT METHOD]", conduct)
+        self.assertIn("mailto:krstruzz@gmail.com", conduct)
         for target in (
             "CODE_OF_CONDUCT.md",
             "SECURITY.md",

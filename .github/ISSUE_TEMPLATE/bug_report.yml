@@ -57,4 +57,3 @@ body:
     attributes:
       label: Validation and Agentflow task-loop evidence
       description: List tests, `agentflow` validation/proof commands, and any safe-to-share receipt or proof summary.
-

@@ -19,4 +19,3 @@ For planned work, link or summarize the locked plan, claimed steps, validation, 
 - [ ] I read [CONTRIBUTING.md](../CONTRIBUTING.md).
 - [ ] I updated documentation and tests needed by this change.
 - [ ] I handled security concerns privately according to [SECURITY.md](../SECURITY.md), rather than in this PR.
-
