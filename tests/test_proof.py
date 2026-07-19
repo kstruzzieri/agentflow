@@ -2643,6 +2643,31 @@ class AggregationProvenanceProofTests(unittest.TestCase):
             self.assertEqual(checks["aggregation_valid"]["status"], "failed")
             self.assertIn("schema_version", checks["aggregation_valid"]["message"])
 
+    def test_schema_version_length_boundary(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = self._root(tmp)
+            manifest = self._aggregation_manifest()
+            manifest["schema_version"] = "0.1." + ("9" * 636)
+            self.assertEqual(len(manifest["schema_version"]), 640)
+
+            write_json(root / ".agent/aggregation.json", manifest)
+
+            proof = build_proof(root, root / ".agent/plan.lock.json")
+
+            self.assertEqual(proof["aggregation"], manifest)
+
+            manifest["schema_version"] = "0.1." + ("9" * 637)
+            self.assertEqual(len(manifest["schema_version"]), 641)
+
+            write_json(root / ".agent/aggregation.json", manifest)
+
+            proof = build_proof(root, root / ".agent/plan.lock.json")
+
+            self.assertNotIn("aggregation", proof)
+            checks = {check["id"]: check for check in proof["checks"]}
+            self.assertEqual(checks["aggregation_valid"]["status"], "failed")
+            self.assertIn("at most 640 characters", checks["aggregation_valid"]["message"])
+
     def test_valid_manifest_with_extra_keys_embeds_fine(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = self._root(tmp)

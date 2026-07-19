@@ -625,19 +625,28 @@ class AggregationSchemaContractTests(unittest.TestCase):
         )
 
     def test_schema_version_pattern_is_strict_and_major_neutral(self) -> None:
+        from agentflow.proof import _AGGREGATION_SCHEMA_VERSION_MAX_LENGTH
+        from agentflow.versioning import _SCHEMA_VERSION_RE
+
         agg_schema = load_schema("aggregation.schema.json")
         proof_schema = load_schema("proof-pack.schema.json")
-        patterns = (
-            agg_schema["properties"]["schema_version"]["pattern"],
-            proof_schema["$defs"]["aggregation"]["properties"]["schema_version"]["pattern"],
+        specs = (
+            agg_schema["properties"]["schema_version"],
+            proof_schema["$defs"]["aggregation"]["properties"]["schema_version"],
         )
-        self.assertEqual(patterns[0], patterns[1])
+        self.assertEqual(specs[0], specs[1])
+        self.assertEqual(
+            specs[0]["maxLength"], _AGGREGATION_SCHEMA_VERSION_MAX_LENGTH
+        )
+        self.assertEqual(
+            specs[0]["pattern"], f"^{_SCHEMA_VERSION_RE.pattern}(?![\\s\\S])"
+        )
         for version in (AGGREGATION_SCHEMA_VERSION, "1.0.0", "12.34.56"):
             with self.subTest(version=version):
-                self.assertIsNotNone(re.fullmatch(patterns[0], version))
-        for version in ("01.0.0", "1.00.0", "1.0", "1.0.0-rc1"):
+                self.assertIsNotNone(re.search(specs[0]["pattern"], version))
+        for version in ("01.0.0", "1.00.0", "1.0", "1.0.0-rc1", "1.0.0\n"):
             with self.subTest(version=version):
-                self.assertIsNone(re.fullmatch(patterns[0], version))
+                self.assertIsNone(re.search(specs[0]["pattern"], version))
 
 
 if __name__ == "__main__":
