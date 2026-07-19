@@ -63,7 +63,6 @@ PROOF_METADATA_FIELDS = {
 
 _AGGREGATION_SOURCE_ID_RE = re.compile(r"^[a-z0-9]{1,16}$")
 _AGGREGATION_PREFIX_RE = re.compile(r"^WT[a-z0-9]{1,16}-$")
-_AGGREGATION_SCHEMA_VERSION_RE = re.compile(r"^0\.[0-1]\.[0-9]+$")
 
 
 def sha256_file(path: Path) -> str:
@@ -88,10 +87,6 @@ def _aggregation_manifest_errors(manifest: Dict[str, Any]) -> List[str]:
     errors: List[str] = validate_schema_version(
         schema_version, AGGREGATION_SCHEMA_VERSION, "aggregation"
     )
-    if isinstance(schema_version, str) and not _AGGREGATION_SCHEMA_VERSION_RE.fullmatch(
-        schema_version
-    ):
-        errors.append("aggregation schema_version does not match schema pattern")
     if manifest.get("mode") != "cross_worktree":
         errors.append("mode must be cross_worktree")
     sources = manifest.get("sources")

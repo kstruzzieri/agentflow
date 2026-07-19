@@ -8,6 +8,7 @@ from pathlib import Path
 from agentflow.aggregate import SOURCE_ID_RE
 from agentflow.contracts import (
     ADAPTERS,
+    AGGREGATION_SCHEMA_VERSION,
     ARTIFACT_PATHS,
     ARTIFACT_COMPATIBILITY_POLICIES,
     ARTIFACT_SCHEMA_VERSIONS,
@@ -622,6 +623,21 @@ class AggregationSchemaContractTests(unittest.TestCase):
             proof_schema["$defs"]["aggregation"]["properties"]["schema_version"]["pattern"],
             agg_schema["properties"]["schema_version"]["pattern"],
         )
+
+    def test_schema_version_pattern_is_strict_and_major_neutral(self) -> None:
+        agg_schema = load_schema("aggregation.schema.json")
+        proof_schema = load_schema("proof-pack.schema.json")
+        patterns = (
+            agg_schema["properties"]["schema_version"]["pattern"],
+            proof_schema["$defs"]["aggregation"]["properties"]["schema_version"]["pattern"],
+        )
+        self.assertEqual(patterns[0], patterns[1])
+        for version in (AGGREGATION_SCHEMA_VERSION, "1.0.0", "12.34.56"):
+            with self.subTest(version=version):
+                self.assertIsNotNone(re.fullmatch(patterns[0], version))
+        for version in ("01.0.0", "1.00.0", "1.0", "1.0.0-rc1"):
+            with self.subTest(version=version):
+                self.assertIsNone(re.fullmatch(patterns[0], version))
 
 
 if __name__ == "__main__":
