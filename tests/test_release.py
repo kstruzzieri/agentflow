@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 import subprocess
 import sys
 import tempfile
@@ -8,6 +9,15 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 SCRIPT = REPO_ROOT / "scripts" / "check_release.py"
+
+
+def _workflow_job(text: str, name: str) -> str:
+    header = f"\n  {name}:\n"
+    start = text.index(header)
+    body_start = start + len(header)
+    next_job = re.search(r"\n  [a-z][a-z0-9-]*:\n", text[body_start:])
+    end = body_start + next_job.start() if next_job else len(text)
+    return text[start:end]
 
 
 @unittest.skipIf(
@@ -335,30 +345,153 @@ class RepositoryReleaseDisciplineTests(unittest.TestCase):
         tests = text.index("PYTHONPATH=src python3 -m unittest discover")
         self.assertLess(check, tests)
 
-    def test_release_workflow_guards_before_release_and_uses_changelog(self) -> None:
+    def test_release_workflow_guards_before_build(self) -> None:
         text = (
             REPO_ROOT / ".github" / "workflows" / "release.yml"
         ).read_text(encoding="utf-8")
 
         guard = text.index("\n  guard:")
-        release = text.index("\n  release:")
-        self.assertLess(guard, release)
+        build = text.index("\n  build:")
+        self.assertLess(guard, build)
         self.assertIn("permissions:\n  contents: read", text[:guard])
-        guard_job = text[guard:release]
+        guard_job = _workflow_job(text, "guard")
         self.assertIn(
             'run: python3 scripts/check_release.py --tag "$GITHUB_REF_NAME"\n',
             guard_job,
         )
-        release_job = text[release:]
-        self.assertIn("needs: guard", release_job)
-        self.assertIn("contents: write", release_job)
-        self.assertIn('python3 scripts/check_release.py', release_job)
-        self.assertIn('--tag "$GITHUB_REF_NAME"', release_job)
+        self.assertIn("needs: guard", _workflow_job(text, "build"))
         self.assertIn(
-            '--notes-file "$RUNNER_TEMP/release-notes.md"', release_job
+            '--notes-file "$RUNNER_TEMP/release-notes.md"',
+            _workflow_job(text, "github-release"),
         )
         self.assertNotIn("|| true", text)
         self.assertNotIn("--generate-notes", text)
+
+    def test_release_workflow_builds_and_uploads_one_artifact_bundle(self) -> None:
+        text = (
+            REPO_ROOT / ".github" / "workflows" / "release.yml"
+        ).read_text(encoding="utf-8")
+        build = _workflow_job(text, "build")
+
+        self.assertEqual(text.count("scripts/build_zipapp.py"), 1)
+        self.assertEqual(
+            text.count("python -m build --sdist --wheel --outdir dist"), 1
+        )
+        self.assertIn("build==1.5.0", build)
+        self.assertIn("twine==6.2.0", build)
+        self.assertIn(
+            'SOURCE_DATE_EPOCH=$(git show -s --format=%ct HEAD)', build
+        )
+        self.assertIn("PYTHONPATH=src python -m unittest discover -s tests", build)
+        self.assertIn("python scripts/check_distribution.py --dist-dir dist", build)
+        self.assertIn("python -m twine check dist/*.whl dist/*.tar.gz", build)
+        self.assertIn("python dist/agentflow.pyz --version", build)
+        self.assertIn("python dist/agentflow-mcp.pyz", build)
+        self.assertIn(
+            "actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a",
+            build,
+        )
+        self.assertIn("name: release-distributions", build)
+        for path in (
+            "dist/agentflow.pyz",
+            "dist/agentflow-mcp.pyz",
+            "dist/*.whl",
+            "dist/*.tar.gz",
+        ):
+            self.assertIn(path, build)
+        self.assertIn("if-no-files-found: error", build)
+
+    def test_release_workflow_clean_installs_exact_artifacts(self) -> None:
+        text = (
+            REPO_ROOT / ".github" / "workflows" / "release.yml"
+        ).read_text(encoding="utf-8")
+        wheel = _workflow_job(text, "clean-install-wheel")
+        sdist = _workflow_job(text, "clean-install-sdist")
+        download = (
+            "actions/download-artifact@"
+            "3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c"
+        )
+
+        self.assertIn('python-version: ["3.11", "3.12", "3.13"]', wheel)
+        self.assertIn("needs: build", wheel)
+        self.assertIn(download, wheel)
+        self.assertIn("name: release-distributions", wheel)
+        self.assertIn("python -m venv", wheel)
+        self.assertIn("wheels=(dist/*.whl)", wheel)
+        self.assertIn('test "${#wheels[@]}" -eq 1', wheel)
+        self.assertIn('pip install --no-index "${wheels[0]}"', wheel)
+        self.assertIn("agentflow --version", wheel)
+        self.assertIn("agentflow --help", wheel)
+        self.assertIn("agentflow-mcp", wheel)
+        self.assertIn('grep -q \'"serverInfo"\'', wheel)
+        self.assertIn("agentflow verify-proof --root", wheel)
+        self.assertIn(
+            "tests/fixtures/compatibility/released-v0.4.0", wheel
+        )
+
+        self.assertIn("needs: build", sdist)
+        self.assertIn(download, sdist)
+        self.assertIn("python -m venv", sdist)
+        self.assertIn("setuptools==83.0.0", sdist)
+        self.assertIn("sdists=(dist/*.tar.gz)", sdist)
+        self.assertIn('test "${#sdists[@]}" -eq 1', sdist)
+        self.assertIn(
+            'pip install --no-index --no-build-isolation "${sdists[0]}"',
+            sdist,
+        )
+        self.assertIn("agentflow --version", sdist)
+
+    def test_release_workflow_limits_publication_permissions_and_payload(self) -> None:
+        text = (
+            REPO_ROOT / ".github" / "workflows" / "release.yml"
+        ).read_text(encoding="utf-8")
+        release = _workflow_job(text, "github-release")
+        publish = _workflow_job(text, "publish-pypi")
+        download = (
+            "actions/download-artifact@"
+            "3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c"
+        )
+
+        self.assertEqual(text.count("contents: write"), 1)
+        self.assertIn("contents: write", release)
+        for dependency in ("guard", "clean-install-wheel", "clean-install-sdist"):
+            self.assertIn(f"- {dependency}", release)
+        self.assertIn(download, release)
+        self.assertIn('--notes-file "$RUNNER_TEMP/release-notes.md"', release)
+        for artifact in (
+            "agentflow.pyz",
+            "agentflow-mcp.pyz",
+            "agentflow_proof-*.whl",
+            "agentflow_proof-*.tar.gz",
+            "SHA256SUMS",
+        ):
+            self.assertIn(artifact, release)
+
+        self.assertEqual(text.count("id-token: write"), 1)
+        self.assertIn("if: false # Issue #5 compatibility freeze", publish)
+        self.assertIn("environment: pypi", publish)
+        self.assertIn("id-token: write", publish)
+        for dependency in (
+            "guard",
+            "clean-install-wheel",
+            "clean-install-sdist",
+            "github-release",
+        ):
+            self.assertIn(f"- {dependency}", publish)
+        self.assertIn(download, publish)
+        stage_start = publish.index("- name: Stage PyPI distributions")
+        action_start = publish.index("- uses: pypa/gh-action-pypi-publish@")
+        stage = publish[stage_start:action_start]
+        self.assertIn("dist/*.whl", stage)
+        self.assertIn("dist/*.tar.gz", stage)
+        self.assertNotIn(".pyz", stage)
+        self.assertIn(
+            "pypa/gh-action-pypi-publish@"
+            "2834a314042ef964da07689278dd1e9d773e8afd",
+            publish,
+        )
+        self.assertIn("packages-dir: pypi-dist/", publish)
+        self.assertNotRegex(publish, r"(?m)^\s+(?:password|token):")
 
     def test_packaging_docs_name_release_order_and_python_floor(self) -> None:
         text = (REPO_ROOT / "docs" / "packaging.md").read_text(
