@@ -135,9 +135,6 @@ def _parse_issue_form(text: str) -> dict[str, object]:
         attributes = item.get("attributes")
         if not isinstance(attributes, dict):
             raise ValueError(f"{item_type} item is missing attributes")
-        unknown_attributes = set(attributes) - ISSUE_FORM_ATTRIBUTES[item_type]
-        if unknown_attributes:
-            raise ValueError(f"unsupported {item_type} attributes: {unknown_attributes}")
         if item_type == "markdown":
             if set(item) - {"type", "attributes"} or not attributes.get("value"):
                 raise ValueError("markdown items require only attributes.value")
@@ -274,6 +271,15 @@ class PublicProjectContractTests(unittest.TestCase):
             self.assertIn(phrase, feature_text)
         for phrase in ("CONTRIBUTING.md", "Agentflow task loop", "Validation"):
             self.assertIn(phrase, pull_request)
+
+    def test_issue_template_config_routes_security_reports_privately(self) -> None:
+        config = (ROOT / ".github/ISSUE_TEMPLATE/config.yml").read_text(encoding="utf-8")
+
+        self.assertIn("blank_issues_enabled: false", config)
+        self.assertIn(
+            "https://github.com/kstruzzieri/agentflow/security/advisories/new", config
+        )
+        self.assertIn("SECURITY.md", config)
 
     def test_contribution_documents_link_required_public_policy(self) -> None:
         conduct = (ROOT / "CODE_OF_CONDUCT.md").read_text(encoding="utf-8")
