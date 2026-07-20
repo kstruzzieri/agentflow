@@ -20,7 +20,8 @@
 - Keep mappings step-only: do not add `gates[].design_decision_ids` and do not synthesize decision data in `draft-plan`.
 - Do not change `plan_binding_sha256` or `canonical_core`; tests must pin that their existing semantics already bind the new data.
 - Do not add a sidecar, new ledger, new MCP tool, Golem prompt implementation, issue #5 soak work, or final 1.0 bump.
-- Do not edit `docs/mcp.md`, `src/agentflow/mcp_server.py`, `pyproject.toml`, or `CHANGELOG.md`.
+- Do not edit `docs/mcp.md`, `src/agentflow/mcp_server.py`, or `pyproject.toml`.
+- Do not edit `CHANGELOG.md` in this branch: it is outside the locked plan's `allowed_files`, so touching it fails `audit-drift`. The `Unreleased` entries for the two schema bumps and the new public fields are deliberately deferred to the follow-up tracker-sync PR (the repo's established pattern, e.g. PRs #88, #96, #119); the draft PR body states this so reviewers read the omission as deliberate.
 - Keep `tests/fixtures/compatibility/released-v0.4.0/**` and `tests/fixtures/compatibility/current-aggregated/**` unchanged.
 - Issue #14 / PR #24 merges first. Rebase over then-current `origin/main`, preserve #14's aggregation validation, and rerun every focused, full, compatibility, and Agentflow proof gate before publication.
 - Open a draft PR containing `Closes #13`; never mark it ready in this task.
@@ -297,7 +298,9 @@ that is the intended characterization of existing hash behavior.
 
 - [ ] **Step 4: Implement the minimum validator**
 
-Import `parse_schema_version` in `validation.py`. Replace the
+Import `parse_schema_version` from `.versioning` in `validation.py` (it lives
+in `src/agentflow/versioning.py:24`, not `contracts.py`; `proof.py` imports it
+the same way). Replace the
 criterion-specific reference-list mechanics with this parameterized helper,
 then keep the criterion wrapper so all existing criterion diagnostics remain
 byte-for-byte stable:
@@ -1806,7 +1809,9 @@ Validation:
 - Agentflow verify-run, audit-drift, build-proof, and verify-proof
 
 This PR intentionally excludes a sidecar, Golem prompt implementation, issue #5
-soak work, and the final 1.0 schema bump."
+soak work, and the final 1.0 schema bump. CHANGELOG entries for the schema
+bumps follow in the tracker-sync PR because CHANGELOG.md sits outside this
+run's locked allowed_files."
 ```
 
 Expected: GitHub returns a draft PR URL.
