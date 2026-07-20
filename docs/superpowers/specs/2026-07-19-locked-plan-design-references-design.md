@@ -55,12 +55,16 @@ design decisions constrain implementation context.
 
 ## Versioning, validation, and hashing
 
-Set `PLAN_SCHEMA_VERSION` and the published plan schema to `0.4.0`. A current
-reader continues to accept `0.3.x` plans that omit both decision fields. If a
-plan declares either `design_decisions` or any `design_decision_ids` while
-recording a schema version below `0.4.0`, validation emits one clear upgrade
-error and skips decision-content validation. This keeps the schema label honest
-and makes old readers fail closed on plans using the extension.
+Set `PLAN_SCHEMA_VERSION` and `schemas/plan-lock.schema.json` to `0.4.0`. A
+current reader continues to accept `0.3.x` plans that omit both decision
+fields. If a plan declares either `design_decisions` or any
+`design_decision_ids` while recording a schema version below `0.4.0`,
+validation emits one clear upgrade error and skips decision-content
+validation. That check exists only in current readers and keeps the schema
+label honest. Old readers fail closed through a separate, existing mechanism:
+the `same_major` plan-lock policy rejects a recorded `0.4.0` version whose
+minor exceeds the reader's supported minor, so a pre-`0.4.0` locker never
+accepts a plan that correctly labels the extension.
 
 The runtime validator follows the existing requirement-traceability pattern:
 validate declarations first, collect valid IDs, then validate step references.
@@ -109,7 +113,19 @@ conditional projection from `.agent/plan.lock.json` and compares it with the
 recorded value. Recomputing `core_sha256` cannot hide a changed, reordered, or
 removed decision projection.
 
-Set `PROOF_PACK_SCHEMA_VERSION` and the proof schema to `0.11.0`. Keep the
+The recompute follows the requirement-coverage verifier's two established
+semantics. First, when `.agent/plan.lock.json` is absent, the check is skipped
+silently rather than failed: a proof is portable and self-contained, and
+verification away from the originating working state must not report a missing
+plan as tampering. Second, a recorded-versus-expected mismatch on a proof whose
+recorded schema version is older than the current one is reported with the
+schema-growth diagnostic, not a tamper claim. The version gate makes that path
+nearly unreachable for this feature (an old builder rejects a `0.4.0` plan
+before building a proof), but the verifier keeps the uniform diagnostics
+contract.
+
+Set `PROOF_PACK_SCHEMA_VERSION` and `schemas/proof-pack.schema.json` to
+`0.11.0`. Keep the
 released-v0.4.0 fixture immutable; its older plan and proof remain the
 historical compatibility check. Regenerate the current full-feature fixture so
 the live compatibility matrix exercises the new optional load-bearing block.
@@ -120,7 +136,9 @@ Document plan authoring, lock diagnostics, proof coverage, and omission
 behavior in `docs/agent-workflow.md`. Document Golem's deterministic selection
 rule in `docs/golem-integration.md`: read the locked step references, resolve
 only declared decisions, and preserve proof declaration order without creating
-or patching a sidecar.
+or patching a sidecar. Update the `docs/schema-freeze-audit.md` plan-lock row,
+whose recorded version and accepted-range pattern (`^0\.[0-3]\.[0-9]+$`) both
+go stale at `0.4.0`.
 
 `next-step --json` returns the selected raw step, so
 `design_decision_ids` becomes an optional public JSON member automatically.
@@ -138,6 +156,7 @@ Test-first coverage will pin:
 - JSON Schema parity and lock-plan diagnostics;
 - plan-binding changes for text, references, and step applicability;
 - deterministic proof ordering, conditional omission, and tamper detection;
+- `verify-proof` silent skip when `.agent/plan.lock.json` is absent;
 - `next-step` CLI-contract and MCP passthrough behavior;
 - the regenerated current-full compatibility fixture; and
 - unchanged verification of the released-v0.4.0 fixture.
