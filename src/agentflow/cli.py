@@ -79,6 +79,7 @@ from .review_runner import MANIFEST_FILENAME, exit_code_for, produce_manifest
 from .runtime import build_runtime_status
 from .validation import (
     audit_drift,
+    validate_design_decision_traceability,
     validate_plan,
     validate_requirement_traceability,
 )
@@ -1129,6 +1130,12 @@ def command_build_proof(args: argparse.Namespace) -> int:
     if traceability_errors:
         print("invalid requirement traceability", file=sys.stderr)
         for error in traceability_errors:
+            print(f"- {error}", file=sys.stderr)
+        return 1
+    design_errors = validate_design_decision_traceability(plan)
+    if design_errors:
+        print("invalid design decision traceability", file=sys.stderr)
+        for error in design_errors:
             print(f"- {error}", file=sys.stderr)
         return 1
 

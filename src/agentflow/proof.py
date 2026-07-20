@@ -25,7 +25,12 @@ from .contracts import (
     MCP_SERVER_STATUSES,
     PROOF_PACK_SCHEMA_VERSION,
 )
-from .coverage import build_coverage, build_requirement_coverage, evaluate_context_budget
+from .coverage import (
+    build_coverage,
+    build_design_decision_coverage,
+    build_requirement_coverage,
+    evaluate_context_budget,
+)
 from .execution import read_step_events, read_step_state
 from .execution_coverage import build_execution_coverage
 from .receipts import command_receipts, file_receipts, replay_gates, verify_receipt_outputs
@@ -42,7 +47,10 @@ from .workflow_contract import (
 )
 from .capabilities import capability_checks, capability_summary
 from .stuck import stuck_block
-from .validation import validate_requirement_traceability
+from .validation import (
+    validate_design_decision_traceability,
+    validate_requirement_traceability,
+)
 from .versioning import (
     parse_schema_version,
     validate_historical_proof_schema_version,
@@ -402,6 +410,18 @@ def _recorded_schema_is_older(recorded: Any, current: str) -> bool:
     )
 
 
+def _coverage_growth_hint(proof: Dict[str, Any]) -> str:
+    if not _recorded_schema_is_older(
+        proof.get("schema_version"), PROOF_PACK_SCHEMA_VERSION
+    ):
+        return ""
+    return (
+        ": proof was built by an older schema version "
+        f"({proof.get('schema_version')} < {PROOF_PACK_SCHEMA_VERSION}); "
+        "rebuild with current Agentflow to re-verify"
+    )
+
+
 def verify_proof_checks(proof: Dict[str, Any], strict: bool = False) -> List[Dict[str, Any]]:
     findings: List[Dict[str, Any]] = []
     for check in proof.get("checks", []):
@@ -459,17 +479,7 @@ def _verify_requirement_coverage(
                 "message": f"criterion coverage could not be recomputed: {exc}",
             }
         ]
-    # #82 growth path: a proof built before criterion coverage existed cannot
-    # record it, which is indistinguishable from a tampered removal. When the
-    # recorded schema_version is older than the current one, point the holder
-    # at schema growth instead of implying the proof was altered.
-    growth_hint = ""
-    if _recorded_schema_is_older(proof.get("schema_version"), PROOF_PACK_SCHEMA_VERSION):
-        growth_hint = (
-            ": proof was built by an older schema version "
-            f"({proof.get('schema_version')} < {PROOF_PACK_SCHEMA_VERSION}); "
-            "rebuild with current Agentflow to re-verify"
-        )
+    growth_hint = _coverage_growth_hint(proof)
     if recorded != expected:
         return [
             {
@@ -493,6 +503,50 @@ def _verify_requirement_coverage(
     return []
 
 
+def _verify_design_decision_coverage(
+    root: Path, proof: Dict[str, Any]
+) -> List[Dict[str, Any]]:
+    recorded_coverage = proof.get("coverage", {})
+    recorded = (
+        {"design_decisions": recorded_coverage["design_decisions"]}
+        if isinstance(recorded_coverage, dict)
+        and "design_decisions" in recorded_coverage
+        else {}
+    )
+    plan_path = root / ".agent/plan.lock.json"
+    if not plan_path.exists():
+        return []
+    try:
+        plan = read_json(plan_path)
+        errors = validate_design_decision_traceability(plan)
+        if errors:
+            raise ValueError(
+                "invalid design decision traceability: " + "; ".join(errors)
+            )
+        expected = build_design_decision_coverage(plan)
+    except (OSError, ValueError, json.JSONDecodeError) as exc:
+        return [
+            {
+                "severity": "error",
+                "message": (
+                    "design decision coverage could not be recomputed: "
+                    f"{exc}"
+                ),
+            }
+        ]
+    if recorded != expected:
+        return [
+            {
+                "severity": "error",
+                "message": (
+                    "proof design decision coverage is stale or tampered"
+                    + _coverage_growth_hint(proof)
+                ),
+            }
+        ]
+    return []
+
+
 def build_proof(root: Path, plan_path: Path, strict: bool = False) -> Dict[str, Any]:
     resolved_root = root.resolve()
     resolved_plan_path = plan_path.resolve()
@@ -505,6 +559,11 @@ def build_proof(root: Path, plan_path: Path, strict: bool = False) -> Dict[str, 
     if traceability_errors:
         raise ValueError(
             "invalid requirement traceability: " + "; ".join(traceability_errors)
+        )
+    design_errors = validate_design_decision_traceability(plan)
+    if design_errors:
+        raise ValueError(
+            "invalid design decision traceability: " + "; ".join(design_errors)
         )
     evidence = read_jsonl(root / ".agent/evidence.jsonl")
     context_receipts = read_jsonl(root / ".agent/context-receipts.jsonl")
@@ -527,6 +586,7 @@ def build_proof(root: Path, plan_path: Path, strict: bool = False) -> Dict[str, 
             plan_binding_sha256(plan),
         )
     )
+    coverage.update(build_design_decision_coverage(plan))
     # #20: merge lease diagnostics into the coverage block so they land inside
     # canonical_core (proof["execution"] is NOT hash-bound). Lease-expiry status
     # is evaluated at build time and may legitimately differ before vs. after an
@@ -918,6 +978,7 @@ def _verify_proof(
             )
         findings.append({"severity": "error", "message": message})
     findings.extend(_verify_requirement_coverage(root, proof))
+    findings.extend(_verify_design_decision_coverage(root, proof))
     findings.extend(verify_proof_checks(proof, effective_proof_strict))
     findings.extend(verify_receipt_outputs(root))
     findings.extend(verify_review_integrity(root, strict, recorded_review_policy))

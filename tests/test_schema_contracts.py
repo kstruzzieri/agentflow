@@ -257,6 +257,23 @@ class SchemaContractTests(unittest.TestCase):
         )
         self.assertEqual(evidence["properties"]["kind"]["enum"], ["command", "inspection", "review"])
 
+    def test_proof_schema_documents_design_decision_coverage(self) -> None:
+        schema = load_schema("proof-pack.schema.json")
+        coverage = schema["properties"]["coverage"]["properties"][
+            "design_decisions"
+        ]
+        decision = schema["$defs"]["designDecisionCoverage"]
+
+        self.assertEqual(
+            coverage["items"]["$ref"],
+            "#/$defs/designDecisionCoverage",
+        )
+        self.assertEqual(
+            sorted(decision["required"]),
+            ["id", "references", "steps", "text"],
+        )
+        self.assertTrue(decision["properties"]["steps"]["uniqueItems"])
+
     def test_execution_contract_risk_policy_enum_matches_constant(self) -> None:
         schema = load_schema("execution-contract.schema.json")
         policy = schema["properties"]["command_policy"]["properties"]["risk_policy"]
@@ -396,7 +413,7 @@ class ReviewSchemaTests(unittest.TestCase):
         # #124: proof coverage grows requirements/criterion_status_counts and
         # review-runs rows grow plan_sha256, so both artifacts bump per the
         # #82 growth convention.
-        self.assertEqual(PROOF_PACK_SCHEMA_VERSION, "0.10.0")
+        self.assertEqual(PROOF_PACK_SCHEMA_VERSION, "0.11.0")
         self.assertEqual(REVIEW_RUNS_SCHEMA_VERSION, "0.6.0")
 
     def test_bumped_versions_still_match_schema_patterns(self) -> None:
@@ -427,7 +444,7 @@ class ReviewSchemaTests(unittest.TestCase):
 
         self.assertEqual(REVIEW_MANIFEST_SCHEMA_VERSION, "1.0.0")
         self.assertEqual(REVIEW_RUNS_SCHEMA_VERSION, "0.6.0")
-        self.assertEqual(PROOF_PACK_SCHEMA_VERSION, "0.10.0")
+        self.assertEqual(PROOF_PACK_SCHEMA_VERSION, "0.11.0")
         manifest = load_schema("review-manifest.schema.json")
         ledger = load_schema("review-runs.schema.json")
         proof = load_schema("proof-pack.schema.json")
@@ -508,7 +525,7 @@ class ReviewSchemaTests(unittest.TestCase):
 
 class LeaseSchemaContractTests(unittest.TestCase):
     def test_lease_schema_versions_bumped(self) -> None:
-        self.assertEqual(PROOF_PACK_SCHEMA_VERSION, "0.10.0")
+        self.assertEqual(PROOF_PACK_SCHEMA_VERSION, "0.11.0")
         self.assertEqual(DRIFT_REPORT_SCHEMA_VERSION, "0.2.2")
         self.assertEqual(STEP_RUNS_SCHEMA_VERSION, "0.5.0")
 

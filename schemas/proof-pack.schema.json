@@ -46,6 +46,10 @@
             "unmapped": { "type": "integer", "minimum": 0 }
           },
           "additionalProperties": false
+        },
+        "design_decisions": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/designDecisionCoverage" }
         }
       },
       "additionalProperties": true
@@ -154,6 +158,24 @@
         "acceptance_criteria": {
           "type": "array",
           "items": { "$ref": "#/$defs/criterionCoverage" }
+        }
+      },
+      "additionalProperties": true
+    },
+    "designDecisionCoverage": {
+      "type": "object",
+      "required": ["id", "text", "references", "steps"],
+      "properties": {
+        "id": { "type": "string" },
+        "text": { "type": "string" },
+        "references": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "steps": {
+          "type": "array",
+          "items": { "type": "string" },
+          "uniqueItems": true
         }
       },
       "additionalProperties": true

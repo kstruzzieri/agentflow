@@ -992,7 +992,7 @@ class AgentflowCliTests(unittest.TestCase):
 
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             proof = json.loads((cwd / ".agent/proof-pack.json").read_text(encoding="utf-8"))
-            self.assertEqual(proof["bundle_version"], "0.10.0")
+            self.assertEqual(proof["bundle_version"], "0.11.0")
             self.assertIn(".agent/plan.lock.json", proof["generated_from"])
             self.assertEqual(proof["coverage"]["missing_plan_evidence_ids"], ["E1"])
             check_ids = [check["id"] for check in proof["checks"]]
@@ -1022,6 +1022,26 @@ class AgentflowCliTests(unittest.TestCase):
             self.assertNotEqual(result.returncode, 0)
             self.assertIn("invalid requirement traceability", result.stderr)
             self.assertIn("duplicate acceptance criterion id: AC-1", result.stderr)
+            self.assertFalse((cwd / ".agent/proof-pack.json").exists())
+
+    def test_build_proof_rejects_invalid_design_decision_traceability(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            cwd = Path(tmp)
+            self.assertEqual(run_agentflow(cwd, "init").returncode, 0)
+            plan = valid_plan()
+            plan["schema_version"] = "0.4.0"
+            plan["design_decisions"] = []
+            plan["steps"][0]["design_decision_ids"] = ["DD-MISSING"]
+            (cwd / ".agent/plan.lock.json").write_text(
+                json.dumps(plan, indent=2),
+                encoding="utf-8",
+            )
+
+            result = run_agentflow(cwd, "build-proof")
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("invalid design decision traceability", result.stderr)
+            self.assertNotIn("invalid ledger", result.stderr)
             self.assertFalse((cwd / ".agent/proof-pack.json").exists())
 
     def test_build_proof_malformed_runtime_config_returns_warning_not_crash(self) -> None:
