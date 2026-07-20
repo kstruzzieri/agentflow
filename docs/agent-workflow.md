@@ -157,7 +157,9 @@ A plan may also declare design decisions and associate a step with selected
 decision IDs. The declarations and each step list are optional, but a present
 `design_decisions` or `design_decision_ids` list must be non-empty. Declaration
 IDs are unique, stable IDs; decision text and each reference entry are
-non-blank. References are opaque strings. A present step list is unique and
+non-blank. References are opaque strings; an omitted `references` member
+normalizes to `[]`, and an explicitly empty `references: []` is valid. A
+present step list is unique and
 every ID resolves to a declaration; declared decisions may intentionally remain
 unselected. Gates and draft plans do not gain decision-reference fields.
 
