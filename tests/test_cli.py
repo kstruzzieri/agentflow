@@ -1674,8 +1674,7 @@ class AgentflowCliTests(unittest.TestCase):
             cwd = Path(tmp)
             self.assertEqual(run_agentflow(cwd, "init").returncode, 0)
             self.assertEqual(run_agentflow(cwd, "init-execution").returncode, 0)
-            plan = valid_plan()
-            plan["schema_version"] = "0.3.0"
+            plan = design_reference_plan()
             plan["locked"] = True
             (cwd / ".agent/plan.lock.json").write_text(
                 json.dumps(plan, indent=2),
@@ -1693,7 +1692,9 @@ class AgentflowCliTests(unittest.TestCase):
             )
 
             self.assertEqual(next_result.returncode, 0, next_result.stdout + next_result.stderr)
-            self.assertEqual(json.loads(next_result.stdout)["id"], "P1")
+            next_payload = json.loads(next_result.stdout)
+            self.assertEqual(next_payload["id"], "P1")
+            self.assertEqual(next_payload["design_decision_ids"], ["DD-1"])
             self.assertEqual(claim_result.returncode, 0, claim_result.stdout + claim_result.stderr)
             self.assertEqual(json.loads(claim_result.stdout)["attempt_id"], "A1")
 

@@ -3030,6 +3030,7 @@
       {
         "keys": {
           "action": "string",
+          "design_decision_ids": "array|null",
           "evidence_ids": "array",
           "expected_diff": "array",
           "files": "array",

@@ -150,6 +150,31 @@ Plans that omit `requirements` remain the legacy adapter path: no traceability
 coverage keys or criterion proof check are emitted. Agentflow adds no provider
 field and no requirements ledger.
 
+## Optional Design Decision Selection
+
+Golem may author optional plan-level `design_decisions` and per-step
+`design_decision_ids` as documented in
+[Agentflow Workflow](agent-workflow.md#optional-design-decision-references).
+It emits schema `0.4.0` whenever it authors either field and treats
+`lock-plan --json` diagnostics as compiler feedback for regenerating the plan.
+
+For each raw step from `next-step --json` or MCP `next_step`, select decisions
+in declaration order, not in the step's ID order:
+
+```python
+selected_ids = set(step.get("design_decision_ids", []))
+selected_decisions = [
+    decision
+    for decision in plan.get("design_decisions", [])
+    if decision["id"] in selected_ids
+]
+```
+
+Golem uses that declaration order as prompt order and consumes the same order
+from `coverage.design_decisions` after proof generation. It never creates or
+patches a sidecar, coverage, checks, or other proof metadata; Agentflow owns
+the projection and independent verification.
+
 ## Choosing a Surface: CLI vs MCP
 
 Golem can shell out to the `agentflow` CLI or speak MCP (stdio or Streamable

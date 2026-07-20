@@ -11,6 +11,7 @@ import unittest
 import urllib.error
 import urllib.request
 from concurrent.futures import ThreadPoolExecutor
+from pathlib import Path
 
 from agentflow import __version__
 from agentflow import mcp_server as m
@@ -198,10 +199,46 @@ class ToolsCallTests(unittest.TestCase):
         result = call("tools/call", name="status", arguments={"root": tmp})["result"]
         self.assertTrue(result["isError"])
 
-    def test_next_step_returns_text_content(self) -> None:
-        root = self._init_root()
-        result = call("tools/call", name="next_step", arguments={"root": root})["result"]
-        self.assertEqual(result["content"][0]["type"], "text")
+    def test_next_step_returns_design_decision_ids_as_structured_data(self) -> None:
+        root = Path(self._init_root())
+        plan_path = root / ".agent/plan.lock.json"
+        plan = json.loads(plan_path.read_text(encoding="utf-8"))
+        plan.update(
+            {
+                "schema_version": "0.4.0",
+                "objective": "Exercise MCP step passthrough.",
+                "scope": ["Return the raw step."],
+                "invariants": ["MCP does not reinterpret decisions."],
+                "allowed_files": ["fixture.txt", ".agent/"],
+                "validation_gates": ["manual inspection"],
+                "rollback_plan": "Delete the fixture.",
+                "steps": [
+                    {
+                        "id": "P1",
+                        "action": "Create fixture.",
+                        "files": ["fixture.txt"],
+                        "preconditions": [],
+                        "expected_diff": ["Fixture exists."],
+                        "validation": ["manual inspection"],
+                        "evidence_ids": [],
+                        "design_decision_ids": ["DD-1"],
+                    }
+                ],
+                "design_decisions": [
+                    {"id": "DD-1", "text": "Keep the adapter transparent."}
+                ],
+                "locked": True,
+            }
+        )
+        plan_path.write_text(json.dumps(plan, indent=2), encoding="utf-8")
+
+        result = call("tools/call", name="next_step", arguments={"root": str(root)})["result"]
+
+        self.assertFalse(result["isError"])
+        self.assertEqual(
+            result["structuredContent"]["data"]["design_decision_ids"],
+            ["DD-1"],
+        )
 
     def test_unknown_tool_returns_error(self) -> None:
         response = call("tools/call", name="nope", arguments={})
