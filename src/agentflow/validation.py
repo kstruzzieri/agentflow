@@ -24,7 +24,7 @@ from .execution import (
 )
 from .git import changed_file_records, changed_files, is_git_repo
 from .hunks import effective_hunk_policy, unmapped_hunks
-from .versioning import validate_schema_version
+from .versioning import parse_schema_version, validate_schema_version
 
 
 REQUIRED_PLAN_FIELDS = {
@@ -50,30 +50,49 @@ def _is_non_empty_string_list(value: Any) -> bool:
     return isinstance(value, list) and all(isinstance(item, str) and item for item in value)
 
 
+def _validate_trace_refs(
+    prefix: str,
+    value: Any,
+    known_ids: set[str],
+    item_name: str,
+    target_name: str,
+    errors: List[str],
+    non_blank: bool = False,
+) -> None:
+    if not isinstance(value, list):
+        errors.append(f"{prefix} must be a list")
+        return
+    if not value:
+        errors.append(f"{prefix} must contain at least one {item_name} id")
+        return
+    if not _is_non_empty_string_list(value) or (
+        non_blank and any(not item.strip() for item in value)
+    ):
+        errors.append(f"{prefix} must contain only non-empty strings")
+        return
+    seen = set()
+    for item_id in value:
+        if item_id in seen:
+            errors.append(f"{prefix} contains duplicate id: {item_id}")
+        seen.add(item_id)
+        if item_id not in known_ids:
+            errors.append(f"{prefix} references unknown {target_name} id: {item_id}")
+
+
 def _validate_criterion_refs(
     prefix: str,
     value: Any,
     criterion_ids: set[str],
     errors: List[str],
 ) -> None:
-    if not isinstance(value, list):
-        errors.append(f"{prefix} must be a list")
-        return
-    if not value:
-        errors.append(f"{prefix} must contain at least one criterion id")
-        return
-    if not _is_non_empty_string_list(value):
-        errors.append(f"{prefix} must contain only non-empty strings")
-        return
-    seen = set()
-    for criterion_id in value:
-        if criterion_id in seen:
-            errors.append(f"{prefix} contains duplicate id: {criterion_id}")
-        seen.add(criterion_id)
-        if criterion_id not in criterion_ids:
-            errors.append(
-                f"{prefix} references unknown acceptance criterion id: {criterion_id}"
-            )
+    _validate_trace_refs(
+        prefix,
+        value,
+        criterion_ids,
+        "criterion",
+        "acceptance criterion",
+        errors,
+    )
 
 
 def _validate_requirements(plan: Dict[str, Any], errors: List[str]) -> set[str]:
@@ -185,6 +204,91 @@ def validate_requirement_traceability(plan: Dict[str, Any]) -> List[str]:
         if criterion_id not in mapped_criterion_ids:
             errors.append(
                 f"acceptance criterion {criterion_id} is not mapped to any step"
+            )
+    return errors
+
+
+def _uses_design_decision_fields(plan: Dict[str, Any]) -> bool:
+    if "design_decisions" in plan:
+        return True
+    steps = plan.get("steps")
+    return isinstance(steps, list) and any(
+        isinstance(step, dict) and "design_decision_ids" in step for step in steps
+    )
+
+
+def _design_decision_schema_is_legacy(plan: Dict[str, Any]) -> bool:
+    recorded = plan.get("schema_version")
+    if not isinstance(recorded, str):
+        return False
+    try:
+        version = parse_schema_version(recorded)
+    except ValueError:
+        return False
+    return (version.major, version.minor) < (0, 4)
+
+
+def validate_design_decision_traceability(plan: Dict[str, Any]) -> List[str]:
+    """Validate optional locked-plan design decisions and step references."""
+    if not _uses_design_decision_fields(plan):
+        return []
+    if _design_decision_schema_is_legacy(plan):
+        return [
+            "design decision fields require plan-lock schema_version "
+            "0.4.0 or newer"
+        ]
+
+    errors: List[str] = []
+    decision_ids: set[str] = set()
+    if "design_decisions" in plan:
+        decisions = plan["design_decisions"]
+        if not isinstance(decisions, list) or not decisions:
+            errors.append("design_decisions must contain at least one design decision")
+        else:
+            for index, decision in enumerate(decisions, start=1):
+                prefix = f"design_decisions[{index}]"
+                if not isinstance(decision, dict):
+                    errors.append(f"{prefix} must be an object")
+                    continue
+                decision_id = decision.get("id")
+                if (
+                    not isinstance(decision_id, str)
+                    or not _TRACE_ID_RE.fullmatch(decision_id)
+                ):
+                    errors.append(f"{prefix}.id has invalid stable id: {decision_id}")
+                elif decision_id in decision_ids:
+                    errors.append(f"duplicate design decision id: {decision_id}")
+                else:
+                    decision_ids.add(decision_id)
+                text = decision.get("text")
+                if not isinstance(text, str) or not text.strip():
+                    errors.append(f"{prefix}.text must be a non-empty string")
+                if "references" in decision:
+                    references = decision["references"]
+                    if not isinstance(references, list):
+                        errors.append(f"{prefix}.references must be a list")
+                    elif any(
+                        not isinstance(reference, str) or not reference.strip()
+                        for reference in references
+                    ):
+                        errors.append(
+                            f"{prefix}.references must contain only non-empty strings"
+                        )
+
+    steps = plan.get("steps", [])
+    if not isinstance(steps, list):
+        errors.append("steps must be a list for design decision traceability")
+        return errors
+    for index, step in enumerate(steps, start=1):
+        if isinstance(step, dict) and "design_decision_ids" in step:
+            _validate_trace_refs(
+                f"steps[{index}].design_decision_ids",
+                step["design_decision_ids"],
+                decision_ids,
+                "design decision",
+                "design decision",
+                errors,
+                non_blank=True,
             )
     return errors
 
@@ -327,6 +431,7 @@ def validate_plan(plan: Dict[str, Any]) -> List[str]:
         errors.append("runtime_routes must be an object")
 
     errors.extend(validate_requirement_traceability(plan))
+    errors.extend(validate_design_decision_traceability(plan))
 
     evidence_ids = set(plan["evidence_ids"])
     if any(not isinstance(item, str) or not item for item in evidence_ids):

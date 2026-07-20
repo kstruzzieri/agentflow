@@ -27,6 +27,7 @@ from agentflow.contracts import (
     HUNK_ATTRIBUTION_POLICIES,
     MCP_READINESS_CHECKS,
     MCP_TRANSPORTS,
+    PLAN_SCHEMA_VERSION,
     PROOF_PACK_SCHEMA_VERSION,
     PROVENANCE_VALUES,
     READINESS_CHECKS,
@@ -204,6 +205,31 @@ class SchemaContractTests(unittest.TestCase):
         self.assertEqual(
             requirement["properties"]["id"]["pattern"],
             criterion["properties"]["id"]["pattern"],
+        )
+
+    def test_plan_schema_documents_design_decision_traceability(self) -> None:
+        schema = load_schema("plan-lock.schema.json")
+        decision = schema["properties"]["design_decisions"]["items"]
+        step_refs = schema["properties"]["steps"]["items"]["properties"][
+            "design_decision_ids"
+        ]
+
+        self.assertEqual(sorted(decision["required"]), ["id", "text"])
+        self.assertEqual(
+            decision["properties"]["id"]["pattern"],
+            schema["properties"]["requirements"]["items"]["properties"]["id"]["pattern"],
+        )
+        self.assertEqual(decision["properties"]["references"]["minItems"], 0)
+        self.assertEqual(step_refs["minItems"], 1)
+        self.assertTrue(step_refs["uniqueItems"])
+
+    def test_design_reference_plan_schema_version_is_bumped(self) -> None:
+        schema = load_schema("plan-lock.schema.json")
+
+        self.assertEqual(PLAN_SCHEMA_VERSION, "0.4.0")
+        self.assertRegex(
+            PLAN_SCHEMA_VERSION,
+            schema["properties"]["schema_version"]["pattern"],
         )
 
     def test_proof_schema_documents_requirement_coverage(self) -> None:
