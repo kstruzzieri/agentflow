@@ -5,6 +5,7 @@ import unittest
 import json
 import tempfile
 from pathlib import Path
+from unittest.mock import patch
 
 from agentflow.artifacts import append_jsonl, create_initial_artifacts, write_json
 from agentflow.contracts import (
@@ -2425,6 +2426,31 @@ class AggregationProvenanceProofTests(unittest.TestCase):
             self.assertIn(".agent/aggregation.json", file_paths)
             self.assertEqual(canonical_core(proof)["aggregation"], manifest)
 
+    def test_future_supported_major_is_not_rejected_by_syntax_gate(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = self._root(tmp)
+            manifest = self._aggregation_manifest()
+            manifest["schema_version"] = "1.0.0"
+            write_json(root / ".agent/aggregation.json", manifest)
+
+            with patch("agentflow.proof.AGGREGATION_SCHEMA_VERSION", "1.0.0"):
+                proof = build_proof(root, root / ".agent/plan.lock.json")
+
+            self.assertEqual(proof["aggregation"], manifest)
+
+    def test_future_major_is_rejected_until_policy_supports_it(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = self._root(tmp)
+            manifest = self._aggregation_manifest()
+            manifest["schema_version"] = "1.0.0"
+            write_json(root / ".agent/aggregation.json", manifest)
+
+            proof = build_proof(root, root / ".agent/plan.lock.json")
+
+            self.assertNotIn("aggregation", proof)
+            checks = {check["id"]: check for check in proof["checks"]}
+            self.assertIn("incompatible", checks["aggregation_valid"]["message"])
+
     def test_core_hash_changes_when_aggregation_block_is_mutated(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = self._root(tmp)
@@ -2616,6 +2642,31 @@ class AggregationProvenanceProofTests(unittest.TestCase):
             checks = {check["id"]: check for check in proof["checks"]}
             self.assertEqual(checks["aggregation_valid"]["status"], "failed")
             self.assertIn("schema_version", checks["aggregation_valid"]["message"])
+
+    def test_schema_version_length_boundary(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = self._root(tmp)
+            manifest = self._aggregation_manifest()
+            manifest["schema_version"] = "0.1." + ("9" * 636)
+            self.assertEqual(len(manifest["schema_version"]), 640)
+
+            write_json(root / ".agent/aggregation.json", manifest)
+
+            proof = build_proof(root, root / ".agent/plan.lock.json")
+
+            self.assertEqual(proof["aggregation"], manifest)
+
+            manifest["schema_version"] = "0.1." + ("9" * 637)
+            self.assertEqual(len(manifest["schema_version"]), 641)
+
+            write_json(root / ".agent/aggregation.json", manifest)
+
+            proof = build_proof(root, root / ".agent/plan.lock.json")
+
+            self.assertNotIn("aggregation", proof)
+            checks = {check["id"]: check for check in proof["checks"]}
+            self.assertEqual(checks["aggregation_valid"]["status"], "failed")
+            self.assertIn("at most 640 characters", checks["aggregation_valid"]["message"])
 
     def test_valid_manifest_with_extra_keys_embeds_fine(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

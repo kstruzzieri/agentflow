@@ -63,7 +63,9 @@ PROOF_METADATA_FIELDS = {
 
 _AGGREGATION_SOURCE_ID_RE = re.compile(r"^[a-z0-9]{1,16}$")
 _AGGREGATION_PREFIX_RE = re.compile(r"^WT[a-z0-9]{1,16}-$")
-_AGGREGATION_SCHEMA_VERSION_RE = re.compile(r"^0\.[0-1]\.[0-9]+$")
+# A total cap of 640 keeps every numeric component below Python's minimum
+# configurable decimal-conversion threshold. Both published schemas mirror it.
+_AGGREGATION_SCHEMA_VERSION_MAX_LENGTH = 640
 
 
 def sha256_file(path: Path) -> str:
@@ -85,13 +87,21 @@ def _aggregation_manifest_errors(manifest: Dict[str, Any]) -> List[str]:
     is never loaded at runtime); extra keys are allowed (additive).
     """
     schema_version = manifest.get("schema_version")
-    errors: List[str] = validate_schema_version(
-        schema_version, AGGREGATION_SCHEMA_VERSION, "aggregation"
-    )
-    if isinstance(schema_version, str) and not _AGGREGATION_SCHEMA_VERSION_RE.fullmatch(
-        schema_version
+    errors: List[str] = []
+    if (
+        isinstance(schema_version, str)
+        and len(schema_version) > _AGGREGATION_SCHEMA_VERSION_MAX_LENGTH
     ):
-        errors.append("aggregation schema_version does not match schema pattern")
+        errors.append(
+            "aggregation schema_version must be at most "
+            f"{_AGGREGATION_SCHEMA_VERSION_MAX_LENGTH} characters"
+        )
+    else:
+        errors.extend(
+            validate_schema_version(
+                schema_version, AGGREGATION_SCHEMA_VERSION, "aggregation"
+            )
+        )
     if manifest.get("mode") != "cross_worktree":
         errors.append("mode must be cross_worktree")
     sources = manifest.get("sources")
