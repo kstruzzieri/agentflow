@@ -444,6 +444,7 @@ The next priorities are tracked in [docs/roadmap.md](docs/roadmap.md).
 
 - [Agent workflow](docs/agent-workflow.md) — plan, execute, verify, and prove a run
 - [Artifact policy](docs/agent-artifacts.md) — decide what stays local and what is safe to publish
+- [Security model](docs/security-model.md) — trust boundaries, guarantees, and operator responsibilities
 - [Command risk screening](docs/command-risk.md) — deterministic command classification and limits
 - [MCP server](docs/mcp.md) — stdio and local HTTP transports
 - [Workflow packs](docs/workflow-packs.md) — reusable workflow policy and planning profiles

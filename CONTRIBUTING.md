@@ -49,3 +49,8 @@ artifacts or command output.
 
 Report security issues privately according to [SECURITY.md](SECURITY.md), not in
 a public issue.
+
+All participants are expected to follow the
+[Code of Conduct](CODE_OF_CONDUCT.md). For the repository's trust boundaries and
+residual operator responsibilities, see
+[docs/security-model.md](docs/security-model.md).

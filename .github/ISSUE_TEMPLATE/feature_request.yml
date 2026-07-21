@@ -1,0 +1,41 @@
+name: Feature request
+description: Propose a focused improvement to Agentflow's workflow contract or tooling.
+title: "[Feature]: "
+labels: [enhancement]
+body:
+  - type: textarea
+    id: use-case
+    attributes:
+      label: Use case
+      description: Explain the workflow problem, who encounters it, and why existing behavior is insufficient.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed behavior
+      description: Describe the smallest useful outcome and any alternatives considered.
+    validations:
+      required: true
+  - type: textarea
+    id: compatibility
+    attributes:
+      label: Compatibility impact
+      description: Identify effects on plans, proof or schema versions, CLI/MCP consumers, platforms, or existing automation.
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Evidence and validation
+      description: Link a reproduction, example workflow, tests, proof/schema versions, or Agentflow task-loop evidence when available.
+  - type: dropdown
+    id: platform
+    attributes:
+      label: Platform
+      options:
+        - Linux
+        - macOS
+        - Windows
+        - Cross-platform
+        - Not platform-specific

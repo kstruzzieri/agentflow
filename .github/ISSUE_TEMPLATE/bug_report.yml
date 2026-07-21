@@ -1,0 +1,59 @@
+name: Bug report
+description: Report reproducible Agentflow behavior that differs from the documented contract.
+title: "[Bug]: "
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you for reporting a bug. Remove secrets, private paths, and raw `.agent/receipts/` output before submitting.
+  - type: textarea
+    id: summary
+    attributes:
+      label: What happened?
+      description: Describe the observed behavior and the expected behavior.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Reproduction
+      description: Provide the smallest commands, plan, and inputs needed to reproduce the problem.
+      placeholder: |
+        1. ...
+        2. ...
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Agentflow version
+      description: Include the output of `agentflow --version` (or the source checkout commit).
+    validations:
+      required: true
+  - type: textarea
+    id: proof-schema-versions
+    attributes:
+      label: Proof/schema versions
+      description: Include the proof-pack schema version and any plan or execution schema versions involved.
+  - type: dropdown
+    id: platform
+    attributes:
+      label: Platform
+      options:
+        - Linux
+        - macOS
+        - Windows
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: compatibility
+    attributes:
+      label: Compatibility impact
+      description: Describe whether this affects existing plans, proof bundles, clients, or automation.
+  - type: textarea
+    id: validation
+    attributes:
+      label: Validation and Agentflow task-loop evidence
+      description: List tests, `agentflow` validation/proof commands, and any safe-to-share receipt or proof summary.

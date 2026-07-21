@@ -46,9 +46,13 @@ Every tool accepts an optional `root` argument (defaults to `.`).
 
 ### Security boundary
 
-Only read/query and state-transition tools are exposed. The arbitrary-command
-tools (`run`, `record-command`) are intentionally **not** exposed, so an MCP
-client cannot drive shell execution through this surface.
+The arbitrary-command tools (`run`, `record-command`) are intentionally **not**
+exposed, so an MCP client cannot submit a new argv directly. This is not a
+categorically non-executing surface: `verify_step`, `verify_proof`, and
+`finish_step` expose `replay`, which executes attested command gates already
+present under the client-selected root with the server process's permissions.
+Treat every selected root and its attested receipt ledger as executable input,
+and do not allow an untrusted client to select or replay it.
 
 The HTTP transport:
 
