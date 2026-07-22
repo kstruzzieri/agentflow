@@ -1,7 +1,43 @@
 # Packaging and Releases
 
-Agentflow ships as source plus single-file zipapp artifacts. There are no
-runtime dependencies, so the whole tool fits in one `.pyz` per entry point.
+Agentflow ships as source plus two Python distribution artifacts and two
+single-file zipapp artifacts. There are no runtime dependencies.
+
+## Build-once distribution handoff
+
+Build these four artifacts once from the tagged source, then pass those exact
+bytes to every inspection, clean-install, GitHub Release, and (when separately
+authorized) PyPI stage:
+
+- `dist/agentflow.pyz` — CLI zipapp
+- `dist/agentflow-mcp.pyz` — MCP zipapp
+- `dist/agentflow_proof-*.whl` — provisional `agentflow-proof` wheel
+- `dist/agentflow_proof-*.tar.gz` — provisional `agentflow-proof` sdist
+
+```bash
+python3 -m pip install build==1.5.0 twine==6.2.0
+python3 scripts/build_zipapp.py --output-dir dist
+python3 -m build --sdist --wheel --outdir dist
+python3 scripts/check_distribution.py --dist-dir dist
+python3 -m twine check dist/*.whl dist/*.tar.gz
+```
+
+`check_distribution.py` verifies the wheel/sdist metadata, files, and console
+scripts. The release workflow uploads this one-artifact handoff and creates
+`SHA256SUMS` for all four artifacts; consumers verify it with
+`sha256sum -c SHA256SUMS`.
+
+The wheel clean-installs on Python 3.11, 3.12, and 3.13. The sdist clean-installs
+on Python 3.11 with the pinned backend. The installed wheel must also preserve
+the released-v0.4.0 proof contract:
+
+```bash
+agentflow verify-proof --root tests/fixtures/compatibility/released-v0.4.0
+```
+
+`publish-pypi` in `.github/workflows/release.yml` remains `if: false` while
+Issue #5's compatibility freeze is incomplete. It stages only the wheel and
+sdist; the zipapps remain release assets.
 
 ## Single-file builds (zipapp)
 

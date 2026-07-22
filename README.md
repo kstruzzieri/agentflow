@@ -40,8 +40,11 @@ Supported interfaces and compatibility promises are defined in
 
 ## Quick Start
 
-Agentflow is not yet published as a PyPI package. From `v0.4.0` on, prebuilt
-single-file artifacts (`agentflow.pyz`, `agentflow-mcp.pyz`) are published on the
+Agentflow is not yet published as a PyPI package. The provisional Python
+distribution agentflow-proof is not yet published; it is built and validated.
+It keeps the `agentflow` imports and the `agentflow` and `agentflow-mcp`
+commands. From `v0.4.0` on, prebuilt single-file artifacts (`agentflow.pyz`,
+`agentflow-mcp.pyz`) are published on the
 [GitHub Releases](https://github.com/kstruzzieri/agentflow/releases) page; for
 development you install from this source repository.
 
@@ -80,6 +83,15 @@ For a virtual environment or the current Python environment:
 ```bash
 python3 -m pip install -e .
 ```
+
+To test the locally built provisional wheel without publishing it:
+
+```bash
+python3 -m pip install dist/agentflow_proof-*.whl
+```
+
+If the permanent PyPI name becomes available later, only `project.name` changes;
+imports and the `agentflow` and `agentflow-mcp` command names stay the same.
 
 ### Smoke tests
 

@@ -516,6 +516,52 @@ class RepositoryReleaseDisciplineTests(unittest.TestCase):
         )
         self.assertIn("tag-triggered `Release` workflow", compact)
 
+    def test_distribution_documentation_preserves_the_fallback_contract(self) -> None:
+        readme = (REPO_ROOT / "README.md").read_text(encoding="utf-8")
+        contributing = (REPO_ROOT / "CONTRIBUTING.md").read_text(
+            encoding="utf-8"
+        )
+        packaging = (REPO_ROOT / "docs" / "packaging.md").read_text(
+            encoding="utf-8"
+        )
+        publishing = (REPO_ROOT / "docs" / "pypi-publishing.md").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn("agentflow-proof is not yet published", readme)
+        for text in (readme, contributing):
+            self.assertIn("agentflow", text)
+            self.assertIn("agentflow-mcp", text)
+        for artifact in (
+            "agentflow.pyz",
+            "agentflow-mcp.pyz",
+            "agentflow_proof-*.whl",
+            "agentflow_proof-*.tar.gz",
+        ):
+            self.assertIn(artifact, packaging)
+        self.assertIn(
+            "agentflow verify-proof --root tests/fixtures/compatibility/released-v0.4.0",
+            packaging,
+        )
+        for required in (
+            "if: false",
+            "Issue #5",
+            "agentflow-proof",
+            "agentflow-mcp",
+            "kstruzzieri",
+            "agentflow",
+            "release.yml",
+            "pypi",
+            "required reviewers",
+            "no token",
+            "owner contact",
+            "PEP 541",
+            "placeholder uploads",
+            "maintainer-only",
+            "unperformed",
+        ):
+            self.assertIn(required, publishing)
+
 
 if __name__ == "__main__":
     unittest.main()
