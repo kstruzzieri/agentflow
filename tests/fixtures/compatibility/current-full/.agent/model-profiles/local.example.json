@@ -3,7 +3,7 @@
   "cost_tier": "low",
   "name": "model-id",
   "provider": "local",
-  "schema_version": "0.3.0",
+  "schema_version": "0.4.0",
   "strengths": [],
   "supports_json_schema": false,
   "supports_tool_calls": false,

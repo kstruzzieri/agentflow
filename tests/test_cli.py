@@ -75,6 +75,20 @@ def valid_plan() -> dict:
     }
 
 
+def design_reference_plan() -> dict:
+    plan = valid_plan()
+    plan["schema_version"] = "0.4.0"
+    plan["design_decisions"] = [
+        {
+            "id": "DD-1",
+            "text": "Use the existing receipt ledger.",
+            "references": ["docs/agent-workflow.md"],
+        }
+    ]
+    plan["steps"][0]["design_decision_ids"] = ["DD-1"]
+    return plan
+
+
 class AgentflowCliTests(unittest.TestCase):
     def test_init_creates_artifacts(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -91,7 +105,7 @@ class AgentflowCliTests(unittest.TestCase):
             self.assertEqual(result.returncode, 0, result.stderr)
 
             plan = json.loads((cwd / ".agent/plan.lock.json").read_text(encoding="utf-8"))
-            self.assertEqual(plan["schema_version"], "0.3.0")
+            self.assertEqual(plan["schema_version"], "0.4.0")
             self.assertTrue((cwd / ".agent/runtime-snapshots.jsonl").exists())
             self.assertFalse((cwd / ".agent/runtime.config.json").exists())
 
@@ -133,14 +147,17 @@ class AgentflowCliTests(unittest.TestCase):
             cwd = Path(tmp)
             self.assertEqual(run_agentflow(cwd, "init").returncode, 0)
             plan = valid_plan()
-            plan["schema_version"] = "0.4.0"
+            plan["schema_version"] = "0.5.0"
             (cwd / ".agent/plan.lock.json").write_text(json.dumps(plan, indent=2), encoding="utf-8")
 
             result = run_agentflow(cwd, "validate-plan")
 
             self.assertNotEqual(result.returncode, 0)
             self.assertIn("invalid plan:", result.stderr)
-            self.assertIn("plan-lock schema_version 0.4.0 is incompatible", result.stderr)
+            self.assertIn(
+                "plan-lock schema_version 0.5.0 is incompatible with supported 0.4.0",
+                result.stderr,
+            )
 
     def test_validate_plan_rejects_invalid_step_delegation_fields(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -193,6 +210,119 @@ class AgentflowCliTests(unittest.TestCase):
 
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             self.assertIn("plan valid", result.stdout)
+
+    def test_lock_plan_accepts_design_decision_traceability(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            cwd = Path(tmp)
+            self.assertEqual(run_agentflow(cwd, "init").returncode, 0)
+
+            result = run_agentflow(
+                cwd,
+                "lock-plan",
+                "--stdin",
+                "--json",
+                input_text=json.dumps(design_reference_plan()),
+            )
+
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            locked = json.loads((cwd / ".agent/plan.lock.json").read_text(encoding="utf-8"))
+            self.assertTrue(locked["locked"])
+            self.assertEqual(locked["steps"][0]["design_decision_ids"], ["DD-1"])
+
+    def test_validate_plan_accepts_v03_without_design_references(self) -> None:
+        plan = valid_plan()
+        plan["schema_version"] = "0.3.0"
+
+        self.assertEqual(validate_plan(plan), [])
+
+    def test_validate_plan_requires_v04_for_design_reference_fields(self) -> None:
+        plan = design_reference_plan()
+        plan["schema_version"] = "0.3.0"
+        plan["design_decisions"] = []
+        plan["steps"][0]["design_decision_ids"] = []
+
+        self.assertEqual(
+            validate_plan(plan),
+            [
+                "design decision fields require plan-lock schema_version "
+                "0.4.0 or newer"
+            ],
+        )
+
+    def test_validate_plan_accepts_optional_references_and_unselected_decision(self) -> None:
+        for decision in (
+            {"id": "DD-1", "text": "References omitted."},
+            {"id": "DD-1", "text": "References empty.", "references": []},
+        ):
+            with self.subTest(decision=decision):
+                plan = design_reference_plan()
+                plan["design_decisions"] = [
+                    decision,
+                    {"id": "DD-UNSELECTED", "text": "May remain unselected."},
+                ]
+                self.assertEqual(validate_plan(plan), [])
+
+    def test_validate_plan_rejects_design_decision_declaration_errors(self) -> None:
+        cases = (
+            ([], "design_decisions must contain at least one design decision"),
+            ("DD-1", "design_decisions must contain at least one design decision"),
+            (
+                [{"id": "1DD", "text": "Invalid id."}],
+                "design_decisions[1].id has invalid stable id: 1DD",
+            ),
+            (
+                [{"id": "DD-1", "text": "   "}],
+                "design_decisions[1].text must be a non-empty string",
+            ),
+            (
+                [{"id": "DD-1", "text": "Valid.", "references": "ADR-1"}],
+                "design_decisions[1].references must be a list",
+            ),
+            (
+                [{"id": "DD-1", "text": "Valid.", "references": ["   "]}],
+                "design_decisions[1].references must contain only non-empty strings",
+            ),
+            (
+                [
+                    {"id": "DD-1", "text": "First."},
+                    {"id": "DD-1", "text": "Duplicate."},
+                ],
+                "duplicate design decision id: DD-1",
+            ),
+        )
+        for decisions, expected in cases:
+            with self.subTest(expected=expected):
+                plan = design_reference_plan()
+                plan["design_decisions"] = decisions
+                self.assertIn(expected, validate_plan(plan))
+
+    def test_validate_plan_distinguishes_design_decision_reference_errors(self) -> None:
+        cases = (
+            (None, "steps[1].design_decision_ids must be a list"),
+            (
+                [],
+                "steps[1].design_decision_ids must contain at least one "
+                "design decision id",
+            ),
+            (
+                ["   "],
+                "steps[1].design_decision_ids must contain only non-empty strings",
+            ),
+            (
+                ["DD-1", "DD-1"],
+                "steps[1].design_decision_ids contains duplicate id: DD-1",
+            ),
+            (
+                ["DD-MISSING"],
+                "steps[1].design_decision_ids references unknown design decision "
+                "id: DD-MISSING",
+            ),
+        )
+        for references, expected in cases:
+            with self.subTest(expected=expected):
+                plan = design_reference_plan()
+                plan["steps"][0]["design_decision_ids"] = references
+                self.assertIn(expected, validate_plan(plan))
 
     def test_lock_plan_accepts_multiple_requirements_and_criteria(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -862,7 +992,7 @@ class AgentflowCliTests(unittest.TestCase):
 
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             proof = json.loads((cwd / ".agent/proof-pack.json").read_text(encoding="utf-8"))
-            self.assertEqual(proof["bundle_version"], "0.10.0")
+            self.assertEqual(proof["bundle_version"], "0.11.0")
             self.assertIn(".agent/plan.lock.json", proof["generated_from"])
             self.assertEqual(proof["coverage"]["missing_plan_evidence_ids"], ["E1"])
             check_ids = [check["id"] for check in proof["checks"]]
@@ -892,6 +1022,26 @@ class AgentflowCliTests(unittest.TestCase):
             self.assertNotEqual(result.returncode, 0)
             self.assertIn("invalid requirement traceability", result.stderr)
             self.assertIn("duplicate acceptance criterion id: AC-1", result.stderr)
+            self.assertFalse((cwd / ".agent/proof-pack.json").exists())
+
+    def test_build_proof_rejects_invalid_design_decision_traceability(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            cwd = Path(tmp)
+            self.assertEqual(run_agentflow(cwd, "init").returncode, 0)
+            plan = valid_plan()
+            plan["schema_version"] = "0.4.0"
+            plan["design_decisions"] = []
+            plan["steps"][0]["design_decision_ids"] = ["DD-MISSING"]
+            (cwd / ".agent/plan.lock.json").write_text(
+                json.dumps(plan, indent=2),
+                encoding="utf-8",
+            )
+
+            result = run_agentflow(cwd, "build-proof")
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("invalid design decision traceability", result.stderr)
+            self.assertNotIn("invalid ledger", result.stderr)
             self.assertFalse((cwd / ".agent/proof-pack.json").exists())
 
     def test_build_proof_malformed_runtime_config_returns_warning_not_crash(self) -> None:
@@ -1524,8 +1674,7 @@ class AgentflowCliTests(unittest.TestCase):
             cwd = Path(tmp)
             self.assertEqual(run_agentflow(cwd, "init").returncode, 0)
             self.assertEqual(run_agentflow(cwd, "init-execution").returncode, 0)
-            plan = valid_plan()
-            plan["schema_version"] = "0.3.0"
+            plan = design_reference_plan()
             plan["locked"] = True
             (cwd / ".agent/plan.lock.json").write_text(
                 json.dumps(plan, indent=2),
@@ -1543,7 +1692,9 @@ class AgentflowCliTests(unittest.TestCase):
             )
 
             self.assertEqual(next_result.returncode, 0, next_result.stdout + next_result.stderr)
-            self.assertEqual(json.loads(next_result.stdout)["id"], "P1")
+            next_payload = json.loads(next_result.stdout)
+            self.assertEqual(next_payload["id"], "P1")
+            self.assertEqual(next_payload["design_decision_ids"], ["DD-1"])
             self.assertEqual(claim_result.returncode, 0, claim_result.stdout + claim_result.stderr)
             self.assertEqual(json.loads(claim_result.stdout)["attempt_id"], "A1")
 

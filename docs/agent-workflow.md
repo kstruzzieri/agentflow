@@ -151,6 +151,50 @@ Older artifacts stay readable
 traceability coverage key nor the `criteria_satisfied` check, preserving its
 prior execution and proof output.
 
+## Optional Design Decision References
+
+A plan may also declare design decisions and associate a step with selected
+decision IDs. The declarations and each step list are optional, but a present
+`design_decisions` or `design_decision_ids` list must be non-empty. Declaration
+IDs are unique, stable IDs; decision text and each reference entry are
+non-blank. References are opaque strings, and an explicitly empty
+`references: []` is valid. In `coverage.design_decisions`, an omitted plan
+`references` member is projected as `[]`. A present step list is unique and
+every ID resolves to a declaration; declared decisions may intentionally remain
+unselected. Gates and draft plans do not gain decision-reference fields.
+
+```json
+{
+  "schema_version": "0.4.0",
+  "design_decisions": [
+    {
+      "id": "DD-1",
+      "text": "Use the existing receipt ledger.",
+      "references": ["docs/agent-workflow.md"]
+    }
+  ],
+  "steps": [
+    {
+      "id": "P1",
+      "design_decision_ids": ["DD-1"]
+    }
+  ]
+}
+```
+
+Plans that omit both fields under `0.3.x` remain accepted. A plan that uses
+either field must declare schema `0.4.0` or later, so an older locker correctly
+rejects a correctly labelled `0.4.0` plan rather than silently dropping data.
+
+When declarations exist, `build-proof` conditionally emits the ordered
+`coverage.design_decisions` rows: declaration order, reference order, and each
+row's plan-step order are preserved. Without declarations it omits that key.
+The projection is in the existing hash-bound proof coverage, and the existing
+plan/core hashing already binds the decision data. `verify-proof` independently
+revalidates the locked plan and recomputes this projection; consumers must not
+patch it. `next-step --json` exposes the raw locked step, including an optional
+`design_decision_ids` member when that step selected decisions.
+
 ## Artifact Retention
 
 The active root `.agent/` directory is local-only by default. It is safe for a

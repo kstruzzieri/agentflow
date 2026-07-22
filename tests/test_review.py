@@ -405,6 +405,29 @@ class BuildReviewRunRecordTests(unittest.TestCase):
         self.assertEqual(plan_binding_sha256(plan), plan_binding_sha256(relocked))
         self.assertNotEqual(plan_binding_sha256(plan), plan_binding_sha256(changed))
 
+    def test_plan_binding_hash_includes_design_reference_semantics(self) -> None:
+        plan = {
+            "design_decisions": [
+                {
+                    "id": "DD-1",
+                    "text": "Use the existing ledger.",
+                    "references": ["ADR-1", "ADR-2"],
+                }
+            ],
+            "steps": [{"id": "P1", "design_decision_ids": ["DD-1"]}],
+        }
+        changed_text = json.loads(json.dumps(plan))
+        changed_text["design_decisions"][0]["text"] = "Use a new ledger."
+        changed_references = json.loads(json.dumps(plan))
+        changed_references["design_decisions"][0]["references"].reverse()
+        changed_step = json.loads(json.dumps(plan))
+        changed_step["steps"][0]["design_decision_ids"] = []
+
+        baseline = plan_binding_sha256(plan)
+        self.assertNotEqual(baseline, plan_binding_sha256(changed_text))
+        self.assertNotEqual(baseline, plan_binding_sha256(changed_references))
+        self.assertNotEqual(baseline, plan_binding_sha256(changed_step))
+
     def test_rejects_missing_artifact(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

@@ -6,11 +6,30 @@
       "adapter": "go-llm",
       "enabled": true,
       "capabilities": {"declared": ["chat"], "required": ["chat"]},
-      "readiness": {"check": "command_exists", "command": "/usr/bin/python3"}
+      "readiness": {
+        "check": "command_exists",
+        "command": "/usr/bin/python3"
+      }
     }
   },
-  "routes": {"worker": {"primary": "local", "fallbacks": [], "policy": "prefer_local", "requires": ["chat"], "allow_degraded": true}},
+  "routes": {
+    "worker": {
+      "primary": "local",
+      "fallbacks": [],
+      "policy": "prefer_local",
+      "requires": ["chat"],
+      "allow_degraded": true
+    }
+  },
   "mcp_servers": {
-    "fixture": {"enabled": true, "transport": "stdio", "declared_tools": ["verify_proof"], "readiness": {"check": "command_exists", "command": "/usr/bin/python3"}}
+    "fixture": {
+      "enabled": true,
+      "transport": "stdio",
+      "declared_tools": ["verify_proof"],
+      "readiness": {
+        "check": "command_exists",
+        "command": "/usr/bin/python3"
+      }
+    }
   }
 }

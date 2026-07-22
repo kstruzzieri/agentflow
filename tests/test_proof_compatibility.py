@@ -110,6 +110,17 @@ class ProofCompatibilityMatrixTests(unittest.TestCase):
         self.assertIn("capabilities", proof)
         self.assertIn("review", proof)
         self.assertIn("requirements", proof["coverage"])
+        self.assertEqual(
+            proof["coverage"]["design_decisions"],
+            [
+                {
+                    "id": "DD-FIXTURE",
+                    "text": "Keep design guidance inside the locked plan.",
+                    "references": ["docs/golem-integration.md"],
+                    "steps": ["P1"],
+                }
+            ],
+        )
         self.assertTrue(proof["execution"]["amendments"])
         receipts = (root / ".agent/file-receipts.jsonl").read_text(encoding="utf-8")
         self.assertIn("hunks", receipts)
@@ -127,7 +138,7 @@ class ProofCompatibilityMatrixTests(unittest.TestCase):
 
     def test_newer_schema_rejection_is_upgrade_not_tamper_or_shape(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
-            result = verify_fixture(mutated_current_fixture(tmp, "0.11.0", drop_meta=True))
+            result = verify_fixture(mutated_current_fixture(tmp, "0.12.0", drop_meta=True))
 
         output = result.stdout + result.stderr
         self.assertNotEqual(result.returncode, 0)

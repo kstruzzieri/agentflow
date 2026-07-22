@@ -5,6 +5,15 @@
     "fixture.txt"
   ],
   "blocked_files": [],
+  "design_decisions": [
+    {
+      "id": "DD-FIXTURE",
+      "references": [
+        "docs/golem-integration.md"
+      ],
+      "text": "Keep design guidance inside the locked plan."
+    }
+  ],
   "drift_budget": {
     "architecture_drift": "requires_approval",
     "formatting_drift": "minimal",
@@ -17,7 +26,7 @@
     "All generated proof artifacts come from the current Agentflow CLI."
   ],
   "locked": true,
-  "locked_at": "2026-07-12T02:30:28+00:00",
+  "locked_at": "2026-07-22T01:17:14+00:00",
   "non_goals": [
     "Exercise aggregation; that has a separate fixture."
   ],
@@ -36,15 +45,18 @@
   ],
   "risk_level": "low",
   "rollback_plan": "Delete and regenerate the fixture root.",
-  "schema_version": "0.3.0",
+  "schema_version": "0.4.0",
   "scope": [
-    "Exercise criterion, capability, runtime, review, amendment, and hunk proof blocks."
+    "Exercise criterion, design-reference, capability, runtime, review, amendment, and hunk proof blocks."
   ],
   "steps": [
     {
       "action": "Create and amend fixture.txt.",
       "criterion_ids": [
         "AC-FIXTURE"
+      ],
+      "design_decision_ids": [
+        "DD-FIXTURE"
       ],
       "evidence_ids": [],
       "expected_diff": [

@@ -19,7 +19,7 @@
     "evidence_ids"
   ],
   "properties": {
-    "schema_version": { "type": "string", "pattern": "^0\\.[0-3]\\.[0-9]+$" },
+    "schema_version": { "type": "string", "pattern": "^0\\.[0-4]\\.[0-9]+$" },
     "objective": { "type": "string", "minLength": 1 },
     "scope": { "type": "array", "items": { "type": "string", "minLength": 1 }, "minItems": 1 },
     "non_goals": { "type": "array", "items": { "type": "string" } },
@@ -87,6 +87,24 @@
         "additionalProperties": true
       }
     },
+    "design_decisions": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["id", "text"],
+        "properties": {
+          "id": { "type": "string", "pattern": "^[A-Za-z][A-Za-z0-9._-]{0,127}$" },
+          "text": { "type": "string", "minLength": 1 },
+          "references": {
+            "type": "array",
+            "minItems": 0,
+            "items": { "type": "string", "minLength": 1 }
+          }
+        },
+        "additionalProperties": true
+      }
+    },
     "steps": {
       "type": "array",
       "items": {
@@ -101,6 +119,12 @@
           "validation": { "type": "array", "items": { "type": "string", "minLength": 1 }, "minItems": 1 },
           "evidence_ids": { "type": "array", "items": { "type": "string" } },
           "criterion_ids": {
+            "type": "array",
+            "items": { "type": "string", "minLength": 1 },
+            "minItems": 1,
+            "uniqueItems": true
+          },
+          "design_decision_ids": {
             "type": "array",
             "items": { "type": "string", "minLength": 1 },
             "minItems": 1,

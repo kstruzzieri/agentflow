@@ -171,7 +171,7 @@ JSON_OUTPUTS = {
     "draft-plan": [{"type": "object", "keys": {"schema_version": "string|null", "status": "string", "errors": "array|null", "path": "string|null", "contract_path": "string|null", "plan_candidate": "object|null", "workflow_contract": "object|null", "recommended": "object|null", "selected": "object|null", "selection_mode": "string|null", "warnings": "array|null"}}],
     "record-review": [{"type": "object", "keys": {"schema_version": "string", "review_run_id": "string", "recorded_at": "string", "state_dir": "string", "manifest_path": "string", "manifest_sha256": "string", "plan_sha256": "string", "policy": "string|null", "gate_status": "string", "active_blocking": "array", "depth_profile": "string", "amendment_ready": "boolean", "findings": "object", "artifacts": "array"}}],
     "review-manifest": [{"type": "object", "keys": {"schema_version": "string", "review_run_id": "string", "state_dir": "string", "policy": "string", "gate_status": "string", "active_blocking": "array", "depth_profile": "string", "amendment_ready": "boolean", "findings": "object", "artifacts": "array"}}],
-    "next-step": [{"type": "object", "keys": {"id": "string", "action": "string", "files": "array", "preconditions": "array", "validation": "array", "expected_diff": "array", "evidence_ids": "array"}}, {"type": "null"}],
+    "next-step": [{"type": "object", "keys": {"id": "string", "action": "string", "files": "array", "preconditions": "array", "validation": "array", "expected_diff": "array", "evidence_ids": "array", "design_decision_ids": "array|null"}}, {"type": "null"}],
     "claim-step": [{"type": "object", "keys": STEP_EVENT}],
     "amend-step": [{"type": "object", "keys": STEP_EVENT}],
     "complete-step": [{"type": "object", "keys": STEP_EVENT}],

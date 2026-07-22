@@ -177,6 +177,26 @@ class StabilityPolicyTests(unittest.TestCase):
             {"action", "allowed", "automatic", "break_glass", "reason"},
         )
 
+    def test_next_step_contract_documents_optional_design_decision_ids(self) -> None:
+        step = JSON_OUTPUTS["next-step"][0]
+
+        self.assertEqual(
+            step["keys"]["design_decision_ids"],
+            "array|null",
+        )
+        self.assertJsonContract(
+            "next-step",
+            {
+                "id": "P1",
+                "action": "Implement.",
+                "files": ["src/x.py"],
+                "preconditions": [],
+                "validation": ["python3 -m unittest"],
+                "expected_diff": ["Feature exists."],
+                "evidence_ids": [],
+            },
+        )
+
     def test_cli_contract_manifest_matches_parser_and_covers_json_modes(self) -> None:
         manifest = json.loads((ROOT / "docs/cli-contract.json").read_text(encoding="utf-8"))
         self.assertEqual(

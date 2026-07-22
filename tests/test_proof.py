@@ -16,6 +16,7 @@ from agentflow.contracts import (
 from agentflow.artifacts import plan_binding_sha256
 from agentflow.coverage import (
     build_coverage,
+    build_design_decision_coverage,
     build_requirement_coverage,
     evaluate_context_budget,
 )
@@ -71,6 +72,48 @@ def valid_workflow_contract() -> dict:
 
 
 class CoverageTests(unittest.TestCase):
+    def test_build_design_decision_coverage_preserves_canonical_order(self) -> None:
+        plan = {
+            "design_decisions": [
+                {
+                    "id": "DD-2",
+                    "text": "Second declaration is canonical first.",
+                    "references": ["ADR-2", "ADR-1"],
+                },
+                {
+                    "id": "DD-1",
+                    "text": "First identifier is canonical second.",
+                },
+            ],
+            "steps": [
+                {"id": "P2", "design_decision_ids": ["DD-1", "DD-2"]},
+                {"id": "P1", "design_decision_ids": ["DD-2"]},
+            ],
+        }
+
+        self.assertEqual(
+            build_design_decision_coverage(plan),
+            {
+                "design_decisions": [
+                    {
+                        "id": "DD-2",
+                        "text": "Second declaration is canonical first.",
+                        "references": ["ADR-2", "ADR-1"],
+                        "steps": ["P2", "P1"],
+                    },
+                    {
+                        "id": "DD-1",
+                        "text": "First identifier is canonical second.",
+                        "references": [],
+                        "steps": ["P2"],
+                    },
+                ]
+            },
+        )
+
+    def test_build_design_decision_coverage_omits_absent_contract(self) -> None:
+        self.assertEqual(build_design_decision_coverage({"steps": []}), {})
+
     def _fixture(self, tmp: str) -> Path:
         root = Path(tmp)
         create_initial_artifacts(root)
@@ -145,6 +188,46 @@ class CoverageTests(unittest.TestCase):
                     "decision": "allowed",
                 },
             )
+        proof = build_proof(root, root / ".agent/plan.lock.json")
+        write_proof_metadata(root, proof)
+        return root, proof
+
+    def _design_decision_proof_fixture(self, tmp: str):
+        root = Path(tmp)
+        create_initial_artifacts(root)
+        write_json(
+            root / ".agent/plan.lock.json",
+            {
+                "schema_version": "0.4.0",
+                "objective": "Verify design decision coverage integrity.",
+                "steps": [
+                    {
+                        "id": "P1",
+                        "action": "Apply both decisions.",
+                        "design_decision_ids": ["DD-1", "DD-2"],
+                        "evidence_ids": [],
+                    },
+                    {
+                        "id": "P2",
+                        "action": "Apply the second decision.",
+                        "design_decision_ids": ["DD-2"],
+                        "evidence_ids": [],
+                    },
+                ],
+                "evidence_ids": [],
+                "design_decisions": [
+                    {
+                        "id": "DD-1",
+                        "text": "Keep decisions in the locked plan.",
+                        "references": ["ADR-1"],
+                    },
+                    {
+                        "id": "DD-2",
+                        "text": "Reuse proof coverage.",
+                    },
+                ],
+            },
+        )
         proof = build_proof(root, root / ".agent/plan.lock.json")
         write_proof_metadata(root, proof)
         return root, proof
@@ -789,6 +872,101 @@ class CoverageTests(unittest.TestCase):
             ):
                 build_proof(root, plan_path)
 
+    def test_build_proof_projects_design_decision_coverage(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            _root, proof = self._design_decision_proof_fixture(tmp)
+
+            self.assertEqual(
+                proof["coverage"]["design_decisions"],
+                [
+                    {
+                        "id": "DD-1",
+                        "text": "Keep decisions in the locked plan.",
+                        "references": ["ADR-1"],
+                        "steps": ["P1"],
+                    },
+                    {
+                        "id": "DD-2",
+                        "text": "Reuse proof coverage.",
+                        "references": [],
+                        "steps": ["P1", "P2"],
+                    },
+                ],
+            )
+
+    def test_build_proof_revalidates_design_decision_traceability(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root, _proof = self._design_decision_proof_fixture(tmp)
+            plan_path = root / ".agent/plan.lock.json"
+            plan = json.loads(plan_path.read_text(encoding="utf-8"))
+            plan["steps"][0]["design_decision_ids"] = ["DD-MISSING"]
+            write_json(plan_path, plan)
+
+            with self.assertRaisesRegex(
+                ValueError,
+                "invalid design decision traceability.*DD-MISSING",
+            ):
+                build_proof(root, plan_path)
+
+    def test_verify_proof_recomputes_design_decision_coverage(self) -> None:
+        mutations = ("text", "references", "steps", "order", "removed")
+        for mutation in mutations:
+            with self.subTest(mutation=mutation), tempfile.TemporaryDirectory() as tmp:
+                root, proof = self._design_decision_proof_fixture(tmp)
+                rows = proof["coverage"]["design_decisions"]
+                if mutation == "text":
+                    rows[0]["text"] = "Tampered text."
+                elif mutation == "references":
+                    rows[0]["references"] = ["ADR-TAMPERED"]
+                elif mutation == "steps":
+                    rows[0]["steps"] = ["P2"]
+                elif mutation == "order":
+                    rows.reverse()
+                else:
+                    proof["coverage"].pop("design_decisions")
+                proof["core_sha256"] = core_sha256(proof)
+                write_json(root / ".agent/proof-pack.json", proof)
+
+                findings = verify_proof(root, root / ".agent/proof-pack.json")
+
+                self.assertTrue(
+                    any(
+                        finding["severity"] == "error"
+                        and "design decision coverage is stale or tampered"
+                        in finding["message"]
+                        for finding in findings
+                    )
+                )
+
+    def test_verify_proof_skips_design_coverage_without_plan(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root, _proof = self._design_decision_proof_fixture(tmp)
+            (root / ".agent/plan.lock.json").unlink()
+
+            findings = verify_proof(root, root / ".agent/proof-pack.json")
+
+            self.assertFalse(
+                any("design decision coverage" in finding["message"] for finding in findings)
+            )
+
+    def test_verify_proof_hints_schema_growth_for_older_decision_proof(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root, proof = self._design_decision_proof_fixture(tmp)
+            proof["schema_version"] = "0.10.0"
+            proof["coverage"].pop("design_decisions")
+            proof["core_sha256"] = core_sha256(proof)
+            write_json(root / ".agent/proof-pack.json", proof)
+
+            findings = verify_proof(root, root / ".agent/proof-pack.json")
+
+            self.assertTrue(
+                any(
+                    "design decision coverage is stale or tampered" in finding["message"]
+                    and "older schema version (0.10.0 < 0.11.0)" in finding["message"]
+                    for finding in findings
+                )
+            )
+
     def test_verify_proof_revalidates_requirement_traceability(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root, _proof = self._traceability_proof_fixture(tmp)
@@ -1119,7 +1297,7 @@ class CoverageTests(unittest.TestCase):
                 "workflow_contract",
             ],
         )
-        self.assertEqual(PROOF_PACK_SCHEMA_VERSION, "0.10.0")
+        self.assertEqual(PROOF_PACK_SCHEMA_VERSION, "0.11.0")
 
     def _write_snapshot_ledger(self, root: Path) -> None:
         snapshot = {
@@ -2346,7 +2524,7 @@ class StuckProofTests(unittest.TestCase):
             self.assertIn("stuck", canonical_core(proof))
 
     def test_proof_schema_version_is_bumped(self) -> None:
-        self.assertEqual(PROOF_PACK_SCHEMA_VERSION, "0.10.0")
+        self.assertEqual(PROOF_PACK_SCHEMA_VERSION, "0.11.0")
 
 
 class AggregationProvenanceProofTests(unittest.TestCase):
@@ -2703,7 +2881,7 @@ class ProofSchemaGateTests(unittest.TestCase):
             root = Path(tmp)
             create_initial_artifacts(root)
             proof = build_proof(root, root / ".agent/plan.lock.json")
-            proof["schema_version"] = "0.11.0"
+            proof["schema_version"] = "0.12.0"
             proof_path = write_proof_metadata(root, proof)
 
             findings = verify_proof(root, proof_path)
@@ -2718,7 +2896,7 @@ class ProofSchemaGateTests(unittest.TestCase):
             root = Path(tmp)
             create_initial_artifacts(root)
             proof = build_proof(root, root / ".agent/plan.lock.json")
-            proof["schema_version"] = "0.11.0"
+            proof["schema_version"] = "0.12.0"
             del proof["meta"]
             proof_path = write_proof_metadata(root, proof)
 

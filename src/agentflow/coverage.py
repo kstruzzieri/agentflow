@@ -341,6 +341,33 @@ def build_requirement_coverage(
     }
 
 
+def build_design_decision_coverage(plan: Dict[str, Any]) -> Dict[str, Any]:
+    """Project optional design decisions in canonical plan order."""
+    decisions = plan.get("design_decisions")
+    if not isinstance(decisions, list) or not decisions:
+        return {}
+
+    steps_by_decision: Dict[str, List[str]] = {}
+    for step in plan.get("steps", []):
+        if not isinstance(step, dict) or not isinstance(step.get("id"), str):
+            continue
+        for decision_id in step.get("design_decision_ids", []):
+            if isinstance(decision_id, str):
+                steps_by_decision.setdefault(decision_id, []).append(step["id"])
+
+    return {
+        "design_decisions": [
+            {
+                "id": decision["id"],
+                "text": decision["text"],
+                "references": list(decision.get("references", [])),
+                "steps": list(steps_by_decision.get(decision["id"], [])),
+            }
+            for decision in decisions
+        ]
+    }
+
+
 def evaluate_context_budget(
     plan: Dict[str, Any],
     context_receipts: List[Dict[str, Any]],
