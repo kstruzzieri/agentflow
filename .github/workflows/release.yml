@@ -162,8 +162,8 @@ jobs:
         working-directory: dist
         run: |
           shopt -s nullglob
-          wheels=(agentflow_proof-*.whl)
-          sdists=(agentflow_proof-*.tar.gz)
+          wheels=(*.whl)
+          sdists=(*.tar.gz)
           test "${#wheels[@]}" -eq 1
           test "${#sdists[@]}" -eq 1
           sha256sum agentflow.pyz agentflow-mcp.pyz \
@@ -174,8 +174,8 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           shopt -s nullglob
-          wheels=(dist/agentflow_proof-*.whl)
-          sdists=(dist/agentflow_proof-*.tar.gz)
+          wheels=(dist/*.whl)
+          sdists=(dist/*.tar.gz)
           test "${#wheels[@]}" -eq 1
           test "${#sdists[@]}" -eq 1
           gh release create "$GITHUB_REF_NAME" \

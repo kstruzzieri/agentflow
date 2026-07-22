@@ -373,10 +373,12 @@ class RepositoryReleaseDisciplineTests(unittest.TestCase):
         ).read_text(encoding="utf-8")
         build = _workflow_job(text, "build")
 
-        self.assertEqual(text.count("scripts/build_zipapp.py"), 1)
-        self.assertEqual(
-            text.count("python -m build --sdist --wheel --outdir dist"), 1
-        )
+        for command in (
+            "scripts/build_zipapp.py",
+            "python -m build --sdist --wheel --outdir dist",
+        ):
+            self.assertEqual(text.count(command), 1)
+            self.assertEqual(build.count(command), 1)
         self.assertIn("build==1.5.0", build)
         self.assertIn("twine==6.2.0", build)
         self.assertIn(
@@ -387,10 +389,12 @@ class RepositoryReleaseDisciplineTests(unittest.TestCase):
         self.assertIn("python -m twine check dist/*.whl dist/*.tar.gz", build)
         self.assertIn("python dist/agentflow.pyz --version", build)
         self.assertIn("python dist/agentflow-mcp.pyz", build)
-        self.assertIn(
-            "actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a",
-            build,
+        upload = (
+            "actions/upload-artifact@"
+            "043fb46d1a93c77aae656e7c1c64a875d1fc6a0a"
         )
+        self.assertEqual(text.count(upload), 1)
+        self.assertIn(upload, build)
         self.assertIn("name: release-distributions", build)
         for path in (
             "dist/agentflow.pyz",
@@ -461,11 +465,14 @@ class RepositoryReleaseDisciplineTests(unittest.TestCase):
         for artifact in (
             "agentflow.pyz",
             "agentflow-mcp.pyz",
-            "agentflow_proof-*.whl",
-            "agentflow_proof-*.tar.gz",
+            "wheels=(*.whl)",
+            "sdists=(*.tar.gz)",
+            "wheels=(dist/*.whl)",
+            "sdists=(dist/*.tar.gz)",
             "SHA256SUMS",
         ):
             self.assertIn(artifact, release)
+        self.assertNotIn("agentflow_proof-", release)
 
         self.assertEqual(text.count("id-token: write"), 1)
         self.assertIn("if: false # Issue #5 compatibility freeze", publish)
