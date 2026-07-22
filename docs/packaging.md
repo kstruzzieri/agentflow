@@ -35,6 +35,18 @@ the released-v0.4.0 proof contract:
 agentflow verify-proof --root tests/fixtures/compatibility/released-v0.4.0
 ```
 
+### Python 3.11 sdist seam
+
+Use the pinned backend and the built local sdist; `--no-index` and
+`--no-build-isolation` prevent an accidental rebuild or dependency lookup:
+
+```bash
+python3.11 -m venv /tmp/agentflow-sdist
+/tmp/agentflow-sdist/bin/python -m pip install setuptools==83.0.0
+/tmp/agentflow-sdist/bin/python -m pip install --no-index --no-build-isolation dist/agentflow_proof-*.tar.gz
+/tmp/agentflow-sdist/bin/agentflow --version
+```
+
 `publish-pypi` in `.github/workflows/release.yml` remains `if: false` while
 Issue #5's compatibility freeze is incomplete. It stages only the wheel and
 sdist; the zipapps remain release assets.

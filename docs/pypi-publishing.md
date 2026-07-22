@@ -12,47 +12,53 @@ freeze` on `publish-pypi`. Issue #5 remains open, so the compatibility freeze is
 incomplete and the job must stay disabled until a separate maintainer approval.
 It uses trusted publishing with no token; do not create or store a PyPI token.
 
-## Prepared publisher values
+## Prepared trusted-publisher values
 
 The following values are prepared only; a maintainer must verify them in PyPI
-before configuring anything.
+before configuring anything. Both pending trusted-publisher rows are
+maintainer-only and unperformed.
+
+| Pending project / trusted publisher | GitHub owner | Repository | Workflow filename | Environment |
+| --- | --- | --- | --- | --- |
+| `agentflow-proof` | `kstruzzieri` | `agentflow` | `release.yml` | `pypi` |
+| `agentflow-mcp` | `kstruzzieri` | `agentflow` | `release.yml` | `pypi` |
 
 | Field | Prepared value |
 | --- | --- |
-| Distribution publisher | `agentflow-proof` |
-| Reserved name to assess, not upload | `agentflow-mcp` |
-| GitHub owner/repository | `kstruzzieri/agentflow` |
-| Workflow | `.github/workflows/release.yml` |
-| GitHub environment | `pypi` |
 | required reviewers | `kstruzzieri` (confirm current maintainer access) |
 | Credentials | no token; trusted-publisher OIDC only after authorization |
 
 Only `agentflow-proof` produces the wheel and sdist. `agentflow-mcp` remains a
-console command, not a second Python distribution: empty `agentflow-mcp`
-placeholder uploads are forbidden.
+console command, not a second Python distribution. It may be configured or
+claimed only with a separately approved legitimate companion distribution,
+never an empty placeholder; empty `agentflow-mcp` placeholder uploads are
+forbidden.
 
 ## Prepared ownership and PEP 541 evidence
 
 Record evidence before any maintainer-only owner contact or support request;
 leave unknown fields blank rather than inventing them.
 
-| Evidence | Prepared field |
+| Evidence placeholder/category | Prepared field |
 | --- | --- |
-| Project-name availability | URL, check date, result |
-| Repository identity | `https://github.com/kstruzzieri/agentflow`, release and commit URLs |
-| Ownership/contact evidence | owner contact URL or address, date, message, response |
-| PEP 541 activity evidence | PyPI project URL, last release/activity date, maintainer response status |
-| Requested outcome | transfer, collaborator access, or use of `agentflow-proof` |
+| abandonment | PyPI project URL, last release/activity date, maintainer response status |
+| notability | repository, release, documentation, and independent-usage URLs; check date |
+| different-name workaround | compatibility, migration, and user-impact evidence for `agentflow-proof` |
+| usage evidence | installs, downstream references, issue links, or other verifiable adoption evidence |
+| owner contact | owner contact URL or address, date, message, response |
+| requested outcome | transfer, collaborator access, or use of `agentflow-proof` |
 
 Prepared owner-contact wording (unperformed; maintainer-only): “Hello, I
 maintain `kstruzzieri/agentflow`. May we discuss the `agentflow` PyPI name? The
 repository, release evidence, and requested outcome are recorded above.”
 
 Draft PyPI support-request body (unperformed; maintainer-only): “Please review
-the attached PEP 541 evidence for `agentflow`: project activity, owner-contact
-attempts, the public repository, and the requested outcome. No package upload
-or publisher configuration has been performed.” Do not send this draft without
-maintainer approval and complete evidence fields.
+the PEP 541 evidence for `agentflow`. Abandonment: [abandonment evidence].
+Notability: [notability evidence]. Different-name workaround: [different-name
+workaround evidence]. Usage: [usage evidence]. Owner contact: [owner-contact
+evidence]. Requested outcome: [requested outcome]. No package upload or
+publisher configuration has been performed.” Do not send this draft without
+maintainer approval and completed evidence fields.
 
 ## First-publication checklist
 

@@ -562,6 +562,47 @@ class RepositoryReleaseDisciplineTests(unittest.TestCase):
         ):
             self.assertIn(required, publishing)
 
+    def test_pypi_packet_names_each_pending_trusted_publisher(self) -> None:
+        text = (REPO_ROOT / "docs" / "pypi-publishing.md").read_text(
+            encoding="utf-8"
+        )
+
+        for publisher in ("agentflow-proof", "agentflow-mcp"):
+            self.assertIn(
+                f"| `{publisher}` | `kstruzzieri` | `agentflow` | "
+                "`release.yml` | `pypi` |",
+                text,
+            )
+        self.assertIn("separately approved legitimate companion distribution", text)
+        self.assertIn("never an empty placeholder", text)
+
+    def test_pypi_packet_maps_pep_541_evidence_categories(self) -> None:
+        text = (REPO_ROOT / "docs" / "pypi-publishing.md").read_text(
+            encoding="utf-8"
+        )
+
+        for required in (
+            "abandonment",
+            "notability",
+            "different-name workaround",
+            "usage evidence",
+            "Evidence placeholder/category",
+        ):
+            self.assertIn(required, text)
+
+    def test_packaging_docs_show_the_pinned_sdist_clean_install_seam(self) -> None:
+        text = (REPO_ROOT / "docs" / "packaging.md").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn("Python 3.11 sdist seam", text)
+        self.assertIn("setuptools==83.0.0", text)
+        self.assertIn(
+            "-m pip install --no-index --no-build-isolation "
+            "dist/agentflow_proof-*.tar.gz",
+            text,
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
