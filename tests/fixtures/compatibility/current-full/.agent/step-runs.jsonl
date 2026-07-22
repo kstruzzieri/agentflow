@@ -1,6 +1,6 @@
-{"agent_id": "fixture", "attempt_id": "A1", "event": "claimed", "lease_expires_at": null, "recorded_at": "2026-07-12T02:31:07+00:00", "schema_version": "0.5.0", "step_id": "P1"}
-{"attempt_id": "A1", "event": "verified", "findings": [], "recorded_at": "2026-07-12T02:31:10+00:00", "schema_version": "0.5.0", "step_id": "P1"}
-{"attempt_id": "A1", "event": "completed", "recorded_at": "2026-07-12T02:31:10+00:00", "schema_version": "0.5.0", "step_id": "P1"}
-{"agent_id": "fixture", "amends_attempt": "A1", "amends_completed_at": "2026-07-12T02:31:10+00:00", "attempt_id": "A2", "event": "amendment_started", "reason": "Exercise amendment receipts.", "reason_code": "operator_correction", "recorded_at": "2026-07-12T02:31:11+00:00", "schema_version": "0.5.0", "step_id": "P1"}
-{"attempt_id": "A2", "event": "verified", "findings": [], "recorded_at": "2026-07-12T02:31:28+00:00", "schema_version": "0.5.0", "step_id": "P1"}
-{"attempt_id": "A2", "event": "completed", "recorded_at": "2026-07-12T02:31:29+00:00", "schema_version": "0.5.0", "step_id": "P1"}
+{"agent_id": "fixture", "attempt_id": "A1", "event": "claimed", "lease_expires_at": null, "recorded_at": "2026-07-22T01:17:51+00:00", "schema_version": "0.5.0", "step_id": "P1"}
+{"attempt_id": "A1", "event": "verified", "findings": [], "recorded_at": "2026-07-22T01:18:06+00:00", "schema_version": "0.5.0", "step_id": "P1"}
+{"attempt_id": "A1", "event": "completed", "recorded_at": "2026-07-22T01:18:07+00:00", "schema_version": "0.5.0", "step_id": "P1"}
+{"agent_id": "fixture", "amends_attempt": "A1", "amends_completed_at": "2026-07-22T01:18:07+00:00", "attempt_id": "A2", "event": "amendment_started", "reason": "Exercise amendment receipts.", "reason_code": "operator_correction", "recorded_at": "2026-07-22T01:18:08+00:00", "schema_version": "0.5.0", "step_id": "P1"}
+{"attempt_id": "A2", "event": "verified", "findings": [], "recorded_at": "2026-07-22T01:18:24+00:00", "schema_version": "0.5.0", "step_id": "P1"}
+{"attempt_id": "A2", "event": "completed", "recorded_at": "2026-07-22T01:18:25+00:00", "schema_version": "0.5.0", "step_id": "P1"}

@@ -1,6 +1,6 @@
 {
   "bundle_type": "agentflow_proof_pack",
-  "bundle_version": "0.9.0",
+  "bundle_version": "0.11.0",
   "capabilities": {
     "missing": [],
     "recorded": [
@@ -85,7 +85,7 @@
       "status": "passed"
     }
   ],
-  "core_sha256": "b2b93cd19ef9202547b065b07edc68af87aa82da5e1eccf30a25f92e97ae0697",
+  "core_sha256": "6645ec6bea9d87547b3d0ddba51d1c0c5a8cc60d2818f9eeb02e949b2b8ef54b",
   "coverage": {
     "abandoned_attempts": [],
     "criterion_status_counts": {
@@ -97,6 +97,18 @@
     "dangling_route_runtimes": [],
     "dangling_supports": [],
     "dangling_used_for": [],
+    "design_decisions": [
+      {
+        "id": "DD-FIXTURE",
+        "references": [
+          "docs/golem-integration.md"
+        ],
+        "steps": [
+          "P1"
+        ],
+        "text": "Keep design guidance inside the locked plan."
+      }
+    ],
     "expired_leases": [],
     "missing_plan_evidence_ids": [],
     "no_deadline_open_attempts": [],
@@ -135,7 +147,7 @@
     "amendments": [
       {
         "amends_attempt": "A1",
-        "amends_completed_at": "2026-07-12T02:31:10+00:00",
+        "amends_completed_at": "2026-07-22T01:18:07+00:00",
         "attempt": "A2",
         "reason": "Exercise amendment receipts.",
         "reason_code": "operator_correction",
@@ -159,7 +171,7 @@
     "command_timeout_seconds": {},
     "failed_attempts": [],
     "file_receipts": 2,
-    "normalized_execution_sha256": "5de0c75c7e577c1c597eee5b819e428f2b14c7a7342bf36d1da29459c246ce30",
+    "normalized_execution_sha256": "1405c67ccdfcb9b468b3d0243f0a76451555467995d6db3867bbe5b937cbbf13",
     "steps_completed": 1,
     "steps_total": 1,
     "unmapped_changed_files": [],
@@ -176,11 +188,11 @@
     },
     {
       "path": ".agent/capability-receipts.jsonl",
-      "sha256": "d4c918cece099ccfdeaa54eacaab94ffc529666364c473f883459ec917ec2273"
+      "sha256": "5d16e777b77bd7badbbca1022c8f7411e7a5c4f92620a299dd8f6e3688ea043e"
     },
     {
       "path": ".agent/command-receipts.jsonl",
-      "sha256": "19ef33eb43e787825abf458f6aea86e73a2bd9753bcbb51f3fa0a7af76ca4127"
+      "sha256": "9cfa77a9d81b852f3e696f0897d784a3f03fc834bc13549e7324fbbf723a9817"
     },
     {
       "path": ".agent/context-receipts.jsonl",
@@ -188,7 +200,7 @@
     },
     {
       "path": ".agent/drift-report.json",
-      "sha256": "0ef8f0cba91a705aac9823ccdff234c1e97e0044e8d970e139d4e568f696a1d0"
+      "sha256": "70487cbf2a34b6638f58fe82a4ee28e882808e13ee2ecdf8b287f286eb4134f5"
     },
     {
       "path": ".agent/evidence.jsonl",
@@ -204,31 +216,31 @@
     },
     {
       "path": ".agent/file-receipts.jsonl",
-      "sha256": "839b7ea1e14cff9314d727c326f1300375f44706b6bfd4c8d8d91ab6e356e380"
+      "sha256": "3ebb048bc568d17c9f6cdabf8348f414a680f513c9576e9b4a33ac58b4837f24"
     },
     {
       "path": ".agent/plan.lock.json",
-      "sha256": "2a7ff39a2ef0ca525463860c2c31cd84b7ac0c0a203a82a3dcc29f8e807124be"
+      "sha256": "07a0b586502014221fc2beafe43c891cc9823bdc95f133eb04a7315ac83cedbf"
     },
     {
       "path": ".agent/review-runs.jsonl",
-      "sha256": "adbbb4aeb61e1d1aa2586a9e3e8aa883d00e38d205cc6baca1dbe34792b7b36d"
+      "sha256": "809fe32138ad0b2b10523d2ed16a9fa8ef5593517361d17668a7608774744dfa"
     },
     {
       "path": ".agent/runtime-snapshots.jsonl",
-      "sha256": "0ed600ccc77abc9d42d2a8e2e633dc8d38d5cced1f6e873801fcd081064d4e9f"
+      "sha256": "c787582d15c2b7e1a800882ed96a849aff0d17549e1821b2b5afaf618175f290"
     },
     {
       "path": ".agent/runtime.config.json",
-      "sha256": "1810765cd462e37dc995f749606d175be5fe8d759ebbfeb8af7e0944c20d21b6"
+      "sha256": "38744c648ec18b3e4406fcf592a13515fa8151a22159ac6bed00667a5608c950"
     },
     {
       "path": ".agent/step-runs.jsonl",
-      "sha256": "719e9e481158928cbfaec8be31402601f599b40a5f7a7629261c1ae49a0796d0"
+      "sha256": "232111fe6be587568060f1d54695269d34b8129a08257e83a9cc6ca8867af3a1"
     },
     {
       "path": ".agent/verification-runs.jsonl",
-      "sha256": "bfa208fc4188230be268fbc06281b20270c5aa9c1f63f9309ed4e3a3251b6f11"
+      "sha256": "88a3f8a53f7f2617049393244fdd496297c03e1ad5c4bfb3f93d80a97922d31f"
     },
     {
       "path": ".agent/workflow.contract.json",
@@ -255,12 +267,12 @@
     ".agent/workflow.contract.json"
   ],
   "meta": {
-    "created_at": "2026-07-12T02:31:31+00:00",
+    "created_at": "2026-07-22T01:18:26+00:00",
     "tool_version": "0.4.0"
   },
   "review": {
     "correlations": [],
-    "latest_review_run_id": "RR-20260712T023031Z-3cd0edea",
+    "latest_review_run_id": "RR-20260719T120000Z-dd130001",
     "policy": {
       "proof_strict_effective": false,
       "require_review_run": false,
@@ -271,6 +283,7 @@
     "review_runs": [
       {
         "active_blocking": [],
+        "amendment_ready": false,
         "artifacts": [
           {
             "path": "docs/ai/state/main/findings-final.json",
@@ -280,9 +293,14 @@
         "counts_by_severity": {},
         "counts_by_status": {},
         "depth_profile": "standard",
+        "findings": {
+          "counts_by_severity": {},
+          "counts_by_status": {},
+          "index": []
+        },
         "gate_status": "pass",
-        "plan_sha256": "f08a7367d903d56e580470a4c9bcb515b531a367b621fa4b49558f00a91ace3f",
-        "review_run_id": "RR-20260712T023031Z-3cd0edea"
+        "plan_sha256": "e7d52533ef71ad3762ee8582dbc6c5abf7c934ecf530bd38bf03d9c3cf979bee",
+        "review_run_id": "RR-20260719T120000Z-dd130001"
       }
     ],
     "unresolved_finding_refs": []
@@ -303,7 +321,7 @@
       "ready": 1
     }
   },
-  "schema_version": "0.9.0",
+  "schema_version": "0.11.0",
   "stuck": {
     "findings": [],
     "rules_evaluated": 3

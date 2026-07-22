@@ -1,1 +1,6 @@
-{"branch_modifiers": {"*": {"gate": "default"}}, "gate_policy": {"default": {"blocks_on": ["high"], "warns_on": ["medium"]}}}
+{
+  "branch_modifiers": {"*": {"gate": "default"}},
+  "gate_policy": {
+    "default": {"blocks_on": ["high"], "warns_on": ["medium"]}
+  }
+}

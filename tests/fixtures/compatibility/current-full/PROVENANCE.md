@@ -1,9 +1,10 @@
 # Current full fixture provenance
 
-Generated from the source checkout at commit `90525e2` with the current
+Generated from the source checkout at commit `fb6cd68` with the current
 `python3 -m agentflow` CLI. The fixture intentionally exercises workflow
-capabilities, runtime and MCP status, review recording, requirement criteria,
-an amended step, and hunk attribution. Generated proof metadata is not edited.
+capabilities, design-reference coverage, runtime and MCP status, review
+recording, requirement criteria, an amended step, and hunk attribution.
+Generated proof metadata is not edited.
 
 ## Integrity
 
@@ -17,6 +18,12 @@ immutable snapshot, not a live mirror of the writer's output.
 When a schema change requires a refreshed fixture, regenerate the `.agent/`
 tree by replaying the workflow above with the current CLI, then refresh the
 pins (run from the repo root):
+
+1. Author and lock the decision-bearing `0.4.0` plan.
+2. Seed the workflow contract, runtime configuration, capability receipt, and
+   review input; initialize execution and commit the scratch baseline.
+3. Claim and complete `P1`, amend and complete it again, then run `verify-run`,
+   `audit-drift`, `build-proof`, and `verify-proof`.
 
 ```bash
 python3 -c "import hashlib, json, pathlib; root = pathlib.Path('tests/fixtures/compatibility/current-full'); pins = {str(p.relative_to(root)): hashlib.sha256(p.read_bytes()).hexdigest() for p in sorted(root.rglob('*')) if p.is_file() and p.name not in {'MANIFEST.json', 'PROVENANCE.md'}}; (root / 'MANIFEST.json').write_text(json.dumps({'artifacts': pins}, indent=2, sort_keys=True) + '\n', encoding='utf-8')"

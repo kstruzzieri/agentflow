@@ -6,7 +6,7 @@ Build a full-featured current proof compatibility fixture.
 
 ## Scope
 
-- Exercise criterion, capability, runtime, review, amendment, and hunk proof blocks.
+- Exercise criterion, design-reference, capability, runtime, review, amendment, and hunk proof blocks.
 
 ## Workflow Contract
 
@@ -40,6 +40,7 @@ None.
 - dangling_route_runtimes: 0
 - requirements: 1
 - criterion_status_counts: {'satisfied': 1, 'failed': 0, 'missing': 0, 'unmapped': 0}
+- design_decisions: 1
 - expired_leases: 0
 - no_deadline_open_attempts: 0
 - abandoned_attempts: 0
