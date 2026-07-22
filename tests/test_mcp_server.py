@@ -235,6 +235,7 @@ class ToolsCallTests(unittest.TestCase):
         result = call("tools/call", name="next_step", arguments={"root": str(root)})["result"]
 
         self.assertFalse(result["isError"])
+        self.assertEqual(result["content"][0]["type"], "text")
         self.assertEqual(
             result["structuredContent"]["data"]["design_decision_ids"],
             ["DD-1"],
