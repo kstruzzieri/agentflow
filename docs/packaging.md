@@ -131,8 +131,9 @@ The release guard requires Python 3.11 or newer because it reads
    CHANGELOG before it runs tests or builds artifacts. It builds and smokes the
    zipapps, generates `SHA256SUMS`, and creates the GitHub release using the
    matching CHANGELOG section as its notes.
-9. Download `agentflow.pyz`, `agentflow-mcp.pyz`, and `SHA256SUMS` from the
-   release; run `sha256sum -c SHA256SUMS`, then
+9. Download `agentflow.pyz`, `agentflow-mcp.pyz`,
+   `agentflow_proof-*.whl`, `agentflow_proof-*.tar.gz`, and `SHA256SUMS` from
+   the release; run `sha256sum -c SHA256SUMS`, then
    `python3 agentflow.pyz --version`.
 
 > **Do not bump the version ahead of a release.** Ordinary CI checks only that

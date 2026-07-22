@@ -28,6 +28,11 @@ maintainer-only and unperformed.
 | required reviewers | `kstruzzieri` (confirm current maintainer access) |
 | Credentials | no token; trusted-publisher OIDC only after authorization |
 
+Before removing `if: false`, a maintainer must create the `pypi` environment in
+repository Settings and configure its required reviewers. The workflow's
+`environment: pypi` reference does not create protection rules; if the named
+environment is absent, GitHub can create it without those protections.
+
 Only `agentflow-proof` produces the wheel and sdist. `agentflow-mcp` remains a
 console command, not a second Python distribution. It may be configured or
 claimed only with a separately approved legitimate companion distribution,
@@ -64,15 +69,18 @@ maintainer approval and completed evidence fields.
 
 Before a maintainer performs any external action:
 
-1. Confirm Issue #5 is closed and separately authorize removing `if: false`.
+1. Confirm Issue #5 is closed; keep `if: false` in place while completing the
+   remaining prerequisites.
 2. Confirm the distribution name, the repository `kstruzzieri/agentflow`, the
    workflow `release.yml`, environment `pypi`, and required reviewers.
 3. Complete the ownership/PEP 541 evidence fields and decide whether owner
    contact or the support request is necessary; neither is performed by this
    packet.
-4. Configure the trusted publisher and protected environment only as the
-   maintainer, with no token, then review the exact wheel and sdist already
-   built by the workflow.
-5. Confirm the PyPI stage contains exactly one wheel and one sdist, never a
+4. As the maintainer, create the protected `pypi` environment in repository
+   Settings and configure required reviewers; then configure the trusted
+   publisher with no token and review the exact wheel and sdist already built
+   by the workflow.
+5. Only after steps 1-4, separately authorize removing `if: false`.
+6. Confirm the PyPI stage contains exactly one wheel and one sdist, never a
    zipapp or placeholder upload; retain the `agentflow` and `agentflow-mcp`
    commands and imports.

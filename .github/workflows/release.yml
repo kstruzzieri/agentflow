@@ -216,3 +216,4 @@ jobs:
       - uses: pypa/gh-action-pypi-publish@2834a314042ef964da07689278dd1e9d773e8afd # v1.14.1
         with:
           packages-dir: pypi-dist/
+          attestations: false

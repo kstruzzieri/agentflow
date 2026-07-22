@@ -128,7 +128,8 @@ python3 dist/agentflow-mcp.pyz --transport stdio
 ```
 
 To use a published build instead of building locally, download `agentflow.pyz`,
-`agentflow-mcp.pyz`, and `SHA256SUMS` from the
+`agentflow-mcp.pyz`, `agentflow_proof-*.whl`,
+`agentflow_proof-*.tar.gz`, and `SHA256SUMS` from the
 [Releases](https://github.com/kstruzzieri/agentflow/releases) page, verify the
 checksums, and run:
 

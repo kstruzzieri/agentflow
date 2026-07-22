@@ -498,6 +498,7 @@ class RepositoryReleaseDisciplineTests(unittest.TestCase):
             publish,
         )
         self.assertIn("packages-dir: pypi-dist/", publish)
+        self.assertIn("attestations: false", publish)
         self.assertNotRegex(publish, r"(?m)^\s+(?:password|token):")
 
     def test_packaging_docs_name_release_order_and_python_floor(self) -> None:
@@ -570,6 +571,22 @@ class RepositoryReleaseDisciplineTests(unittest.TestCase):
             self.assertIn(required, publishing)
         self.assertNotIn("agentflow-proof is already published", readme)
 
+    def test_checksum_instructions_download_every_hashed_artifact(self) -> None:
+        for relative in ("README.md", "docs/packaging.md"):
+            with self.subTest(relative=relative):
+                text = (REPO_ROOT / relative).read_text(encoding="utf-8")
+                checksum = text.rindex("sha256sum -c SHA256SUMS")
+                download = text.lower().rfind("download", 0, checksum)
+                instructions = text[download:checksum]
+                for artifact in (
+                    "agentflow.pyz",
+                    "agentflow-mcp.pyz",
+                    "agentflow_proof-*.whl",
+                    "agentflow_proof-*.tar.gz",
+                    "SHA256SUMS",
+                ):
+                    self.assertIn(artifact, instructions)
+
     def test_pypi_packet_names_each_pending_trusted_publisher(self) -> None:
         text = (REPO_ROOT / "docs" / "pypi-publishing.md").read_text(
             encoding="utf-8"
@@ -595,6 +612,19 @@ class RepositoryReleaseDisciplineTests(unittest.TestCase):
             "different-name workaround",
             "usage evidence",
             "Evidence placeholder/category",
+        ):
+            self.assertIn(required, text)
+
+    def test_pypi_packet_requires_real_environment_protection(self) -> None:
+        text = (REPO_ROOT / "docs" / "pypi-publishing.md").read_text(
+            encoding="utf-8"
+        )
+
+        for required in (
+            "repository Settings",
+            "does not create protection rules",
+            "Before removing `if: false`",
+            "required reviewers",
         ):
             self.assertIn(required, text)
 
