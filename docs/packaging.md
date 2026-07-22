@@ -37,8 +37,7 @@ agentflow verify-proof --root tests/fixtures/compatibility/released-v0.4.0
 
 ### Python 3.11 sdist seam
 
-Use the pinned backend and the built local sdist; `--no-index` and
-`--no-build-isolation` prevent an accidental rebuild or dependency lookup:
+Installing an sdist still builds it. `--no-build-isolation` reuses the preinstalled pinned backend and, with `--no-index`, avoids isolated-build dependency resolution/index fallback:
 
 ```bash
 python3.11 -m venv /tmp/agentflow-sdist

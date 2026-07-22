@@ -45,6 +45,10 @@ uv tool install --editable /path/to/agentflow
    /tmp/agentflow-wheel/bin/python -m pip install --no-index dist/agentflow_proof-*.whl
    /tmp/agentflow-wheel/bin/agentflow --version
    /tmp/agentflow-wheel/bin/agentflow-mcp --help
+   python3.11 -m venv /tmp/agentflow-sdist
+   /tmp/agentflow-sdist/bin/python -m pip install setuptools==83.0.0
+   /tmp/agentflow-sdist/bin/python -m pip install --no-index --no-build-isolation dist/agentflow_proof-*.tar.gz
+   /tmp/agentflow-sdist/bin/agentflow --version
    ```
 
 ## Pull Requests

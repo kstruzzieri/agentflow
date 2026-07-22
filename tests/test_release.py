@@ -561,6 +561,7 @@ class RepositoryReleaseDisciplineTests(unittest.TestCase):
             "unperformed",
         ):
             self.assertIn(required, publishing)
+        self.assertNotIn("agentflow-proof is already published", readme)
 
     def test_pypi_packet_names_each_pending_trusted_publisher(self) -> None:
         text = (REPO_ROOT / "docs" / "pypi-publishing.md").read_text(
@@ -597,11 +598,26 @@ class RepositoryReleaseDisciplineTests(unittest.TestCase):
 
         self.assertIn("Python 3.11 sdist seam", text)
         self.assertIn("setuptools==83.0.0", text)
+        self.assertIn("reuses the preinstalled pinned backend", text)
+        self.assertIn("isolated-build dependency resolution/index fallback", text)
+        self.assertNotIn("prevent an accidental rebuild", text)
         self.assertIn(
             "-m pip install --no-index --no-build-isolation "
             "dist/agentflow_proof-*.tar.gz",
             text,
         )
+
+    def test_contributing_docs_show_the_python_311_sdist_clean_install(self) -> None:
+        text = (REPO_ROOT / "CONTRIBUTING.md").read_text(encoding="utf-8")
+
+        for required in (
+            "python3.11 -m venv /tmp/agentflow-sdist",
+            "/tmp/agentflow-sdist/bin/python -m pip install setuptools==83.0.0",
+            "/tmp/agentflow-sdist/bin/python -m pip install --no-index "
+            "--no-build-isolation dist/agentflow_proof-*.tar.gz",
+            "/tmp/agentflow-sdist/bin/agentflow --version",
+        ):
+            self.assertIn(required, text)
 
 
 if __name__ == "__main__":
