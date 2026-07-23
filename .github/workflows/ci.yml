@@ -31,6 +31,9 @@ jobs:
       - name: Check version declarations
         run: python3 scripts/check_release.py
 
+      - name: Check schema soak
+        run: python3 scripts/check_schema_soak.py
+
       - name: Run unit tests
         run: PYTHONPATH=src python3 -m unittest discover -s tests -v
 
