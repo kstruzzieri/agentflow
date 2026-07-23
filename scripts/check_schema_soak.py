@@ -255,14 +255,11 @@ def _manifest_recorded_time(root: Path, candidate: str) -> datetime:
     return recorded_at
 
 
-def _candidate_schema_versions(root: Path, candidate: str) -> dict[str, str]:
-    source = _git(
-        root, "show", f"{candidate}:src/agentflow/contracts.py"
-    ).stdout
+def _schema_versions(source: str, label: str) -> dict[str, str]:
     try:
         tree = ast.parse(source)
     except SyntaxError as exc:
-        raise SoakCheckError("candidate contracts.py is not valid Python") from exc
+        raise SoakCheckError(f"{label} is not valid Python") from exc
     versions: dict[str, str] = {}
     for node in tree.body:
         if not isinstance(node, ast.Assign) or len(node.targets) != 1:
@@ -276,8 +273,30 @@ def _candidate_schema_versions(root: Path, candidate: str) -> dict[str, str]:
         ):
             versions[target.id] = node.value.value
     if set(versions) != SCHEMA_CONSTANTS:
-        raise SoakCheckError("candidate contracts.py is missing load-bearing schema constants")
+        raise SoakCheckError(f"{label} is missing load-bearing schema constants")
     return versions
+
+
+def _candidate_schema_versions(root: Path, candidate: str) -> dict[str, str]:
+    source = _git(
+        root, "show", f"{candidate}:src/agentflow/contracts.py"
+    ).stdout
+    return _schema_versions(source, "candidate contracts.py")
+
+
+def _validate_pre_soak_schema_versions(root: Path) -> None:
+    path = root / "src/agentflow/contracts.py"
+    try:
+        versions = _schema_versions(path.read_text(encoding="utf-8"), str(path))
+    except (OSError, UnicodeDecodeError) as exc:
+        raise SoakCheckError(f"cannot read {path}: {exc}") from exc
+    if any(
+        SEMVER_RE.fullmatch(version) is None or not version.startswith("0.")
+        for version in versions.values()
+    ):
+        raise SoakCheckError(
+            "load-bearing schema constants must remain pre-1.0 until the soak starts"
+        )
 
 
 def _validate_schema_versions(root: Path, candidate: str, value: Any) -> None:
@@ -459,6 +478,7 @@ def check_soak(root: Path) -> str:
         )
         if history.stdout.strip():
             raise SoakCheckError("manifest was removed after the soak started")
+        _validate_pre_soak_schema_versions(root)
         return f"schema soak not started: {MANIFEST_PATH.as_posix()} is absent"
     manifest = _read_manifest(manifest_path)
     candidate = _validate_candidate(root, manifest["candidate_commit"])

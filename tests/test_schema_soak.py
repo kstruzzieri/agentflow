@@ -209,6 +209,21 @@ class SchemaSoakCheckerTests(unittest.TestCase):
             "schema soak not started: docs/schema-freeze-soak.json is absent",
         )
 
+    def test_absent_manifest_rejects_1_0_schema_version(self) -> None:
+        contracts = self.root / "src/agentflow/contracts.py"
+        contracts.write_text(
+            contracts.read_text(encoding="utf-8").replace(
+                'PLAN_SCHEMA_VERSION = "0.4.0"',
+                'PLAN_SCHEMA_VERSION = "1.0.0"',
+            ),
+            encoding="utf-8",
+        )
+
+        result = self._run()
+
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("schema constants must remain pre-1.0", result.stderr)
+
     def test_absent_manifest_outside_git_fails_closed(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             result = self._run(Path(tmp))
