@@ -1,9 +1,9 @@
 [build-system]
-requires = ["setuptools>=77"]
+requires = ["setuptools==83.0.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "agentflow"
+name = "agentflow-proof"
 version = "0.4.0"
 description = "A model-agnostic workflow runner for drift-resistant agentic development."
 readme = "README.md"

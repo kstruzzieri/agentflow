@@ -32,11 +32,23 @@ uv tool install --editable /path/to/agentflow
    PYTHONPATH=src python3 -m unittest discover -s tests -v
    ```
 
-5. Build the zipapps when changing packaging or entry-point behavior:
+5. For packaging or entry-point changes, build the wheel, sdist, and both
+   zipapps once; inspect them; then run the clean-install checks. Do not publish
+   from contributor work.
 
    ```bash
-   python3 scripts/build_zipapp.py
-   ./dist/agentflow.pyz --version
+   python3 scripts/build_zipapp.py --output-dir dist
+   python3 -m build --sdist --wheel --outdir dist
+   python3 scripts/check_distribution.py --dist-dir dist
+   python3 -m twine check dist/*.whl dist/*.tar.gz
+   python3 -m venv /tmp/agentflow-wheel
+   /tmp/agentflow-wheel/bin/python -m pip install --no-index dist/agentflow_proof-*.whl
+   /tmp/agentflow-wheel/bin/agentflow --version
+   /tmp/agentflow-wheel/bin/agentflow-mcp --help
+   python3.11 -m venv /tmp/agentflow-sdist
+   /tmp/agentflow-sdist/bin/python -m pip install setuptools==83.0.0
+   /tmp/agentflow-sdist/bin/python -m pip install --no-index --no-build-isolation dist/agentflow_proof-*.tar.gz
+   /tmp/agentflow-sdist/bin/agentflow --version
    ```
 
 ## Pull Requests

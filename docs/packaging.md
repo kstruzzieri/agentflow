@@ -1,7 +1,54 @@
 # Packaging and Releases
 
-Agentflow ships as source plus single-file zipapp artifacts. There are no
-runtime dependencies, so the whole tool fits in one `.pyz` per entry point.
+Agentflow ships as source plus two Python distribution artifacts and two
+single-file zipapp artifacts. There are no runtime dependencies.
+
+## Build-once distribution handoff
+
+Build these four artifacts once from the tagged source, then pass those exact
+bytes to every inspection, clean-install, GitHub Release, and (when separately
+authorized) PyPI stage:
+
+- `dist/agentflow.pyz` — CLI zipapp
+- `dist/agentflow-mcp.pyz` — MCP zipapp
+- `dist/agentflow_proof-*.whl` — provisional `agentflow-proof` wheel
+- `dist/agentflow_proof-*.tar.gz` — provisional `agentflow-proof` sdist
+
+```bash
+python3 -m pip install build==1.5.0 twine==6.2.0
+python3 scripts/build_zipapp.py --output-dir dist
+python3 -m build --sdist --wheel --outdir dist
+python3 scripts/check_distribution.py --dist-dir dist
+python3 -m twine check dist/*.whl dist/*.tar.gz
+```
+
+`check_distribution.py` verifies the wheel/sdist metadata, files, and console
+scripts. The release workflow uploads this one-artifact handoff and creates
+`SHA256SUMS` for all four artifacts; consumers verify it with
+`sha256sum -c SHA256SUMS`.
+
+The wheel clean-installs on Python 3.11, 3.12, and 3.13. The sdist clean-installs
+on Python 3.11 with the pinned backend. The installed wheel must also preserve
+the released-v0.4.0 proof contract:
+
+```bash
+agentflow verify-proof --root tests/fixtures/compatibility/released-v0.4.0
+```
+
+### Python 3.11 sdist seam
+
+Installing an sdist still builds it. `--no-build-isolation` reuses the preinstalled pinned backend and, with `--no-index`, avoids isolated-build dependency resolution/index fallback:
+
+```bash
+python3.11 -m venv /tmp/agentflow-sdist
+/tmp/agentflow-sdist/bin/python -m pip install setuptools==83.0.0
+/tmp/agentflow-sdist/bin/python -m pip install --no-index --no-build-isolation dist/agentflow_proof-*.tar.gz
+/tmp/agentflow-sdist/bin/agentflow --version
+```
+
+`publish-pypi` in `.github/workflows/release.yml` remains `if: false` while
+Issue #5's compatibility freeze is incomplete. It stages only the wheel and
+sdist; the zipapps remain release assets.
 
 ## Single-file builds (zipapp)
 
@@ -84,8 +131,9 @@ The release guard requires Python 3.11 or newer because it reads
    CHANGELOG before it runs tests or builds artifacts. It builds and smokes the
    zipapps, generates `SHA256SUMS`, and creates the GitHub release using the
    matching CHANGELOG section as its notes.
-9. Download `agentflow.pyz`, `agentflow-mcp.pyz`, and `SHA256SUMS` from the
-   release; run `sha256sum -c SHA256SUMS`, then
+9. Download `agentflow.pyz`, `agentflow-mcp.pyz`,
+   `agentflow_proof-*.whl`, `agentflow_proof-*.tar.gz`, and `SHA256SUMS` from
+   the release; run `sha256sum -c SHA256SUMS`, then
    `python3 agentflow.pyz --version`.
 
 > **Do not bump the version ahead of a release.** Ordinary CI checks only that
