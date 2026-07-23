@@ -494,7 +494,7 @@ class RepositoryReleaseDisciplineTests(unittest.TestCase):
         self.assertNotIn(".pyz", stage)
         self.assertIn(
             "pypa/gh-action-pypi-publish@"
-            "2834a314042ef964da07689278dd1e9d773e8afd",
+            "ba38be9e461d3875417946c167d0b5f3d385a247",
             publish,
         )
         self.assertIn("packages-dir: pypi-dist/", publish)
