@@ -536,11 +536,15 @@ def _require_pattern_coherence(root: Path, supported: dict[str, str]) -> None:
             incoherent.append(f"{path} declares no schema_version pattern")
             continue
         major, minor, _ = _version_tuple(version)
-        expected = (
-            rf"^{re.escape(version)}$"
-            if path in EXACT_SCHEMA_PATHS
-            else rf"^{major}\.{minor}\.(?:0|[1-9][0-9]*)$"
-        )
+        if path in EXACT_SCHEMA_PATHS:
+            expected = rf"^{re.escape(version)}$"
+        elif path == "schemas/proof-pack.schema.json":
+            expected = (
+                r"^(?:0\.(?:[4-9]|[1-9][0-9]+)\.(?:0|[1-9][0-9]*)"
+                r"|1\.0\.(?:0|[1-9][0-9]*))$"
+            )
+        else:
+            expected = rf"^{major}\.{minor}\.(?:0|[1-9][0-9]*)$"
         if pattern != expected:
             incoherent.append(
                 f"{path} pattern disagrees with the runtime validator: "

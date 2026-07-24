@@ -426,11 +426,15 @@ class SchemaSoakCheckerTests(SoakHarness, unittest.TestCase):
     def test_rejects_version_bump_bundled_with_another_change(self) -> None:
         self._elapsed_manifest()
         for name in SCHEMA_FILES:
-            pattern = (
-                r"^1\.0\.0$"
-                if name == "schemas/execution-contract.schema.json"
-                else r"^1\.0\.(?:0|[1-9][0-9]*)$"
-            )
+            if name == "schemas/execution-contract.schema.json":
+                pattern = r"^1\.0\.0$"
+            elif name == "schemas/proof-pack.schema.json":
+                pattern = (
+                    r"^(?:0\.(?:[4-9]|[1-9][0-9]+)\.(?:0|[1-9][0-9]*)"
+                    r"|1\.0\.(?:0|[1-9][0-9]*))$"
+                )
+            else:
+                pattern = r"^1\.0\.(?:0|[1-9][0-9]*)$"
             (self.root / name).write_text(
                 _published_schema(pattern), encoding="utf-8"
             )
@@ -807,11 +811,15 @@ class OneZeroTransitionTests(SoakHarness, unittest.TestCase):
         escaped_version = version.replace(".", r"\.")
         self._bump(**{name: version for name in SCHEMA_VERSIONS})
         for name in SCHEMA_FILES:
-            pattern = (
-                rf"^{escaped_version}$"
-                if name == "schemas/execution-contract.schema.json"
-                else rf"^{major}\.{minor}\.(?:0|[1-9][0-9]*)$"
-            )
+            if name == "schemas/execution-contract.schema.json":
+                pattern = rf"^{escaped_version}$"
+            elif name == "schemas/proof-pack.schema.json" and version == "1.0.0":
+                pattern = (
+                    r"^(?:0\.(?:[4-9]|[1-9][0-9]+)\.(?:0|[1-9][0-9]*)"
+                    r"|1\.0\.(?:0|[1-9][0-9]*))$"
+                )
+            else:
+                pattern = rf"^{major}\.{minor}\.(?:0|[1-9][0-9]*)$"
             (self.root / name).write_text(
                 _published_schema(pattern), encoding="utf-8"
             )
@@ -918,6 +926,20 @@ class OneZeroTransitionTests(SoakHarness, unittest.TestCase):
         self._transition()
         (self.root / "schemas/plan-lock.schema.json").write_text(
             _published_schema(r"^1\.0\.[0-9]+$"), encoding="utf-8"
+        )
+        self._record_transition()
+
+        result = self._run()
+
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("published schema patterns disagree", result.stderr)
+
+    def test_rejects_proof_pattern_that_drops_the_historical_range(self) -> None:
+        self._elapsed_manifest()
+        self._transition()
+        (self.root / "schemas/proof-pack.schema.json").write_text(
+            _published_schema(r"^1\.0\.(?:0|[1-9][0-9]*)$"),
+            encoding="utf-8",
         )
         self._record_transition()
 
