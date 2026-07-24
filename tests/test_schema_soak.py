@@ -1,14 +1,17 @@
 from __future__ import annotations
 
 import importlib.util
+import io
 import json
 import os
 import subprocess
 import sys
 import tempfile
 import unittest
+from contextlib import redirect_stderr, redirect_stdout
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from unittest.mock import patch
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -105,6 +108,7 @@ class SchemaSoakCheckerTests(unittest.TestCase):
         manifest = {
             "schema_version": guard.MANIFEST_SCHEMA_VERSION,
             "candidate_commit": self.candidate,
+            "workflow_run_id": 123,
             "schema_versions": dict(SCHEMA_VERSIONS),
             "freeze_paths": list(FREEZE_PATHS),
             "workloads": [
@@ -113,7 +117,7 @@ class SchemaSoakCheckerTests(unittest.TestCase):
                     "command": f"run {workload_id}",
                     "commit": self.candidate,
                     "outcome": "passed",
-                    "recorded_at_utc": self._stamp(self.now - timedelta(days=29)),
+                    "recorded_at_utc": self._stamp(self.now - timedelta(hours=1)),
                     "url": None,
                 }
                 for workload_id in WORKLOAD_IDS
@@ -132,6 +136,16 @@ class SchemaSoakCheckerTests(unittest.TestCase):
         )
         started = self.now - (age if age is not None else timedelta(days=1))
         self._commit("record soak", started)
+        self.workflow_run = {
+            "repository": {"full_name": "agentflow/test"},
+            "path": ".github/workflows/ci.yml",
+            "event": "push",
+            "status": "completed",
+            "conclusion": "success",
+            "head_branch": "main",
+            "head_sha": self._git("rev-parse", "HEAD"),
+            "created_at": self._stamp(started),
+        }
 
     def _elapsed_manifest(self, manifest: dict | None = None) -> None:
         self._write_manifest(manifest or self._manifest(), age=timedelta(days=25))
@@ -144,12 +158,33 @@ class SchemaSoakCheckerTests(unittest.TestCase):
         )
 
     def _run(self, root: Path | None = None) -> subprocess.CompletedProcess[str]:
-        return subprocess.run(
+        stdout = io.StringIO()
+        stderr = io.StringIO()
+        with (
+            patch.dict(
+                os.environ,
+                {
+                    "GITHUB_API_URL": "https://api.github.test",
+                    "GITHUB_REPOSITORY": "agentflow/test",
+                    "GITHUB_TOKEN": "test-token",
+                },
+                clear=False,
+            ),
+            patch.object(
+                guard,
+                "_fetch_workflow_run",
+                return_value=getattr(self, "workflow_run", {}),
+                create=True,
+            ),
+            redirect_stdout(stdout),
+            redirect_stderr(stderr),
+        ):
+            returncode = guard.main(["--root", str(root or self.root)])
+        return subprocess.CompletedProcess(
             [sys.executable, str(SCRIPT), "--root", str(root or self.root)],
-            text=True,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            check=False,
+            returncode,
+            stdout.getvalue(),
+            stderr.getvalue(),
         )
 
     # -- soak not started ------------------------------------------------
@@ -217,8 +252,83 @@ class SchemaSoakCheckerTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn(f"schema soak complete: {self.candidate}", result.stdout)
 
-    def test_soak_start_is_derived_from_the_recording_commit(self) -> None:
-        """An hour short of 21 days is still in progress; no field can say otherwise."""
+    def test_missing_workflow_run_waits_without_unlocking_the_soak(self) -> None:
+        self._write_manifest(
+            self._manifest(workflow_run_id=None, workloads=[]), age=timedelta(days=25)
+        )
+
+        result = self._run()
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("awaiting trusted main-CI observation", result.stdout)
+
+    def test_missing_workflow_run_rejects_early_workload_evidence(self) -> None:
+        self._write_manifest(self._manifest(workflow_run_id=None), age=timedelta(days=25))
+
+        result = self._run()
+
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("require a trusted main-CI observation", result.stderr)
+
+    def test_elapsed_clock_with_partial_workloads_remains_in_progress(self) -> None:
+        manifest = self._manifest(workloads=[])
+        self._elapsed_manifest(manifest)
+
+        result = self._run()
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("pending workloads", result.stdout)
+        self.assertNotIn("schema soak complete", result.stdout)
+
+    def test_elapsed_partial_workloads_do_not_allow_the_version_bump(self) -> None:
+        self._elapsed_manifest(self._manifest(workloads=[]))
+        self._bump(PLAN_SCHEMA_VERSION="1.0.0")
+
+        result = self._run()
+
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("freeze set changed since candidate", result.stderr)
+        self.assertIn(CONTRACTS, result.stderr)
+
+    def test_workflow_run_must_contain_the_candidate_recording_commit(self) -> None:
+        self._write_manifest(self._manifest())
+        self.workflow_run["head_sha"] = self.candidate
+
+        result = self._run()
+
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("must contain the candidate recording commit", result.stderr)
+
+    def test_workflow_run_must_use_the_ci_workflow_path(self) -> None:
+        self._write_manifest(self._manifest())
+        self.workflow_run["path"] = ".github/workflows/other.yml"
+
+        result = self._run()
+
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("must belong to this repository's CI workflow", result.stderr)
+
+    def test_workflow_run_accepts_the_real_ci_path(self) -> None:
+        self._write_manifest(self._manifest())
+
+        result = self._run()
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_reintroduced_candidate_uses_its_current_recording_sequence(self) -> None:
+        self._write_manifest(self._manifest())
+        old_recording = self._git("rev-parse", "HEAD")
+        replacement = self._commit("candidate B", self.now - timedelta(days=2))
+        self._write_manifest(self._manifest(candidate_commit=replacement))
+        self._write_manifest(self._manifest())
+        self.workflow_run["head_sha"] = old_recording
+
+        result = self._run()
+
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("must contain the candidate recording commit", result.stderr)
+
+    def test_trusted_run_an_hour_short_of_21_days_is_in_progress(self) -> None:
         self._write_manifest(self._manifest(), age=timedelta(days=20, hours=23))
 
         result = self._run()
@@ -226,13 +336,14 @@ class SchemaSoakCheckerTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("schema soak in progress", result.stdout)
 
-    def test_rejects_recording_commit_older_than_candidate(self) -> None:
+    def test_github_run_timestamp_not_git_recording_timestamp_sets_clock(self) -> None:
         self._write_manifest(self._manifest(), age=timedelta(days=40))
+        self.workflow_run["created_at"] = self._stamp(self.now - timedelta(days=20))
 
         result = self._run()
 
-        self.assertEqual(result.returncode, 1)
-        self.assertIn("must not predate candidate_commit", result.stderr)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("schema soak in progress", result.stdout)
 
     # -- version-only bump carve-out -------------------------------------
 
@@ -579,7 +690,7 @@ class SchemaSoakCheckerTests(unittest.TestCase):
         result = self._run()
 
         self.assertEqual(result.returncode, 1)
-        self.assertIn("must not be earlier than candidate_commit", result.stderr)
+        self.assertIn("must not be earlier than trusted soak start", result.stderr)
 
     def test_rejects_date_only_utc_timestamp_without_traceback(self) -> None:
         manifest = self._manifest()
@@ -610,6 +721,8 @@ class FreezeSetContractTests(unittest.TestCase):
         guard_index = workflow.index("run: python3 scripts/check_schema_soak.py")
         tests_index = workflow.index("PYTHONPATH=src python3 -m unittest discover")
         self.assertLess(guard_index, tests_index)
+        self.assertIn("actions: read", workflow)
+        self.assertIn("GITHUB_TOKEN: ${{ github.token }}", workflow)
 
 
 if __name__ == "__main__":

@@ -1,12 +1,10 @@
 #!/usr/bin/env python3
 """Validate the pre-bump schema-soak candidate and its frozen paths.
 
-The soak clock is a Git fact. It starts at the commit that first records the
-candidate in ``docs/schema-freeze-soak.json`` and runs for 21 days; the manifest
-never declares it, so it cannot be back-dated. Until the clock elapses the
-freeze set must not change at all and the load-bearing constants must stay
-pre-1.0. Once it elapses the guard grants exactly one carve-out -- issue #5's
-version-only bump of those constants -- and nothing else.
+The soak clock starts with a successful GitHub Actions CI run on ``main``. Its
+server-issued ``created_at`` timestamp cannot be back-dated by a contributor.
+Until the clock and the required workloads complete, the freeze set must not
+change at all and the load-bearing constants must stay pre-1.0.
 """
 
 from __future__ import annotations
@@ -21,11 +19,12 @@ import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Sequence
+from urllib import error, request
 
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 MANIFEST_PATH = Path("docs/schema-freeze-soak.json")
-MANIFEST_SCHEMA_VERSION = "0.2.0"
+MANIFEST_SCHEMA_VERSION = "0.3.0"
 CONTRACTS_PATH = "src/agentflow/contracts.py"
 SOAK_DURATION = timedelta(days=21)
 SHA_RE = re.compile(r"^[0-9a-f]{40}$")
@@ -126,6 +125,7 @@ MANIFEST_FIELDS = frozenset(
     {
         "schema_version",
         "candidate_commit",
+        "workflow_run_id",
         "schema_versions",
         "freeze_paths",
         "workloads",
@@ -221,21 +221,8 @@ def _validate_candidate(root: Path, value: Any) -> str:
     return value
 
 
-def _commit_time(root: Path, commit: str) -> datetime:
-    value = _git(root, "show", "-s", "--format=%cI", commit).stdout.strip()
-    try:
-        return datetime.fromisoformat(value).astimezone(timezone.utc)
-    except ValueError as exc:
-        raise SoakCheckError(f"commit {commit} has an invalid commit timestamp") from exc
-
-
-def _soak_start_time(root: Path, candidate: str) -> datetime:
-    """Return the commit time of the commit that first recorded this candidate.
-
-    Deriving the start from Git rather than a declared manifest field is what
-    makes the clock un-back-datable: shortening the soak would require rewriting
-    published history rather than editing a string.
-    """
+def _candidate_recording_commit(root: Path, candidate: str) -> str:
+    """Return the first commit in the current uninterrupted candidate sequence."""
     commits = _git(
         root,
         "log",
@@ -244,7 +231,7 @@ def _soak_start_time(root: Path, candidate: str) -> datetime:
         "--",
         MANIFEST_PATH.as_posix(),
     ).stdout.split()
-    started_at: datetime | None = None
+    recording_commit: str | None = None
     unreadable = False
     for commit in commits:
         snapshot = _git(
@@ -254,27 +241,102 @@ def _soak_start_time(root: Path, candidate: str) -> datetime:
             check=False,
         )
         if snapshot.returncode != 0:
-            started_at = None
+            recording_commit = None
             continue
         try:
             data = _load_json(snapshot.stdout)
         except (json.JSONDecodeError, DuplicateJsonKeyError):
             unreadable = True
-            started_at = None
+            recording_commit = None
             continue
         if isinstance(data, dict) and data.get("candidate_commit") == candidate:
-            if started_at is None:
-                started_at = _commit_time(root, commit)
+            if recording_commit is None:
+                recording_commit = commit
         else:
-            started_at = None
-    if started_at is None:
-        if unreadable:
-            raise SoakCheckError(
-                f"cannot determine the soak start: {MANIFEST_PATH.as_posix()} is "
-                "unreadable in Git history"
-            )
-        raise SoakCheckError("manifest candidate must be recorded in Git history")
-    return started_at
+            recording_commit = None
+    if recording_commit is not None:
+        return recording_commit
+    if unreadable:
+        raise SoakCheckError(
+            f"cannot determine the candidate recording: {MANIFEST_PATH.as_posix()} "
+            "is unreadable in Git history"
+        )
+    raise SoakCheckError("manifest candidate must be recorded in Git history")
+
+
+def _workflow_run_id(value: Any) -> int | None:
+    if value is None:
+        return None
+    if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
+        raise SoakCheckError("workflow_run_id must be a positive GitHub Actions run id or null")
+    return value
+
+
+def _fetch_workflow_run(workflow_run_id: int) -> dict[str, Any]:
+    repository = os.environ.get("GITHUB_REPOSITORY")
+    token = os.environ.get("GITHUB_TOKEN")
+    if not repository or not token:
+        raise SoakCheckError(
+            "cannot resolve trusted workflow run locally: GITHUB_REPOSITORY and GITHUB_TOKEN are required"
+        )
+    api_url = os.environ.get("GITHUB_API_URL", "https://api.github.com").rstrip("/")
+    endpoint = f"{api_url}/repos/{repository}/actions/runs/{workflow_run_id}"
+    api_request = request.Request(
+        endpoint,
+        headers={
+            "Accept": "application/vnd.github+json",
+            "Authorization": f"Bearer {token}",
+            "User-Agent": "agentflow-schema-soak-check",
+            "X-GitHub-Api-Version": "2022-11-28",
+        },
+    )
+    try:
+        with request.urlopen(api_request, timeout=10) as response:
+            data = _load_json(response.read().decode("utf-8"))
+    except error.HTTPError as exc:
+        raise SoakCheckError(
+            f"cannot resolve trusted workflow run: GitHub API returned HTTP {exc.code}"
+        ) from exc
+    except (
+        OSError,
+        TimeoutError,
+        UnicodeDecodeError,
+        json.JSONDecodeError,
+        DuplicateJsonKeyError,
+    ) as exc:
+        raise SoakCheckError(
+            "cannot resolve trusted workflow run: GitHub API is unavailable"
+        ) from exc
+    if not isinstance(data, dict):
+        raise SoakCheckError("cannot resolve trusted workflow run: invalid GitHub API response")
+    return data
+
+
+def _trusted_soak_start(
+    root: Path, workflow_run: dict[str, Any], recording_commit: str
+) -> datetime:
+    repository = os.environ.get("GITHUB_REPOSITORY")
+    run_repository = workflow_run.get("repository")
+    if (
+        not isinstance(repository, str)
+        or not isinstance(run_repository, dict)
+        or run_repository.get("full_name") != repository
+        or workflow_run.get("path") != ".github/workflows/ci.yml"
+    ):
+        raise SoakCheckError("workflow run must belong to this repository's CI workflow")
+    if (
+        workflow_run.get("event") != "push"
+        or workflow_run.get("status") != "completed"
+        or workflow_run.get("conclusion") != "success"
+        or workflow_run.get("head_branch") != "main"
+    ):
+        raise SoakCheckError("workflow run must be a completed successful push run on main")
+    head_sha = workflow_run.get("head_sha")
+    if not isinstance(head_sha, str) or SHA_RE.fullmatch(head_sha) is None:
+        raise SoakCheckError("workflow run head_sha must be an exact commit SHA")
+    if _git(root, "merge-base", "--is-ancestor", recording_commit, head_sha, check=False).returncode != 0:
+        raise SoakCheckError("workflow run head_sha must contain the candidate recording commit")
+    return _utc_timestamp(workflow_run.get("created_at"), "workflow run created_at")
 
 
 def _schema_versions(source: str, label: str) -> dict[str, str]:
@@ -561,16 +623,25 @@ def _validate_freeze_paths(
 def _validate_workloads(
     value: Any,
     candidate: str,
-    candidate_time: datetime,
+    start_time: datetime | None,
     now: datetime,
-) -> None:
+) -> frozenset[str]:
     if not isinstance(value, list) or not all(isinstance(item, dict) for item in value):
         raise SoakCheckError("workloads must be an array of objects")
     ids = [item.get("id") for item in value]
     if not all(isinstance(workload_id, str) for workload_id in ids):
         raise SoakCheckError("workload ids must be strings")
-    if len(ids) != len(set(ids)) or set(ids) != WORKLOAD_IDS:
-        raise SoakCheckError("workloads must record every required soak workload once")
+    if len(ids) != len(set(ids)):
+        raise SoakCheckError("workloads must not contain duplicate workload ids")
+    unknown_ids = sorted(set(ids) - WORKLOAD_IDS)
+    if unknown_ids:
+        raise SoakCheckError("workloads contain unknown ids: " + ", ".join(unknown_ids))
+    if start_time is None:
+        if value:
+            raise SoakCheckError(
+                "workloads require a trusted main-CI observation before recording evidence"
+            )
+        return frozenset()
     expected_fields = {
         "id",
         "command",
@@ -592,9 +663,9 @@ def _validate_workloads(
         recorded_at = _utc_timestamp(
             item["recorded_at_utc"], f"workload {workload_id} recorded_at_utc"
         )
-        if recorded_at < candidate_time:
+        if recorded_at < start_time:
             raise SoakCheckError(
-                f"workload {workload_id} recorded_at_utc must not be earlier than candidate_commit"
+                f"workload {workload_id} recorded_at_utc must not be earlier than trusted soak start"
             )
         # Issue #5 requires these workloads to be exercised *during* the soak, so
         # the only upper bound is the present.
@@ -605,6 +676,7 @@ def _validate_workloads(
         url = item["url"]
         if url is not None and (not isinstance(url, str) or not url.strip()):
             raise SoakCheckError(f"workload {workload_id} url must be null or non-empty")
+    return frozenset(ids)
 
 
 def check_soak(root: Path) -> str:
@@ -630,12 +702,7 @@ def check_soak(root: Path) -> str:
 
     manifest = _read_manifest(manifest_path)
     candidate = _validate_candidate(root, manifest["candidate_commit"])
-    candidate_time = _commit_time(root, candidate)
-    start_time = _soak_start_time(root, candidate)
-    if start_time < candidate_time:
-        raise SoakCheckError("the recording commit must not predate candidate_commit")
-    minimum_end = start_time + SOAK_DURATION
-    elapsed = now >= minimum_end
+    recording_commit = _candidate_recording_commit(root, candidate)
 
     paths = sorted(FREEZE_PATHS)
     candidate_tree = _candidate_tree(root, candidate, paths)
@@ -652,13 +719,33 @@ def check_soak(root: Path) -> str:
     blobs = _candidate_blobs(root, candidate, sorted(candidate_tree))
 
     _validate_schema_versions(manifest["schema_versions"], blobs[CONTRACTS_PATH])
-    _validate_workloads(manifest["workloads"], candidate, candidate_time, now)
+    workflow_run_id = _workflow_run_id(manifest["workflow_run_id"])
+    if workflow_run_id is None:
+        _validate_workloads(manifest["workloads"], candidate, None, now)
+        _validate_freeze_paths(
+            root,
+            manifest["freeze_paths"],
+            blobs,
+            candidate_tree,
+            allow_version_only=False,
+        )
+        return f"schema soak awaiting trusted main-CI observation: {candidate}"
+
+    start_time = _trusted_soak_start(
+        root, _fetch_workflow_run(workflow_run_id), recording_commit
+    )
+    minimum_end = start_time + SOAK_DURATION
+    elapsed = now >= minimum_end
+    recorded_workloads = _validate_workloads(
+        manifest["workloads"], candidate, start_time, now
+    )
+    completed_workloads = recorded_workloads == WORKLOAD_IDS
     _validate_freeze_paths(
         root,
         manifest["freeze_paths"],
         blobs,
         candidate_tree,
-        allow_version_only=elapsed,
+        allow_version_only=elapsed and completed_workloads,
     )
 
     stamp = minimum_end.isoformat().replace("+00:00", "Z")
@@ -667,6 +754,12 @@ def check_soak(root: Path) -> str:
         return (
             f"schema soak in progress: {candidate} unchanged, "
             f"{remaining.days}d {remaining.seconds // 3600}h remain "
+            f"(minimum end {stamp})"
+        )
+    if not completed_workloads:
+        pending = ", ".join(sorted(WORKLOAD_IDS - recorded_workloads))
+        return (
+            f"schema soak in progress: {candidate} pending workloads: {pending} "
             f"(minimum end {stamp})"
         )
     return f"schema soak complete: {candidate} unchanged through {stamp}"
