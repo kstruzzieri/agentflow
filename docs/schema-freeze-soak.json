@@ -1,5 +1,5 @@
 {
-  "candidate_commit": "bfa0b82608ec3eb390d1dae944fecf167b320bdd",
+  "candidate_commit": "41e696079e619ed9a12e7fe45bc9185d731b5ef2",
   "freeze_paths": [
     ".github/workflows/ci.yml",
     "schemas/command-receipts.schema.json",
@@ -24,6 +24,7 @@
     "src/agentflow/git.py",
     "src/agentflow/handoff.py",
     "src/agentflow/hunks.py",
+    "src/agentflow/locks.py",
     "src/agentflow/packs.py",
     "src/agentflow/porcelain.py",
     "src/agentflow/proof.py",
@@ -50,10 +51,13 @@
     "tests/test_execution_verification.py",
     "tests/test_handoff.py",
     "tests/test_hunks.py",
+    "tests/test_lease_enforcement.py",
+    "tests/test_lease_locking.py",
     "tests/test_packs.py",
     "tests/test_porcelain.py",
     "tests/test_proof.py",
     "tests/test_proof_compatibility.py",
+    "tests/test_receipt_concurrency.py",
     "tests/test_receipts.py",
     "tests/test_review.py",
     "tests/test_risk.py",
