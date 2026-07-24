@@ -24,9 +24,10 @@ from urllib import error, request
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 MANIFEST_PATH = Path("docs/schema-freeze-soak.json")
-MANIFEST_SCHEMA_VERSION = "0.3.0"
+MANIFEST_SCHEMA_VERSION = "0.4.0"
 CONTRACTS_PATH = "src/agentflow/contracts.py"
 SOAK_DURATION = timedelta(days=21)
+ONE_ZERO_VERSION = "1.0.0"
 SHA_RE = re.compile(r"^[0-9a-f]{40}$")
 SEMVER_RE = re.compile(r"^(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)$")
 
@@ -133,6 +134,7 @@ MANIFEST_FIELDS = frozenset(
     {
         "schema_version",
         "candidate_commit",
+        "transition_commit",
         "workflow_run_id",
         "schema_versions",
         "freeze_paths",
@@ -151,6 +153,10 @@ SCHEMA_FILE_CONSTANTS = {
     "schemas/verification-runs.schema.json": "VERIFICATION_RUNS_SCHEMA_VERSION",
     "schemas/drift-report.schema.json": "DRIFT_REPORT_SCHEMA_VERSION",
 }
+
+# The execution contract is exact-version state. The other published
+# load-bearing schemas admit the supported major through the supported minor.
+EXACT_SCHEMA_PATHS = frozenset({"schemas/execution-contract.schema.json"})
 
 # Immutable fixture trees. The 1.0 transition adds a fixture built by the 1.0
 # code; issue #5 requires the existing snapshots to survive untouched, so these
@@ -237,16 +243,43 @@ def _utc_timestamp(value: Any, field: str) -> datetime:
     return parsed
 
 
-def _validate_candidate(root: Path, value: Any) -> str:
+def _validate_ancestor_commit(root: Path, value: Any, field: str) -> str:
     if not isinstance(value, str) or SHA_RE.fullmatch(value) is None:
-        raise SoakCheckError("candidate_commit must be an exact 40-character lowercase SHA")
+        raise SoakCheckError(
+            f"{field} must be an exact 40-character lowercase SHA"
+        )
     resolved = _git(root, "rev-parse", "--verify", f"{value}^{{commit}}").stdout.strip()
     if resolved != value:
-        raise SoakCheckError("candidate_commit does not resolve to the recorded commit")
+        raise SoakCheckError(f"{field} does not resolve to the recorded commit")
     ancestor = _git(root, "merge-base", "--is-ancestor", value, "HEAD", check=False)
     if ancestor.returncode != 0:
-        raise SoakCheckError("candidate_commit must be an ancestor of HEAD")
+        raise SoakCheckError(f"{field} must be an ancestor of HEAD")
     return value
+
+
+def _validate_candidate(root: Path, value: Any) -> str:
+    return _validate_ancestor_commit(root, value, "candidate_commit")
+
+
+def _validate_transition_commit(
+    root: Path, value: Any, candidate: str
+) -> str | None:
+    if value is None:
+        return None
+    transition = _validate_ancestor_commit(root, value, "transition_commit")
+    descendant = _git(
+        root,
+        "merge-base",
+        "--is-ancestor",
+        candidate,
+        transition,
+        check=False,
+    )
+    if descendant.returncode != 0 or transition == candidate:
+        raise SoakCheckError(
+            "transition_commit must descend from candidate_commit"
+        )
+    return transition
 
 
 def _candidate_recording_commit(root: Path, candidate: str) -> str:
@@ -482,7 +515,7 @@ def _is_schema_pattern_bump(candidate_data: bytes, current_data: bytes, path: st
 
 
 def _require_pattern_coherence(root: Path, supported: dict[str, str]) -> None:
-    """Every published pattern must accept the constant the tree now declares.
+    """Every published pattern must match the runtime's 1.0 policy.
 
     Checked across all eight schemas, not just the edited ones: a schema left
     untouched is byte-identical to the candidate and would otherwise sail past
@@ -502,17 +535,29 @@ def _require_pattern_coherence(root: Path, supported: dict[str, str]) -> None:
         if pattern is None:
             incoherent.append(f"{path} declares no schema_version pattern")
             continue
-        try:
-            accepts = re.compile(pattern).fullmatch(version) is not None
-        except re.error:
-            incoherent.append(f"{path} schema_version pattern is not valid regex")
-            continue
-        if not accepts:
-            incoherent.append(f"{path} pattern rejects {constant} {version}")
+        major, minor, _ = _version_tuple(version)
+        expected = (
+            rf"^{re.escape(version)}$"
+            if path in EXACT_SCHEMA_PATHS
+            else rf"^{major}\.{minor}\.(?:0|[1-9][0-9]*)$"
+        )
+        if pattern != expected:
+            incoherent.append(
+                f"{path} pattern disagrees with the runtime validator: "
+                f"{constant} {version} requires {expected}"
+            )
     if incoherent:
         raise SoakCheckError(
             "published schema patterns disagree with the declared constants: "
             + "; ".join(incoherent)
+        )
+
+
+def _require_one_zero_transition(current: dict[str, str]) -> None:
+    if set(current.values()) != {ONE_ZERO_VERSION}:
+        raise SoakCheckError(
+            "the post-soak transition must set all eight load-bearing "
+            f"schema constants to exactly {ONE_ZERO_VERSION}"
         )
 
 
@@ -694,6 +739,26 @@ def _current_bytes(root: Path, path: str, mode: str) -> bytes:
         raise SoakCheckError(f"cannot read frozen path: {path}") from exc
 
 
+def _require_current_tree_matches_commit(
+    root: Path, commit: str, paths: Sequence[str]
+) -> None:
+    expected_tree = _candidate_tree(root, commit, paths)
+    current_tree = _current_tree(root, paths)
+    differences = set(expected_tree) ^ set(current_tree)
+    blobs = _candidate_blobs(root, commit, sorted(expected_tree))
+    for path in sorted(set(expected_tree) & set(current_tree)):
+        if (
+            expected_tree[path] != current_tree[path]
+            or blobs[path] != _current_bytes(root, path, current_tree[path])
+        ):
+            differences.add(path)
+    if differences:
+        raise SoakCheckError(
+            "freeze set changed after transition_commit: "
+            + ", ".join(sorted(differences))
+        )
+
+
 def _frozen_paths_present(root: Path) -> None:
     """Catch a stale ``FREEZE_PATHS`` entry before the soak makes it load-bearing.
 
@@ -731,7 +796,7 @@ def _validate_freeze_paths(
     ):
         raise SoakCheckError("freeze_paths must match the audited freeze set")
     current_tree = _current_tree(root, sorted(FREEZE_PATHS))
-    supported = (
+    candidate_supported = (
         _schema_versions(
             blobs[CONTRACTS_PATH].decode("utf-8", errors="replace"),
             "candidate contracts.py",
@@ -739,9 +804,13 @@ def _validate_freeze_paths(
         if CONTRACTS_PATH in blobs
         else {}
     )
+    transition_allowed = False
     if allow_transition:
-        supported = _current_schema_versions(root)
-        _require_pattern_coherence(root, supported)
+        current_supported = _current_schema_versions(root)
+        if current_supported != candidate_supported:
+            _require_one_zero_transition(current_supported)
+            _require_pattern_coherence(root, current_supported)
+            transition_allowed = True
 
     added = set(current_tree) - set(candidate_tree)
     removed = set(candidate_tree) - set(current_tree)
@@ -749,7 +818,7 @@ def _validate_freeze_paths(
     for path in sorted(added):
         # A new fixture is the one addition #5 asks for; anything else appearing
         # inside the freeze set is drift.
-        if allow_transition and any(
+        if transition_allowed and any(
             path.startswith(root_path + "/") for root_path in FIXTURE_ROOTS
         ):
             continue
@@ -763,7 +832,7 @@ def _validate_freeze_paths(
         current_data = _current_bytes(root, path, current_tree[path])
         if candidate_data == current_data:
             continue
-        if allow_transition:
+        if transition_allowed:
             if path == CONTRACTS_PATH and _is_version_only_bump(
                 candidate_data.decode("utf-8", errors="replace"),
                 current_data.decode("utf-8", errors="replace"),
@@ -872,6 +941,9 @@ def check_soak(root: Path) -> str:
 
     manifest = _read_manifest(manifest_path)
     candidate = _validate_candidate(root, manifest["candidate_commit"])
+    transition = _validate_transition_commit(
+        root, manifest["transition_commit"], candidate
+    )
     recording_commit = _candidate_recording_commit(root, candidate)
 
     paths = sorted(FREEZE_PATHS)
@@ -891,6 +963,10 @@ def check_soak(root: Path) -> str:
     _validate_schema_versions(manifest["schema_versions"], blobs[CONTRACTS_PATH])
     workflow_run_id = _workflow_run_id(manifest["workflow_run_id"])
     if workflow_run_id is None:
+        if transition is not None:
+            raise SoakCheckError(
+                "transition_commit requires a completed soak and all workloads"
+            )
         _validate_workloads(manifest["workloads"], candidate, None, now)
         _validate_freeze_paths(
             root,
@@ -910,13 +986,27 @@ def check_soak(root: Path) -> str:
         manifest["workloads"], candidate, start_time, now
     )
     completed_workloads = recorded_workloads == WORKLOAD_IDS
+    current_versions = _current_schema_versions(root)
+    transitioning = current_versions != manifest["schema_versions"]
+    if transitioning and transition is None:
+        raise SoakCheckError(
+            "transition_commit must record the coordinated 1.0 transition"
+        )
+    if transition is not None:
+        if not elapsed or not completed_workloads:
+            raise SoakCheckError(
+                "transition_commit requires a completed soak and all workloads"
+            )
+        _require_one_zero_transition(current_versions)
     _validate_freeze_paths(
         root,
         manifest["freeze_paths"],
         blobs,
         candidate_tree,
-        allow_transition=elapsed and completed_workloads,
+        allow_transition=transition is not None,
     )
+    if transition is not None:
+        _require_current_tree_matches_commit(root, transition, paths)
 
     stamp = minimum_end.isoformat().replace("+00:00", "Z")
     if not elapsed:
@@ -931,6 +1021,11 @@ def check_soak(root: Path) -> str:
         return (
             f"schema soak in progress: {candidate} pending workloads: {pending} "
             f"(minimum end {stamp})"
+        )
+    if transition is not None:
+        return (
+            f"schema transition complete: {transition} records "
+            f"{ONE_ZERO_VERSION} after soak {candidate}"
         )
     return f"schema soak complete: {candidate} unchanged through {stamp}"
 

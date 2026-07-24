@@ -135,6 +135,7 @@ class SoakHarness:
         manifest = {
             "schema_version": guard.MANIFEST_SCHEMA_VERSION,
             "candidate_commit": self.candidate,
+            "transition_commit": None,
             "workflow_run_id": 123,
             "schema_versions": dict(SCHEMA_VERSIONS),
             "freeze_paths": list(FREEZE_PATHS),
@@ -176,6 +177,18 @@ class SoakHarness:
 
     def _elapsed_manifest(self, manifest: dict | None = None) -> None:
         self._write_manifest(manifest or self._manifest(), age=timedelta(days=25))
+
+    def _record_transition(self) -> str:
+        transition = self._commit("1.0 transition", self.now)
+        path = self.root / "docs/schema-freeze-soak.json"
+        manifest = json.loads(path.read_text(encoding="utf-8"))
+        manifest["transition_commit"] = transition
+        path.write_text(
+            json.dumps(manifest, indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
+        self._commit("record transition", self.now)
+        return transition
 
     def _bump(self, **versions: str) -> None:
         merged = dict(SCHEMA_VERSIONS)
@@ -314,12 +327,12 @@ class SchemaSoakCheckerTests(SoakHarness, unittest.TestCase):
     def test_elapsed_partial_workloads_do_not_allow_the_version_bump(self) -> None:
         self._elapsed_manifest(self._manifest(workloads=[]))
         self._bump(PLAN_SCHEMA_VERSION="1.0.0")
+        self._record_transition()
 
         result = self._run()
 
         self.assertEqual(result.returncode, 1)
-        self.assertIn("freeze set changed since candidate", result.stderr)
-        self.assertIn(CONTRACTS, result.stderr)
+        self.assertIn("completed soak", result.stderr)
 
     def test_workflow_run_must_contain_the_candidate_recording_commit(self) -> None:
         self._write_manifest(self._manifest())
@@ -381,31 +394,29 @@ class SchemaSoakCheckerTests(SoakHarness, unittest.TestCase):
     def test_rejects_version_bump_before_soak_elapses(self) -> None:
         self._write_manifest(self._manifest(), age=timedelta(days=1))
         self._bump(PLAN_SCHEMA_VERSION="1.0.0")
+        self._record_transition()
 
         result = self._run()
 
         self.assertEqual(result.returncode, 1)
-        self.assertIn("freeze set changed since candidate", result.stderr)
-        self.assertIn(CONTRACTS, result.stderr)
+        self.assertIn("completed soak", result.stderr)
 
-    def test_allows_version_only_bump_after_soak_elapses(self) -> None:
-        # Stays inside the range the published patterns already accept, so this
-        # isolates the version-only rule. Crossing to 1.0 additionally requires
-        # the schemas to move; see OneZeroTransitionTests.
+    def test_rejects_a_non_one_zero_bump_after_soak_elapses(self) -> None:
         self._elapsed_manifest()
-        # 0.99.0 outranks every current constant, including proof-pack 0.11.0.
         self._bump(**{name: "0.99.0" for name in SCHEMA_VERSIONS})
+        self._record_transition()
 
         result = self._run()
 
-        self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertIn("schema soak complete", result.stdout)
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("exactly 1.0.0", result.stderr)
 
     def test_rejects_constants_bumped_past_their_published_patterns(self) -> None:
         # A constants-only jump to 1.0 leaves every published pattern rejecting
         # the version the tree now declares -- the half-transition #5 forbids.
         self._elapsed_manifest()
         self._bump(**{name: "1.0.0" for name in SCHEMA_VERSIONS})
+        self._record_transition()
 
         result = self._run()
 
@@ -414,11 +425,21 @@ class SchemaSoakCheckerTests(SoakHarness, unittest.TestCase):
 
     def test_rejects_version_bump_bundled_with_another_change(self) -> None:
         self._elapsed_manifest()
+        for name in SCHEMA_FILES:
+            pattern = (
+                r"^1\.0\.0$"
+                if name == "schemas/execution-contract.schema.json"
+                else r"^1\.0\.(?:0|[1-9][0-9]*)$"
+            )
+            (self.root / name).write_text(
+                _published_schema(pattern), encoding="utf-8"
+            )
         (self.root / CONTRACTS).write_text(
-            _contracts_source({**SCHEMA_VERSIONS, "PLAN_SCHEMA_VERSION": "0.99.0"})
+            _contracts_source({name: "1.0.0" for name in SCHEMA_VERSIONS})
             + 'SNEAKY_NEW_FIELD = "added"\n',
             encoding="utf-8",
         )
+        self._record_transition()
 
         result = self._run()
 
@@ -429,11 +450,12 @@ class SchemaSoakCheckerTests(SoakHarness, unittest.TestCase):
     def test_rejects_version_downgrade_after_soak_elapses(self) -> None:
         self._elapsed_manifest()
         self._bump(PLAN_SCHEMA_VERSION="0.3.0")
+        self._record_transition()
 
         result = self._run()
 
         self.assertEqual(result.returncode, 1)
-        self.assertIn("freeze set changed since candidate", result.stderr)
+        self.assertIn("exactly 1.0.0", result.stderr)
 
     def test_rejects_other_frozen_change_after_soak_elapses(self) -> None:
         """Elapsing the clock unlocks contracts.py only, not the rest of the set."""
@@ -780,35 +802,56 @@ class OneZeroTransitionTests(SoakHarness, unittest.TestCase):
         for name in SCHEMA_FILES:
             (self.root / name).write_text(_published_schema(pattern), encoding="utf-8")
 
-    def _transition(self) -> None:
-        self._bump(**{name: "1.0.0" for name in SCHEMA_VERSIONS})
-        self._bump_schemas()
+    def _transition(self, version: str = "1.0.0") -> None:
+        major, minor, _ = version.split(".")
+        escaped_version = version.replace(".", r"\.")
+        self._bump(**{name: version for name in SCHEMA_VERSIONS})
+        for name in SCHEMA_FILES:
+            pattern = (
+                rf"^{escaped_version}$"
+                if name == "schemas/execution-contract.schema.json"
+                else rf"^{major}\.{minor}\.(?:0|[1-9][0-9]*)$"
+            )
+            (self.root / name).write_text(
+                _published_schema(pattern), encoding="utf-8"
+            )
         (self.root / self.PINNED_TEST).write_text(
-            'VALUE = 1\nPINNED = "1.0.0"\n', encoding="utf-8"
+            f'VALUE = 1\nPINNED = "{version}"\n', encoding="utf-8"
         )
         fixture = self.root / "tests/fixtures/compatibility/one-zero"
         fixture.mkdir(parents=True, exist_ok=True)
         (fixture / "proof.json").write_text(
-            '{"schema_version": "1.0.0"}\n', encoding="utf-8"
+            json.dumps({"schema_version": version}) + "\n", encoding="utf-8"
         )
 
     def test_complete_transition_passes_after_the_soak(self) -> None:
         self._elapsed_manifest()
         self._transition()
+        self._record_transition()
 
         result = self._run()
 
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertIn("schema soak complete", result.stdout)
+        self.assertIn("schema transition complete", result.stdout)
 
-    def test_complete_transition_is_rejected_before_the_soak_elapses(self) -> None:
-        self._write_manifest(self._manifest(), age=timedelta(days=1))
+    def test_unrecorded_transition_is_rejected(self) -> None:
+        self._elapsed_manifest()
         self._transition()
 
         result = self._run()
 
         self.assertEqual(result.returncode, 1)
-        self.assertIn("freeze set changed since candidate", result.stderr)
+        self.assertIn("transition_commit", result.stderr)
+
+    def test_complete_transition_is_rejected_before_the_soak_elapses(self) -> None:
+        self._write_manifest(self._manifest(), age=timedelta(days=1))
+        self._transition()
+        self._record_transition()
+
+        result = self._run()
+
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("completed soak", result.stderr)
 
     def test_rejects_a_pattern_that_still_rejects_the_new_constant(self) -> None:
         """The half-transition that byte-identical schemas would hide."""
@@ -817,12 +860,94 @@ class OneZeroTransitionTests(SoakHarness, unittest.TestCase):
         (self.root / "schemas/plan-lock.schema.json").write_text(
             _published_schema(r"^0\.[0-9]+\.[0-9]+$"), encoding="utf-8"
         )
+        self._record_transition()
 
         result = self._run()
 
         self.assertEqual(result.returncode, 1)
         self.assertIn("published schema patterns disagree", result.stderr)
         self.assertIn("PLAN_SCHEMA_VERSION 1.0.0", result.stderr)
+
+    def test_rejects_a_transition_beyond_one_zero(self) -> None:
+        self._elapsed_manifest()
+        self._transition("2.0.0")
+        self._record_transition()
+
+        result = self._run()
+
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("exactly 1.0.0", result.stderr)
+
+    def test_rejects_a_schema_change_without_the_constant_transition(self) -> None:
+        self._elapsed_manifest()
+        self._bump_schemas(r"^0\.(?:[0-9]+)\.[0-9]+$")
+
+        result = self._run()
+
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("freeze set changed since candidate", result.stderr)
+
+    def test_rejects_an_overbroad_schema_pattern(self) -> None:
+        self._elapsed_manifest()
+        self._transition()
+        (self.root / "schemas/plan-lock.schema.json").write_text(
+            _published_schema(r".*"), encoding="utf-8"
+        )
+        self._record_transition()
+
+        result = self._run()
+
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("published schema patterns disagree", result.stderr)
+
+    def test_rejects_a_pattern_narrower_than_the_runtime_validator(self) -> None:
+        self._elapsed_manifest()
+        self._transition()
+        (self.root / "schemas/plan-lock.schema.json").write_text(
+            _published_schema(r"^(?:1\.0\.0|1\.0\.1)$"), encoding="utf-8"
+        )
+        self._record_transition()
+
+        result = self._run()
+
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("published schema patterns disagree", result.stderr)
+
+    def test_rejects_a_pattern_that_accepts_non_semver_versions(self) -> None:
+        self._elapsed_manifest()
+        self._transition()
+        (self.root / "schemas/plan-lock.schema.json").write_text(
+            _published_schema(r"^1\.0\.[0-9]+$"), encoding="utf-8"
+        )
+        self._record_transition()
+
+        result = self._run()
+
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("published schema patterns disagree", result.stderr)
+
+    def test_rejects_execution_pattern_broader_than_its_exact_validator(self) -> None:
+        self._elapsed_manifest()
+        self._transition()
+        (self.root / "schemas/execution-contract.schema.json").write_text(
+            _published_schema(r"^(?:1\.0\.0|garbage)$"),
+            encoding="utf-8",
+        )
+        self._record_transition()
+
+        result = self._run()
+
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("published schema patterns disagree", result.stderr)
+
+    def test_rejects_an_empty_commit_recorded_as_the_transition(self) -> None:
+        self._elapsed_manifest()
+        self._record_transition()
+
+        result = self._run()
+
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("exactly 1.0.0", result.stderr)
 
     def test_rejects_a_schema_edited_beyond_its_version_pattern(self) -> None:
         self._elapsed_manifest()
@@ -834,6 +959,7 @@ class OneZeroTransitionTests(SoakHarness, unittest.TestCase):
         (self.root / "schemas/plan-lock.schema.json").write_text(
             json.dumps(schema, indent=2) + "\n", encoding="utf-8"
         )
+        self._record_transition()
 
         result = self._run()
 
@@ -846,6 +972,7 @@ class OneZeroTransitionTests(SoakHarness, unittest.TestCase):
         (self.root / self.PINNED_TEST).write_text(
             'VALUE = 2\nPINNED = "1.0.0"\n', encoding="utf-8"
         )
+        self._record_transition()
 
         result = self._run()
 
@@ -858,11 +985,25 @@ class OneZeroTransitionTests(SoakHarness, unittest.TestCase):
         (self.root / "tests/fixtures/compatibility/fixture.txt").write_text(
             "tampered\n", encoding="utf-8"
         )
+        self._record_transition()
 
         result = self._run()
 
         self.assertEqual(result.returncode, 1)
         self.assertIn("tests/fixtures/compatibility/fixture.txt", result.stderr)
+
+    def test_rejects_a_frozen_change_after_the_recorded_transition(self) -> None:
+        self._elapsed_manifest()
+        self._transition()
+        self._record_transition()
+        (self.root / self.PINNED_TEST).write_text(
+            'VALUE = 1\nPINNED = "1.0.1"\n', encoding="utf-8"
+        )
+
+        result = self._run()
+
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("changed after transition_commit", result.stderr)
 
     def test_unchanged_tree_still_passes_a_completed_soak(self) -> None:
         self._elapsed_manifest()
