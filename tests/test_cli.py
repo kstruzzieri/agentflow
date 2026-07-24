@@ -980,6 +980,85 @@ class AgentflowCliTests(unittest.TestCase):
             self.assertEqual(result.returncode, 0)
             self.assertIn("mcp github configured", result.stdout)
 
+    def _reject_fixture(self, cwd: Path) -> dict:
+        """An initialized root whose plan is valid until the caller breaks it."""
+        self.assertEqual(run_agentflow(cwd, "init").returncode, 0)
+        plan = valid_plan()
+        (cwd / ".agent/plan.lock.json").write_text(
+            json.dumps(plan, indent=2), encoding="utf-8"
+        )
+        return plan
+
+    def _write_plan(self, cwd: Path, plan: dict, name: str = "plan.lock.json") -> Path:
+        path = cwd / ".agent" / name
+        path.write_text(json.dumps(plan, indent=2), encoding="utf-8")
+        return path
+
+    def test_build_proof_rejects_plan_that_fails_the_full_contract(self) -> None:
+        # #28: the reproduction from the issue -- a plan missing the contract's
+        # required fields used to produce a current proof reporting
+        # steps_total=0 alongside steps_completed=2.
+        with tempfile.TemporaryDirectory() as tmp:
+            cwd = Path(tmp)
+            plan = self._reject_fixture(cwd)
+            for field in ("scope", "non_goals", "invariants", "allowed_files"):
+                plan.pop(field)
+            self._write_plan(cwd, plan)
+
+            result = run_agentflow(cwd, "build-proof")
+
+            self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+            self.assertIn("invalid working state: plan:", result.stderr)
+            self.assertIn("missing required field: scope", result.stderr)
+            self.assertFalse((cwd / ".agent/proof-pack.json").exists())
+
+    def test_build_proof_rejects_invalid_plan_through_the_plan_flag(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            cwd = Path(tmp)
+            plan = self._reject_fixture(cwd)
+            plan.pop("rollback_plan")
+            self._write_plan(cwd, plan, "alternate-plan.json")
+
+            result = run_agentflow(
+                cwd, "build-proof", "--plan", ".agent/alternate-plan.json"
+            )
+
+            self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+            self.assertIn("missing required field: rollback_plan", result.stderr)
+            self.assertFalse((cwd / ".agent/proof-pack.json").exists())
+
+    def test_build_proof_rejects_invalid_execution_contract(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            cwd = Path(tmp)
+            self._reject_fixture(cwd)
+            self.assertEqual(run_agentflow(cwd, "init-execution").returncode, 0)
+            contract_path = cwd / ".agent/execution.contract.json"
+            contract = json.loads(contract_path.read_text(encoding="utf-8"))
+            contract.pop("contract_type")
+            contract["concurrency"]["writer_model"] = "many_writers"
+            contract_path.write_text(json.dumps(contract, indent=2), encoding="utf-8")
+
+            result = run_agentflow(cwd, "build-proof")
+
+            self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+            self.assertIn("invalid working state: execution contract:", result.stderr)
+            self.assertFalse((cwd / ".agent/proof-pack.json").exists())
+
+    def test_rejected_build_proof_leaves_the_previous_proof_in_place(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            cwd = Path(tmp)
+            plan = self._reject_fixture(cwd)
+            self.assertEqual(run_agentflow(cwd, "build-proof").returncode, 0)
+            proof_path = cwd / ".agent/proof-pack.json"
+            original = proof_path.read_bytes()
+
+            plan.pop("invariants")
+            self._write_plan(cwd, plan)
+            result = run_agentflow(cwd, "build-proof")
+
+            self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+            self.assertEqual(proof_path.read_bytes(), original)
+
     def test_build_proof_writes_structured_metadata_and_reports_missing_evidence(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             cwd = Path(tmp)

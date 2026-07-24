@@ -31,7 +31,11 @@ from .coverage import (
     build_requirement_coverage,
     evaluate_context_budget,
 )
-from .execution import read_step_events, read_step_state
+from .execution import (
+    read_step_events,
+    read_step_state,
+    validate_execution_contract,
+)
 from .execution_coverage import build_execution_coverage
 from .receipts import command_receipts, file_receipts, replay_gates, verify_receipt_outputs
 from .review import (
@@ -49,6 +53,7 @@ from .capabilities import capability_checks, capability_summary
 from .stuck import stuck_block
 from .validation import (
     validate_design_decision_traceability,
+    validate_plan,
     validate_requirement_traceability,
 )
 from .versioning import (
@@ -547,6 +552,43 @@ def _verify_design_decision_coverage(
     return []
 
 
+class InvalidWorkingState(ValueError):
+    """A load-bearing input failed its full runtime contract.
+
+    Distinct from the ledger errors `build_proof` already raises so callers can
+    say which side is at fault.
+    """
+
+
+def _reject_invalid_working_state(root: Path, plan: Dict[str, Any]) -> None:
+    """Apply the full plan and execution-contract validators before proof work.
+
+    #28: the canonical reader's version gate is a compatibility check, not a
+    structural one, so an incomplete plan used to reach proof construction and
+    emit internally impossible execution counts (`steps_total` 0 alongside
+    `steps_completed` 2). `validate-plan` and `lock-plan` already enforce this
+    contract; proof construction is the third ingestion point and was the only
+    one that did not.
+    """
+    plan_errors = validate_plan(plan)
+    if plan_errors:
+        raise InvalidWorkingState("plan: " + "; ".join(plan_errors))
+
+    contract_path = root / EXECUTION_ARTIFACT_PATHS["execution-contract"]
+    if not contract_path.exists():
+        return
+    contract = read_json(contract_path)
+    contract_errors = [
+        finding["message"]
+        for finding in validate_execution_contract(contract)
+        if finding.get("severity") == "error"
+    ]
+    if contract_errors:
+        raise InvalidWorkingState(
+            "execution contract: " + "; ".join(contract_errors)
+        )
+
+
 def build_proof(root: Path, plan_path: Path, strict: bool = False) -> Dict[str, Any]:
     resolved_root = root.resolve()
     resolved_plan_path = plan_path.resolve()
@@ -565,6 +607,9 @@ def build_proof(root: Path, plan_path: Path, strict: bool = False) -> Dict[str, 
         raise ValueError(
             "invalid design decision traceability: " + "; ".join(design_errors)
         )
+    # After the two traceability gates, whose narrower messages `validate_plan`
+    # would otherwise subsume, and still before any proof work is done.
+    _reject_invalid_working_state(root, plan)
     evidence = read_jsonl(root / ".agent/evidence.jsonl")
     context_receipts = read_jsonl(root / ".agent/context-receipts.jsonl")
     failures = read_jsonl(root / ".agent/failures.jsonl")

@@ -8,6 +8,7 @@ from pathlib import Path
 from agentflow import aggregate
 from agentflow.aggregate import Source, parse_sources
 from agentflow.artifacts import append_jsonl, write_json
+from agentflow.execution import default_execution_contract
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -53,20 +54,42 @@ class ParseSourcesTests(unittest.TestCase):
 
 
 def build_tree(root: Path, *, steps, files=None, contract=None):
-    """Write a minimal stub input worktree at `root` (intentionally not a full
-    schema shape). The #110 dry-run analysis reads bytes/rows, not schemas, so
-    these stubs stay minimal; schema_version strings only track current
-    constants (plan-lock 0.3.0, execution-contract 0.3.0) to avoid drift, they
-    are not validated here.
+    """Write a stub input worktree at `root`. The #110 dry-run analysis reads
+    bytes/rows, not schemas, so the ledger rows stay minimal; schema_version
+    strings only track current constants (plan-lock 0.3.0, execution-contract
+    0.3.0) to avoid drift, they are not validated here.
+
+    The plan and execution contract are the exception: since #28 the end-to-end
+    `build-proof` on an aggregated root applies both full runtime contracts, so
+    these two must be structurally complete rather than stubs.
 
     steps: list of step_ids that reach a `completed` event with attempt A1.
     files: list of (path, sha256) file-receipt rows (relative to root).
-    contract: optional execution-contract dict (defaults to a shared stub).
+    contract: optional execution-contract dict (defaults to the runtime default).
     """
     agent = root / ".agent"
     agent.mkdir(parents=True, exist_ok=True)
-    write_json(agent / "plan.lock.json", {"schema_version": "0.3.0", "objective": "o", "steps": []})
-    write_json(agent / "execution.contract.json", contract or {"schema_version": "0.3.0", "command_policy": {"receipt_store": "by_attempt"}})
+    write_json(agent / "plan.lock.json", {
+        "schema_version": "0.3.0",
+        "objective": "o",
+        "scope": ["src/"],
+        "non_goals": [],
+        "invariants": ["stub invariant"],
+        "allowed_files": ["src/"],
+        "blocked_files": [],
+        "validation_gates": ["stub gate"],
+        "rollback_plan": "discard the stub worktree.",
+        "risk_level": "low",
+        "drift_budget": {
+            "unrelated_edits": "none",
+            "new_dependencies": "none",
+            "formatting_drift": "none",
+            "architecture_drift": "none",
+        },
+        "evidence_ids": [],
+        "steps": [],
+    })
+    write_json(agent / "execution.contract.json", contract or default_execution_contract())
     for step_id in steps:
         append_jsonl(agent / "step-runs.jsonl", {"schema_version": "0.4.0", "event": "claimed", "step_id": step_id, "attempt_id": "A1", "recorded_at": "2026-07-04T00:00:00+00:00"})
         append_jsonl(agent / "step-runs.jsonl", {"schema_version": "0.4.0", "event": "completed", "step_id": step_id, "attempt_id": "A1", "recorded_at": "2026-07-04T00:01:00+00:00"})

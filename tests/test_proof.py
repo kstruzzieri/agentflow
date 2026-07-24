@@ -35,11 +35,59 @@ from agentflow.proof import (
 from agentflow.workflow_contract import write_workflow_contract
 
 
+# #28: build-proof applies the same full plan contract as validate-plan and
+# lock-plan, so every plan a test feeds it needs the contract boilerplate. These
+# fields carry no meaning for the assertions below; spread them first so each
+# fixture's own keys still win.
+PLAN_CONTRACT_FIELDS = {
+    "scope": ["Fixture scope."],
+    "non_goals": [],
+    "invariants": ["Fixture invariant."],
+    "allowed_files": ["src/"],
+    "blocked_files": [],
+    "validation_gates": ["fixture gate"],
+    "rollback_plan": "git revert the fixture commit.",
+    "risk_level": "low",
+    "drift_budget": {
+        "unrelated_edits": "none",
+        "new_dependencies": "none",
+        "formatting_drift": "none",
+        "architecture_drift": "none",
+    },
+    "evidence_ids": [],
+}
+
+# Likewise for step shape. Proof construction reads only a step's id, gates,
+# status, and completed flag, so none of these perturb what the tests assert.
+STEP_CONTRACT_FIELDS = {
+    "action": "Fixture step action.",
+    "files": ["src/"],
+    "preconditions": [],
+    "expected_diff": ["fixture diff"],
+    "validation": ["fixture gate"],
+}
+
+
+def complete_initial_plan(root: Path) -> Path:
+    """Fill in the placeholders `create_initial_artifacts` deliberately writes.
+
+    `agentflow init` emits an empty objective and rollback_plan for a human to
+    complete before lock-plan, so since #28 build-proof rejects that plan as
+    invalid working state. Tests that only need *a* proof start from here.
+    """
+    path = root / ".agent/plan.lock.json"
+    plan = json.loads(path.read_text(encoding="utf-8"))
+    plan.update(PLAN_CONTRACT_FIELDS)
+    plan["objective"] = "Fixture objective."
+    write_json(path, plan)
+    return path
+
+
 def plan_with_two_steps() -> dict:
     return {
         "steps": [
-            {"id": "P1", "evidence_ids": ["E1"]},
-            {"id": "P2", "evidence_ids": []},
+            {**STEP_CONTRACT_FIELDS, "id": "P1", "evidence_ids": ["E1"]},
+            {**STEP_CONTRACT_FIELDS, "id": "P2", "evidence_ids": []},
         ],
         "evidence_ids": ["E1", "E2"],
         "context_budget": {
@@ -86,8 +134,8 @@ class CoverageTests(unittest.TestCase):
                 },
             ],
             "steps": [
-                {"id": "P2", "design_decision_ids": ["DD-1", "DD-2"]},
-                {"id": "P1", "design_decision_ids": ["DD-2"]},
+                {**STEP_CONTRACT_FIELDS, "id": "P2", "design_decision_ids": ["DD-1", "DD-2"]},
+                {**STEP_CONTRACT_FIELDS, "id": "P1", "design_decision_ids": ["DD-2"]},
             ],
         }
 
@@ -117,11 +165,11 @@ class CoverageTests(unittest.TestCase):
     def _fixture(self, tmp: str) -> Path:
         root = Path(tmp)
         create_initial_artifacts(root)
-        plan = {
+        plan = {**PLAN_CONTRACT_FIELDS, 
             "schema_version": "0.2.0",
             "objective": "Fixture objective.",
             "scope": ["Fixture scope."],
-            "steps": [{"id": "P1", "action": "Do work.", "evidence_ids": ["E1"]}],
+            "steps": [{**STEP_CONTRACT_FIELDS, "id": "P1", "action": "Do work.", "evidence_ids": ["E1"]}],
             "evidence_ids": ["E1"],
             "context_budget": {"receipts_required": False},
         }
@@ -145,11 +193,11 @@ class CoverageTests(unittest.TestCase):
         create_initial_artifacts(root)
         write_json(
             root / ".agent/plan.lock.json",
-            {
+            {**PLAN_CONTRACT_FIELDS, 
                 "schema_version": "0.3.0",
                 "objective": "Verify criterion coverage integrity.",
                 "steps": [
-                    {
+                    {**STEP_CONTRACT_FIELDS, 
                         "id": "P1",
                         "action": "Run the criterion gate.",
                         "validation": ["criterion-gate"],
@@ -197,17 +245,17 @@ class CoverageTests(unittest.TestCase):
         create_initial_artifacts(root)
         write_json(
             root / ".agent/plan.lock.json",
-            {
+            {**PLAN_CONTRACT_FIELDS, 
                 "schema_version": "0.4.0",
                 "objective": "Verify design decision coverage integrity.",
                 "steps": [
-                    {
+                    {**STEP_CONTRACT_FIELDS, 
                         "id": "P1",
                         "action": "Apply both decisions.",
                         "design_decision_ids": ["DD-1", "DD-2"],
                         "evidence_ids": [],
                     },
-                    {
+                    {**STEP_CONTRACT_FIELDS, 
                         "id": "P2",
                         "action": "Apply the second decision.",
                         "design_decision_ids": ["DD-2"],
@@ -238,11 +286,11 @@ class CoverageTests(unittest.TestCase):
         plan_path = root / ".agent/plan.lock.json"
         write_json(
             plan_path,
-            {
+            {**PLAN_CONTRACT_FIELDS, 
                 "schema_version": "0.3.0",
                 "objective": "Project plan-bound review evidence.",
                 "steps": [
-                    {
+                    {**STEP_CONTRACT_FIELDS, 
                         "id": "P1",
                         "action": "Implement the reviewed criterion.",
                         "criterion_ids": ["AC-REVIEW"],
@@ -428,11 +476,11 @@ class CoverageTests(unittest.TestCase):
     def _fixture_unsupported_step(self, tmp: str, receipts_required: bool) -> Path:
         root = Path(tmp)
         create_initial_artifacts(root)
-        plan = {
+        plan = {**PLAN_CONTRACT_FIELDS, 
             "schema_version": "0.2.0",
             "objective": "Fixture objective.",
             "scope": ["Fixture scope."],
-            "steps": [{"id": "P1", "action": "Do work.", "evidence_ids": []}],
+            "steps": [{**STEP_CONTRACT_FIELDS, "id": "P1", "action": "Do work.", "evidence_ids": []}],
             "evidence_ids": [],
             "context_budget": {"receipts_required": receipts_required},
         }
@@ -507,11 +555,11 @@ class CoverageTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             create_initial_artifacts(root)
-            plan = {
+            plan = {**PLAN_CONTRACT_FIELDS, 
                 "schema_version": "0.3.0",
                 "objective": "Trace a command-backed criterion.",
                 "steps": [
-                    {
+                    {**STEP_CONTRACT_FIELDS, 
                         "id": "P1",
                         "action": "Run the check.",
                         "validation": ["unit-tests"],
@@ -580,7 +628,7 @@ class CoverageTests(unittest.TestCase):
         # (e.g. a work command run via --gate) must not satisfy the criterion.
         plan = {
             "steps": [
-                {
+                {**STEP_CONTRACT_FIELDS, 
                     "id": "P1",
                     "validation": ["unit-tests"],
                     "criterion_ids": ["AC-1"],
@@ -618,7 +666,7 @@ class CoverageTests(unittest.TestCase):
     def test_env_wrapped_receipt_with_gate_label_satisfies_criterion(self) -> None:
         plan = {
             "steps": [
-                {
+                {**STEP_CONTRACT_FIELDS, 
                     "id": "P1",
                     "validation": ["unit-tests"],
                     "criterion_ids": ["AC-1"],
@@ -667,6 +715,7 @@ class CoverageTests(unittest.TestCase):
             steps = []
             for index, criterion in enumerate(criteria, start=1):
                 step = {
+                    **STEP_CONTRACT_FIELDS,
                     "id": f"P{index}",
                     "action": criterion["text"],
                     "validation": [f"gate-{index}"],
@@ -686,7 +735,7 @@ class CoverageTests(unittest.TestCase):
                         {"kind": "command", "run": ["check", str(index)]}
                     ]
                 steps.append(step)
-            plan = {
+            plan = {**PLAN_CONTRACT_FIELDS, 
                 "schema_version": "0.3.0",
                 "objective": "Project every criterion state.",
                 "steps": steps,
@@ -764,11 +813,11 @@ class CoverageTests(unittest.TestCase):
                 {"id": "AC-INSPECTED", "text": "Inspection exists."},
                 {"id": "AC-NOT-INSPECTED", "text": "Inspection is missing."},
             ]
-            plan = {
+            plan = {**PLAN_CONTRACT_FIELDS, 
                 "schema_version": "0.3.0",
                 "objective": "Project inspection gates.",
                 "steps": [
-                    {
+                    {**STEP_CONTRACT_FIELDS, 
                         "id": "P1",
                         "action": "Inspect both criteria.",
                         "validation": ["inspect-present", "inspect-missing"],
@@ -1663,7 +1712,7 @@ class CoverageTests(unittest.TestCase):
             )
 
     def test_markdown_coverage_renders_counts_not_raw_dicts(self) -> None:
-        plan = {"objective": "o", "scope": [], "steps": []}
+        plan = {**PLAN_CONTRACT_FIELDS, "objective": "o", "scope": [], "steps": []}
         proof = {"coverage": {"dangling_supports": [{"evidence_id": "E1", "step_id": "PX"}]}}
 
         markdown = render_markdown(plan, proof, [], {"status": "pass", "notes": []})
@@ -1678,7 +1727,7 @@ class CoverageTests(unittest.TestCase):
             from agentflow.receipts import record_command
 
             init_execution_artifacts(root)
-            plan = {
+            plan = {**PLAN_CONTRACT_FIELDS, 
                 "schema_version": "0.3.0",
                 "objective": "Fixture objective.",
                 "scope": ["Fixture scope."],
@@ -1697,7 +1746,7 @@ class CoverageTests(unittest.TestCase):
                     "test_weakening": 0,
                 },
                 "steps": [
-                    {
+                    {**STEP_CONTRACT_FIELDS, 
                         "id": "P1",
                         "action": "Do work.",
                         "files": ["fixture.txt"],
@@ -1776,7 +1825,7 @@ class CoverageTests(unittest.TestCase):
 
 class LeaseProofTests(unittest.TestCase):
     def _plan(self) -> dict:
-        return {
+        return {**PLAN_CONTRACT_FIELDS, 
             "schema_version": "0.3.0", "objective": "Lease proof fixture.",
             "scope": ["s"], "non_goals": [], "invariants": ["i"],
             "allowed_files": [".agent/", "f.txt"], "blocked_files": [],
@@ -1786,7 +1835,7 @@ class LeaseProofTests(unittest.TestCase):
                              "formatting_drift": "minimal",
                              "architecture_drift": "requires_approval",
                              "test_weakening": 0},
-            "steps": [{"id": "P1", "action": "a", "files": ["f.txt"],
+            "steps": [{**STEP_CONTRACT_FIELDS, "id": "P1", "action": "a", "files": ["f.txt"],
                        "preconditions": ["p"], "expected_diff": ["d"],
                        "validation": ["python3 -c \"print('ok')\""],
                        "evidence_ids": []}],
@@ -1866,7 +1915,7 @@ class LeaseProofTests(unittest.TestCase):
 
 class ReviewEvidenceExemptionTests(unittest.TestCase):
     def test_kind_review_evidence_not_flagged_unused(self) -> None:
-        plan = {"steps": [{"id": "P1", "evidence_ids": []}], "evidence_ids": []}
+        plan = {"steps": [{**STEP_CONTRACT_FIELDS, "id": "P1", "evidence_ids": []}], "evidence_ids": []}
         evidence = [
             {"id": "E-review-RR1", "kind": "review", "claim": "x", "supports": []},
             {"id": "E-orphan", "kind": "user", "claim": "y", "supports": []},
@@ -1883,7 +1932,7 @@ class ReviewProofTests(unittest.TestCase):
         init_execution_artifacts(root)
         write_json(
             root / ".agent/plan.lock.json",
-            {
+            {**PLAN_CONTRACT_FIELDS, 
                 "schema_version": "0.3.0", "objective": "o", "scope": ["s"],
                 "non_goals": [], "invariants": ["i"],
                 "allowed_files": [".agent/**"], "blocked_files": [],
@@ -1895,7 +1944,7 @@ class ReviewProofTests(unittest.TestCase):
                     "architecture_drift": "requires_approval",
                     "test_weakening": 0,
                 },
-                "steps": [{
+                "steps": [{**STEP_CONTRACT_FIELDS, 
                     "id": "P1", "action": "a", "files": [".agent/**"],
                     "preconditions": ["p"], "expected_diff": ["d"],
                     "validation": ["python3 -m unittest"], "evidence_ids": [],
@@ -2057,11 +2106,11 @@ class AdaptiveReviewProofTests(unittest.TestCase):
         init_execution_artifacts(root)
         write_json(
             root / ".agent/plan.lock.json",
-            {
+            {**PLAN_CONTRACT_FIELDS, 
                 "schema_version": "0.3.0",
                 "objective": "o",
                 "scope": ["s"],
-                "steps": [{"id": "P1", "evidence_ids": []}],
+                "steps": [{**STEP_CONTRACT_FIELDS, "id": "P1", "evidence_ids": []}],
                 "evidence_ids": [],
             },
         )
@@ -2209,8 +2258,8 @@ class VerifyReviewTests(unittest.TestCase):
         init_execution_artifacts(root)
         write_json(
             root / ".agent/plan.lock.json",
-            {"schema_version": "0.3.0", "objective": "o", "scope": ["s"],
-             "steps": [{"id": "P1", "evidence_ids": []}], "evidence_ids": []},
+            {**PLAN_CONTRACT_FIELDS, "schema_version": "0.3.0", "objective": "o", "scope": ["s"],
+             "steps": [{**STEP_CONTRACT_FIELDS, "id": "P1", "evidence_ids": []}], "evidence_ids": []},
         )
         state = root / "docs/ai/state/main"
         state.mkdir(parents=True)
@@ -2315,11 +2364,11 @@ class VerifyReviewTests(unittest.TestCase):
             init_execution_artifacts(root)
             write_json(
                 root / ".agent/plan.lock.json",
-                {
+                {**PLAN_CONTRACT_FIELDS, 
                     "schema_version": "0.3.0",
                     "objective": "o",
                     "scope": ["s"],
-                    "steps": [{"id": "P1", "evidence_ids": []}],
+                    "steps": [{**STEP_CONTRACT_FIELDS, "id": "P1", "evidence_ids": []}],
                     "evidence_ids": ["E-missing"],
                 },
             )
@@ -2340,11 +2389,11 @@ class VerifyReviewTests(unittest.TestCase):
             init_execution_artifacts(root)
             write_json(
                 root / ".agent/plan.lock.json",
-                {
+                {**PLAN_CONTRACT_FIELDS, 
                     "schema_version": "0.3.0",
                     "objective": "o",
                     "scope": ["s"],
-                    "steps": [{"id": "P1", "evidence_ids": []}],
+                    "steps": [{**STEP_CONTRACT_FIELDS, "id": "P1", "evidence_ids": []}],
                     "evidence_ids": ["E-missing"],
                 },
             )
@@ -2385,9 +2434,8 @@ class VerifyReviewTests(unittest.TestCase):
 
 class HunkProofSummaryTests(unittest.TestCase):
     def _minimal_plan(self) -> dict:
-        return {"schema_version": "0.3.0", "objective": "x", "scope": [], "non_goals": [],
-                "invariants": [], "allowed_files": ["b.py"], "blocked_files": [],
-                "validation_gates": [], "rollback_plan": "", "risk_level": "low",
+        return {**PLAN_CONTRACT_FIELDS, "schema_version": "0.3.0", "objective": "x",
+                "allowed_files": ["b.py"], "blocked_files": [], "risk_level": "low",
                 "drift_budget": {"unrelated_edits": 0, "new_dependencies": 0,
                                  "formatting_drift": "minimal", "architecture_drift": "requires_approval",
                                  "test_weakening": 0},
@@ -2463,11 +2511,11 @@ class StuckProofTests(unittest.TestCase):
     def _root(self, tmp: str) -> Path:
         root = Path(tmp)
         create_initial_artifacts(root)
-        plan = {
+        plan = {**PLAN_CONTRACT_FIELDS, 
             "schema_version": "0.2.0",
             "objective": "Stuck fixture.",
             "scope": ["Stuck fixture."],
-            "steps": [{"id": "P1", "action": "Do work.", "evidence_ids": ["E1"]}],
+            "steps": [{**STEP_CONTRACT_FIELDS, "id": "P1", "action": "Do work.", "evidence_ids": ["E1"]}],
             "evidence_ids": ["E1"],
             "context_budget": {"receipts_required": False},
         }
@@ -2531,11 +2579,11 @@ class AggregationProvenanceProofTests(unittest.TestCase):
     def _root(self, tmp: str) -> Path:
         root = Path(tmp)
         create_initial_artifacts(root)
-        plan = {
+        plan = {**PLAN_CONTRACT_FIELDS, 
             "schema_version": "0.2.0",
             "objective": "Aggregation fixture.",
             "scope": ["Aggregation fixture."],
-            "steps": [{"id": "P1", "action": "Do work.", "evidence_ids": ["E1"]}],
+            "steps": [{**STEP_CONTRACT_FIELDS, "id": "P1", "action": "Do work.", "evidence_ids": ["E1"]}],
             "evidence_ids": ["E1"],
             "context_budget": {"receipts_required": False},
         }
@@ -2880,6 +2928,7 @@ class ProofSchemaGateTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             create_initial_artifacts(root)
+            complete_initial_plan(root)
             proof = build_proof(root, root / ".agent/plan.lock.json")
             proof["schema_version"] = "0.12.0"
             proof_path = write_proof_metadata(root, proof)
@@ -2895,6 +2944,7 @@ class ProofSchemaGateTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             create_initial_artifacts(root)
+            complete_initial_plan(root)
             proof = build_proof(root, root / ".agent/plan.lock.json")
             proof["schema_version"] = "0.12.0"
             del proof["meta"]
