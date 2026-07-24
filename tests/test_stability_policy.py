@@ -292,9 +292,20 @@ class StabilityPolicyTests(unittest.TestCase):
         self.assertIn("_AGGREGATION_SCHEMA_VERSION_RE", audit)
         self.assertIn("candidate commit", audit)
         self.assertIn("freeze set", audit)
-        self.assertIn(
-            "reset the candidate commit, start date, and 21-day clock", audit
-        )
+        # Pin the reset rule's substance, not its phrasing: the clock is derived
+        # from Git rather than a declared start date, and an earlier verbatim
+        # assertion here forced the audit to quote wording it had outgrown.
+        for phrase in ("reset the candidate commit", "21-day clock"):
+            self.assertIn(phrase, audit)
+
+    def test_audit_documents_the_post_soak_version_only_carve_out(self) -> None:
+        audit = (ROOT / "docs/schema-freeze-audit.md").read_text(encoding="utf-8")
+        # Collapse wrapping so the assertions pin content, not line breaks.
+        flowed = " ".join(audit.split())
+
+        self.assertIn("version-only change", flowed)
+        self.assertIn("Once the 21 days have elapsed", flowed)
+        self.assertIn("strict increase", flowed)
 
 
 if __name__ == "__main__":
