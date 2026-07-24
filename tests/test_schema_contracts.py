@@ -187,6 +187,63 @@ class SchemaContractTests(unittest.TestCase):
         gate_kind = plan_schema["properties"]["steps"]["items"]["properties"]["gates"]["items"]["properties"]["kind"]["enum"]
         self.assertEqual(tuple(sorted(gate_kind)), GATE_KINDS)
 
+    def test_plan_schema_gates_design_references_on_0_4(self) -> None:
+        # #29: PR #26 added both design-reference fields to the published schema
+        # but no conditional, so a structurally complete 0.3.0 plan carrying them
+        # satisfied the schema while runtime rejected it. There is no jsonschema
+        # dependency here, so this pins the conditional's shape and its version
+        # pattern; the runtime side of the same boundary is asserted below.
+        from agentflow.validation import LEGACY_DESIGN_DECISION_VERSION_PATTERN
+
+        schema = load_schema("plan-lock.schema.json")
+        conditional = next(
+            entry
+            for entry in schema["allOf"]
+            if "design" in entry.get("$comment", "").lower()
+        )
+
+        self.assertEqual(
+            conditional["if"]["properties"]["schema_version"]["pattern"],
+            LEGACY_DESIGN_DECISION_VERSION_PATTERN,
+        )
+        self.assertEqual(conditional["if"]["required"], ["schema_version"])
+        forbidden = conditional["then"]["not"]["anyOf"]
+        self.assertIn({"required": ["design_decisions"]}, forbidden)
+        self.assertIn(
+            {
+                "required": ["steps"],
+                "properties": {
+                    "steps": {"contains": {"required": ["design_decision_ids"]}}
+                },
+            },
+            forbidden,
+        )
+
+    def test_legacy_design_pattern_agrees_with_the_runtime_gate(self) -> None:
+        # The schema compares a regex and the runtime compares a version tuple.
+        # Prove the two representations select the same versions, so neither can
+        # drift into disagreeing again.
+        from agentflow.validation import (
+            LEGACY_DESIGN_DECISION_VERSION_PATTERN,
+            _design_decision_schema_is_legacy,
+        )
+
+        legacy_pattern = re.compile(LEGACY_DESIGN_DECISION_VERSION_PATTERN)
+        plan_version_pattern = re.compile(
+            load_schema("plan-lock.schema.json")["properties"]["schema_version"][
+                "pattern"
+            ]
+        )
+
+        for version in ("0.0.0", "0.1.9", "0.3.0", "0.3.11", "0.4.0", "0.4.7"):
+            self.assertRegex(version, plan_version_pattern, version)
+            plan = {"schema_version": version, "design_decisions": [{"id": "D1"}]}
+            self.assertEqual(
+                bool(legacy_pattern.fullmatch(version)),
+                _design_decision_schema_is_legacy(plan),
+                version,
+            )
+
     def test_plan_schema_documents_requirement_traceability(self) -> None:
         schema = load_schema("plan-lock.schema.json")
         requirement = schema["properties"]["requirements"]["items"]

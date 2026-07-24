@@ -217,6 +217,16 @@ def _uses_design_decision_fields(plan: Dict[str, Any]) -> bool:
     )
 
 
+DESIGN_DECISION_MINIMUM_VERSION = (0, 4)
+
+# The same boundary expressed for the published plan schema, whose declarative
+# conditional cannot compare version tuples. Intersected with the schema's own
+# `^0\.[0-4]\.[0-9]+$` version pattern this is exactly the pre-0.4 range.
+# tests/test_schema_contracts.py pins the two together; #29 closed the drift
+# that appeared when PR #26 added the fields to the schema without a gate.
+LEGACY_DESIGN_DECISION_VERSION_PATTERN = r"^0\.[0-3]\.[0-9]+$"
+
+
 def _design_decision_schema_is_legacy(plan: Dict[str, Any]) -> bool:
     recorded = plan.get("schema_version")
     if not isinstance(recorded, str):
@@ -225,7 +235,7 @@ def _design_decision_schema_is_legacy(plan: Dict[str, Any]) -> bool:
         version = parse_schema_version(recorded)
     except ValueError:
         return False
-    return (version.major, version.minor) < (0, 4)
+    return (version.major, version.minor) < DESIGN_DECISION_MINIMUM_VERSION
 
 
 def validate_design_decision_traceability(plan: Dict[str, Any]) -> List[str]:
