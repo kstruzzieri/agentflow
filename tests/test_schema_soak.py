@@ -50,8 +50,30 @@ def _contracts_source(versions: dict[str, str]) -> str:
     return "".join(f'{name} = "{version}"\n' for name, version in versions.items())
 
 
-class SchemaSoakCheckerTests(unittest.TestCase):
-    """Every clock here is relative to now, so no fixture expires with time."""
+SCHEMA_FILES = tuple(sorted(guard.SCHEMA_FILE_CONSTANTS))
+
+
+def _published_schema(pattern: str) -> str:
+    return (
+        json.dumps(
+            {
+                "title": "fixture",
+                "properties": {
+                    "schema_version": {"type": "string", "pattern": pattern}
+                },
+            },
+            indent=2,
+        )
+        + "\n"
+    )
+
+
+class SoakHarness:
+    """Shared temp-repo harness.
+
+    Not a TestCase: subclassing a TestCase would re-run every inherited test
+    once per subclass.
+    """
 
     def setUp(self) -> None:
         self._tmp = tempfile.TemporaryDirectory()
@@ -64,7 +86,12 @@ class SchemaSoakCheckerTests(unittest.TestCase):
                 path /= "fixture.txt"
             else:
                 path.parent.mkdir(parents=True, exist_ok=True)
-            if path.suffix == ".py":
+            if relative in guard.SCHEMA_FILE_CONSTANTS:
+                # Published schemas carry a schema_version pattern, and the
+                # guard now checks that each one accepts its constant. A stub
+                # without one would fail that check for the wrong reason.
+                content = _published_schema(r"^0\.[0-9]+\.[0-9]+$")
+            elif path.suffix == ".py":
                 content = "VALUE = 1\n"
             elif path.suffix == ".json":
                 content = '{"flag": true}\n'
@@ -186,6 +213,10 @@ class SchemaSoakCheckerTests(unittest.TestCase):
             stdout.getvalue(),
             stderr.getvalue(),
         )
+
+
+class SchemaSoakCheckerTests(SoakHarness, unittest.TestCase):
+    """Every clock here is relative to now, so no fixture expires with time."""
 
     # -- soak not started ------------------------------------------------
 
@@ -358,18 +389,33 @@ class SchemaSoakCheckerTests(unittest.TestCase):
         self.assertIn(CONTRACTS, result.stderr)
 
     def test_allows_version_only_bump_after_soak_elapses(self) -> None:
+        # Stays inside the range the published patterns already accept, so this
+        # isolates the version-only rule. Crossing to 1.0 additionally requires
+        # the schemas to move; see OneZeroTransitionTests.
         self._elapsed_manifest()
-        self._bump(**{name: "1.0.0" for name in SCHEMA_VERSIONS})
+        # 0.99.0 outranks every current constant, including proof-pack 0.11.0.
+        self._bump(**{name: "0.99.0" for name in SCHEMA_VERSIONS})
 
         result = self._run()
 
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("schema soak complete", result.stdout)
 
+    def test_rejects_constants_bumped_past_their_published_patterns(self) -> None:
+        # A constants-only jump to 1.0 leaves every published pattern rejecting
+        # the version the tree now declares -- the half-transition #5 forbids.
+        self._elapsed_manifest()
+        self._bump(**{name: "1.0.0" for name in SCHEMA_VERSIONS})
+
+        result = self._run()
+
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("published schema patterns disagree", result.stderr)
+
     def test_rejects_version_bump_bundled_with_another_change(self) -> None:
         self._elapsed_manifest()
         (self.root / CONTRACTS).write_text(
-            _contracts_source({**SCHEMA_VERSIONS, "PLAN_SCHEMA_VERSION": "1.0.0"})
+            _contracts_source({**SCHEMA_VERSIONS, "PLAN_SCHEMA_VERSION": "0.99.0"})
             + 'SNEAKY_NEW_FIELD = "added"\n',
             encoding="utf-8",
         )
@@ -704,7 +750,178 @@ class SchemaSoakCheckerTests(unittest.TestCase):
         self.assertNotIn("Traceback", result.stderr)
 
 
+class OneZeroTransitionTests(SoakHarness, unittest.TestCase):
+    """Issue #5's 1.0 transition must be expressible inside the freeze set.
+
+    The published patterns all reject `1.0.0`, so the bump is not a
+    `contracts.py` edit in isolation: the schemas, the version-pinning tests,
+    and a new 1.0 fixture have to move with it. These pin that the whole
+    transition passes together and that nothing else rides along with it.
+    """
+
+    PINNED_TEST = "tests/test_versioning.py"
+
+    def setUp(self) -> None:
+        super().setUp()
+        # The base fixture writes stub JSON; the transition rules only mean
+        # something against schemas shaped like the published ones.
+        for name in SCHEMA_FILES:
+            (self.root / name).write_text(
+                _published_schema(r"^0\.[0-9]+\.[0-9]+$"), encoding="utf-8"
+            )
+        (self.root / self.PINNED_TEST).write_text(
+            'VALUE = 1\nPINNED = "0.4.0"\n', encoding="utf-8"
+        )
+        self.candidate = self._commit(
+            "realistic candidate", self.now - timedelta(days=30)
+        )
+
+    def _bump_schemas(self, pattern: str = r"^1\.[0-9]+\.[0-9]+$") -> None:
+        for name in SCHEMA_FILES:
+            (self.root / name).write_text(_published_schema(pattern), encoding="utf-8")
+
+    def _transition(self) -> None:
+        self._bump(**{name: "1.0.0" for name in SCHEMA_VERSIONS})
+        self._bump_schemas()
+        (self.root / self.PINNED_TEST).write_text(
+            'VALUE = 1\nPINNED = "1.0.0"\n', encoding="utf-8"
+        )
+        fixture = self.root / "tests/fixtures/compatibility/one-zero"
+        fixture.mkdir(parents=True, exist_ok=True)
+        (fixture / "proof.json").write_text(
+            '{"schema_version": "1.0.0"}\n', encoding="utf-8"
+        )
+
+    def test_complete_transition_passes_after_the_soak(self) -> None:
+        self._elapsed_manifest()
+        self._transition()
+
+        result = self._run()
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("schema soak complete", result.stdout)
+
+    def test_complete_transition_is_rejected_before_the_soak_elapses(self) -> None:
+        self._write_manifest(self._manifest(), age=timedelta(days=1))
+        self._transition()
+
+        result = self._run()
+
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("freeze set changed since candidate", result.stderr)
+
+    def test_rejects_a_pattern_that_still_rejects_the_new_constant(self) -> None:
+        """The half-transition that byte-identical schemas would hide."""
+        self._elapsed_manifest()
+        self._transition()
+        (self.root / "schemas/plan-lock.schema.json").write_text(
+            _published_schema(r"^0\.[0-9]+\.[0-9]+$"), encoding="utf-8"
+        )
+
+        result = self._run()
+
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("published schema patterns disagree", result.stderr)
+        self.assertIn("PLAN_SCHEMA_VERSION 1.0.0", result.stderr)
+
+    def test_rejects_a_schema_edited_beyond_its_version_pattern(self) -> None:
+        self._elapsed_manifest()
+        self._transition()
+        schema = json.loads(
+            (self.root / "schemas/plan-lock.schema.json").read_text(encoding="utf-8")
+        )
+        schema["title"] = "tampered"
+        (self.root / "schemas/plan-lock.schema.json").write_text(
+            json.dumps(schema, indent=2) + "\n", encoding="utf-8"
+        )
+
+        result = self._run()
+
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("schemas/plan-lock.schema.json", result.stderr)
+
+    def test_rejects_a_pinning_test_edited_beyond_its_semver_literals(self) -> None:
+        self._elapsed_manifest()
+        self._transition()
+        (self.root / self.PINNED_TEST).write_text(
+            'VALUE = 2\nPINNED = "1.0.0"\n', encoding="utf-8"
+        )
+
+        result = self._run()
+
+        self.assertEqual(result.returncode, 1)
+        self.assertIn(self.PINNED_TEST, result.stderr)
+
+    def test_rejects_modifying_an_existing_immutable_fixture(self) -> None:
+        self._elapsed_manifest()
+        self._transition()
+        (self.root / "tests/fixtures/compatibility/fixture.txt").write_text(
+            "tampered\n", encoding="utf-8"
+        )
+
+        result = self._run()
+
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("tests/fixtures/compatibility/fixture.txt", result.stderr)
+
+    def test_unchanged_tree_still_passes_a_completed_soak(self) -> None:
+        self._elapsed_manifest()
+
+        result = self._run()
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+
+class LedgerLockFreezeTests(SoakHarness, unittest.TestCase):
+    """`locks.py` serializes every append to the frozen ledgers."""
+
+    def test_changing_the_ledger_lock_resets_the_soak(self) -> None:
+        self._write_manifest(self._manifest())
+        (self.root / "src/agentflow/locks.py").write_text(
+            "VALUE = 2\n", encoding="utf-8"
+        )
+
+        result = self._run()
+
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("src/agentflow/locks.py", result.stderr)
+
+
 class FreezeSetContractTests(unittest.TestCase):
+    def test_ledger_locking_paths_are_frozen(self) -> None:
+        # execution.py, receipts.py, and review.py hold this lock while
+        # appending frozen ledgers, so its semantics are load-bearing.
+        for path in (
+            "src/agentflow/locks.py",
+            "tests/test_lease_locking.py",
+            "tests/test_receipt_concurrency.py",
+            "tests/test_lease_enforcement.py",
+        ):
+            self.assertIn(path, guard.FREEZE_PATHS)
+
+    def test_every_published_schema_maps_to_a_load_bearing_constant(self) -> None:
+        self.assertEqual(
+            set(guard.SCHEMA_FILE_CONSTANTS.values()), set(guard.SCHEMA_CONSTANTS)
+        )
+        for path in guard.SCHEMA_FILE_CONSTANTS:
+            self.assertIn(path, guard.FREEZE_PATHS)
+
+    def test_published_patterns_accept_the_declared_constants(self) -> None:
+        # The live repository must always satisfy the coherence rule the
+        # transition window enforces, soak or no soak.
+        import re
+
+        constants = guard._schema_versions(
+            (REPO_ROOT / guard.CONTRACTS_PATH).read_text(encoding="utf-8"),
+            "contracts.py",
+        )
+        for path, constant in sorted(guard.SCHEMA_FILE_CONSTANTS.items()):
+            pattern = guard._schema_version_pattern(
+                (REPO_ROOT / path).read_bytes()
+            )
+            self.assertIsNotNone(pattern, path)
+            self.assertRegex(constants[constant], re.compile(pattern), path)
+
     def test_every_freeze_path_exists_in_this_repository(self) -> None:
         missing = sorted(
             path for path in guard.FREEZE_PATHS if not (REPO_ROOT / path).exists()

@@ -68,6 +68,11 @@ FREEZE_PATHS = frozenset(
         "src/agentflow/git.py",
         "src/agentflow/handoff.py",
         "src/agentflow/hunks.py",
+        # execution.py, receipts.py, and review.py hold this lock while
+        # appending the frozen ledgers; its correctness is what prevents
+        # duplicate attempt and receipt ids, so it is load-bearing mutation
+        # semantics even though it never names a schema constant.
+        "src/agentflow/locks.py",
         "src/agentflow/packs.py",
         "src/agentflow/porcelain.py",
         "src/agentflow/proof.py",
@@ -94,7 +99,10 @@ FREEZE_PATHS = frozenset(
         "tests/test_execution_verification.py",
         "tests/test_handoff.py",
         "tests/test_hunks.py",
+        "tests/test_lease_enforcement.py",
+        "tests/test_lease_locking.py",
         "tests/test_packs.py",
+        "tests/test_receipt_concurrency.py",
         "tests/test_porcelain.py",
         "tests/test_proof.py",
         "tests/test_proof_compatibility.py",
@@ -130,6 +138,26 @@ MANIFEST_FIELDS = frozenset(
         "freeze_paths",
         "workloads",
     }
+)
+
+# Each published schema and the constant whose value its pattern must accept.
+SCHEMA_FILE_CONSTANTS = {
+    "schemas/plan-lock.schema.json": "PLAN_SCHEMA_VERSION",
+    "schemas/execution-contract.schema.json": "EXECUTION_CONTRACT_SCHEMA_VERSION",
+    "schemas/proof-pack.schema.json": "PROOF_PACK_SCHEMA_VERSION",
+    "schemas/step-runs.schema.json": "STEP_RUNS_SCHEMA_VERSION",
+    "schemas/command-receipts.schema.json": "COMMAND_RECEIPTS_SCHEMA_VERSION",
+    "schemas/file-receipts.schema.json": "FILE_RECEIPTS_SCHEMA_VERSION",
+    "schemas/verification-runs.schema.json": "VERIFICATION_RUNS_SCHEMA_VERSION",
+    "schemas/drift-report.schema.json": "DRIFT_REPORT_SCHEMA_VERSION",
+}
+
+# Immutable fixture trees. The 1.0 transition adds a fixture built by the 1.0
+# code; issue #5 requires the existing snapshots to survive untouched, so these
+# accept additions and nothing else.
+FIXTURE_ROOTS = (
+    "tests/fixtures/compatibility",
+    "tests/fixtures/proof-bundle",
 )
 
 
@@ -391,6 +419,103 @@ def _version_tuple(version: str) -> tuple[int, ...]:
     return tuple(int(part) for part in version.split("."))
 
 
+def _schema_version_pattern(data: bytes) -> str | None:
+    value = _load_json(data.decode("utf-8", errors="replace"))
+    if not isinstance(value, dict):
+        return None
+    spec = value.get("properties", {})
+    if not isinstance(spec, dict):
+        return None
+    field = spec.get("schema_version")
+    if not isinstance(field, dict):
+        return None
+    pattern = field.get("pattern")
+    return pattern if isinstance(pattern, str) else None
+
+
+def _pattern_blind(data: bytes, path: str) -> str:
+    """Canonicalize a published schema with its ``schema_version`` pattern erased.
+
+    Two revisions compare equal here exactly when they differ only in that
+    pattern -- the one schema edit the 1.0 transition needs.
+    """
+    try:
+        value = _load_json(data.decode("utf-8", errors="replace"))
+    except (json.JSONDecodeError, DuplicateJsonKeyError) as exc:
+        raise SoakCheckError(f"frozen JSON path is invalid: {path}") from exc
+    if isinstance(value, dict):
+        spec = value.get("properties")
+        if isinstance(spec, dict) and isinstance(spec.get("schema_version"), dict):
+            spec["schema_version"] = {
+                key: item
+                for key, item in spec["schema_version"].items()
+                if key != "pattern"
+            }
+    return json.dumps(value, ensure_ascii=False, separators=(",", ":"), sort_keys=True)
+
+
+def _semver_blind(source: str, label: str) -> str:
+    """Dump a Python AST with every semver-shaped string literal erased.
+
+    Version-pinning tests restate the load-bearing constants verbatim, so the
+    1.0 transition has to touch them. Comparing with those literals erased means
+    a test may change which versions it pins and nothing else -- no assertion,
+    fixture, or control flow can ride along.
+    """
+    try:
+        tree = ast.parse(source)
+    except SyntaxError as exc:
+        raise SoakCheckError(f"{label} is not valid Python") from exc
+    for node in ast.walk(tree):
+        if (
+            isinstance(node, ast.Constant)
+            and isinstance(node.value, str)
+            and SEMVER_RE.fullmatch(node.value) is not None
+        ):
+            node.value = ""
+    return ast.dump(tree, annotate_fields=True, include_attributes=False)
+
+
+def _is_schema_pattern_bump(candidate_data: bytes, current_data: bytes, path: str) -> bool:
+    """True when a published schema changed only its ``schema_version`` pattern."""
+    return _pattern_blind(candidate_data, path) == _pattern_blind(current_data, path)
+
+
+def _require_pattern_coherence(root: Path, supported: dict[str, str]) -> None:
+    """Every published pattern must accept the constant the tree now declares.
+
+    Checked across all eight schemas, not just the edited ones: a schema left
+    untouched is byte-identical to the candidate and would otherwise sail past
+    the freeze diff while its pattern still rejects the new version. That silent
+    half-transition is the incoherence #5's "patterns and validators must agree"
+    acceptance criterion exists to prevent.
+    """
+    incoherent = []
+    for path, constant in sorted(SCHEMA_FILE_CONSTANTS.items()):
+        version = supported.get(constant)
+        if version is None:
+            continue
+        try:
+            pattern = _schema_version_pattern((root / path).read_bytes())
+        except (OSError, json.JSONDecodeError, DuplicateJsonKeyError) as exc:
+            raise SoakCheckError(f"frozen JSON path is invalid: {path}") from exc
+        if pattern is None:
+            incoherent.append(f"{path} declares no schema_version pattern")
+            continue
+        try:
+            accepts = re.compile(pattern).fullmatch(version) is not None
+        except re.error:
+            incoherent.append(f"{path} schema_version pattern is not valid regex")
+            continue
+        if not accepts:
+            incoherent.append(f"{path} pattern rejects {constant} {version}")
+    if incoherent:
+        raise SoakCheckError(
+            "published schema patterns disagree with the declared constants: "
+            + "; ".join(incoherent)
+        )
+
+
 def _require_pre_1_0(versions: dict[str, str], detail: str) -> None:
     # ponytail: the literal 0.x ceiling is issue #5's 1.0 freeze. A later 2.0
     # soak swaps this for the then-current released major.
@@ -587,8 +712,17 @@ def _validate_freeze_paths(
     value: Any,
     blobs: dict[str, bytes],
     candidate_tree: dict[str, str],
-    allow_version_only: bool,
+    allow_transition: bool,
 ) -> None:
+    """Diff the declared freeze set between the candidate and the working tree.
+
+    ``allow_transition`` opens issue #5's post-soak window. It permits exactly
+    the mechanical parts of the 1.0 transition -- a version-only ``contracts.py``
+    bump, a schema whose only edit is a ``schema_version`` pattern that accepts
+    the new constant, a test whose only edit is which semver literals it pins,
+    and additions under the immutable fixture trees. Everything else still
+    fails, in that window as much as outside it.
+    """
     if (
         not isinstance(value, list)
         or not all(isinstance(path, str) for path in value)
@@ -597,7 +731,30 @@ def _validate_freeze_paths(
     ):
         raise SoakCheckError("freeze_paths must match the audited freeze set")
     current_tree = _current_tree(root, sorted(FREEZE_PATHS))
-    differences = set(candidate_tree) ^ set(current_tree)
+    supported = (
+        _schema_versions(
+            blobs[CONTRACTS_PATH].decode("utf-8", errors="replace"),
+            "candidate contracts.py",
+        )
+        if CONTRACTS_PATH in blobs
+        else {}
+    )
+    if allow_transition:
+        supported = _current_schema_versions(root)
+        _require_pattern_coherence(root, supported)
+
+    added = set(current_tree) - set(candidate_tree)
+    removed = set(candidate_tree) - set(current_tree)
+    differences = set(removed)
+    for path in sorted(added):
+        # A new fixture is the one addition #5 asks for; anything else appearing
+        # inside the freeze set is drift.
+        if allow_transition and any(
+            path.startswith(root_path + "/") for root_path in FIXTURE_ROOTS
+        ):
+            continue
+        differences.add(path)
+
     for path in sorted(set(candidate_tree) & set(current_tree)):
         if candidate_tree[path] != current_tree[path]:
             differences.add(path)
@@ -606,10 +763,23 @@ def _validate_freeze_paths(
         current_data = _current_bytes(root, path, current_tree[path])
         if candidate_data == current_data:
             continue
-        if path == CONTRACTS_PATH and allow_version_only:
-            if _is_version_only_bump(
+        if allow_transition:
+            if path == CONTRACTS_PATH and _is_version_only_bump(
                 candidate_data.decode("utf-8", errors="replace"),
                 current_data.decode("utf-8", errors="replace"),
+            ):
+                continue
+            if path in SCHEMA_FILE_CONSTANTS and _is_schema_pattern_bump(
+                candidate_data, current_data, path
+            ):
+                continue
+            if (
+                path.startswith("tests/")
+                and path.endswith(".py")
+                and _semver_blind(
+                    candidate_data.decode("utf-8", errors="replace"), path
+                )
+                == _semver_blind(current_data.decode("utf-8", errors="replace"), path)
             ):
                 continue
         if _semantic_value(path, candidate_data) != _semantic_value(path, current_data):
@@ -727,7 +897,7 @@ def check_soak(root: Path) -> str:
             manifest["freeze_paths"],
             blobs,
             candidate_tree,
-            allow_version_only=False,
+            allow_transition=False,
         )
         return f"schema soak awaiting trusted main-CI observation: {candidate}"
 
@@ -745,7 +915,7 @@ def check_soak(root: Path) -> str:
         manifest["freeze_paths"],
         blobs,
         candidate_tree,
-        allow_version_only=elapsed and completed_workloads,
+        allow_transition=elapsed and completed_workloads,
     )
 
     stamp = minimum_end.isoformat().replace("+00:00", "Z")
