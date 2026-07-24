@@ -166,5 +166,31 @@
     "locked": { "type": "boolean" },
     "locked_at": { "type": ["string", "null"] }
   },
-  "additionalProperties": true
+  "additionalProperties": true,
+  "allOf": [
+    {
+      "$comment": "Design references were introduced in plan-lock 0.4.0. The version pattern here mirrors validation.LEGACY_DESIGN_DECISION_VERSION_PATTERN, which tests/test_schema_contracts.py pins to this schema.",
+      "if": {
+        "required": ["schema_version"],
+        "properties": {
+          "schema_version": { "pattern": "^0\\.[0-3]\\.[0-9]+$" }
+        }
+      },
+      "then": {
+        "not": {
+          "anyOf": [
+            { "required": ["design_decisions"] },
+            {
+              "required": ["steps"],
+              "properties": {
+                "steps": {
+                  "contains": { "required": ["design_decision_ids"] }
+                }
+              }
+            }
+          ]
+        }
+      }
+    }
+  ]
 }
