@@ -57,8 +57,7 @@ The delta audit found two current-schema defects:
 
 Issues #28 and #29 are pre-soak blockers. Commit `3fd6e79` is an audit baseline,
 **not** a soak candidate. After both close, issue #5 must delta-audit the
-then-current `main` again before recording a candidate, start time, or minimum
-end time.
+then-current `main` again before recording a candidate.
 
 One non-blocking maintenance discrepancy remains: `STEP_EVENT_KINDS` omits the
 runtime and schema event `amendment_started`, but that constant currently has no
@@ -69,15 +68,27 @@ identified by this audit is closed and the soak below completes.
 
 ## Mechanical soak gate
 
-The soak begins only when issue #5 records an exact candidate commit and UTC
-start time after all schema defects are closed. A follow-up tracking commit may
-add `docs/schema-freeze-soak.json` because that file is outside the freeze set.
+The soak begins only when issue #5 records an exact candidate commit after all
+schema defects are closed. A follow-up tracking commit adds
+`docs/schema-freeze-soak.json` because that file is outside the freeze set.
 The manifest must contain:
 
-- the candidate commit and UTC start time;
-- the minimum end time exactly 21 full days later;
-- the freeze set of load-bearing constants and paths; and
+- the candidate commit;
+- the eight load-bearing constants exactly as the candidate declares them;
+- the freeze set of load-bearing paths; and
 - recorded CI, MCP, workflow-pack, aggregation, and released-pyz workload runs.
+
+The manifest does **not** declare the clock. `scripts/check_schema_soak.py`
+derives the start from the commit that first records the candidate and sets the
+minimum end 21 days later, so shortening the soak would require rewriting
+published history rather than editing a string. The guard compares that minimum
+end against the current time on every run and reports the remaining time until
+it passes.
+
+Each workload must be recorded at the candidate commit, no earlier than the
+candidate and no later than the present, so issue #5's requirement to exercise
+them *during* the soak is satisfied by appending to the manifest as the runs
+happen.
 
 The freeze set is:
 
@@ -94,23 +105,35 @@ The freeze set is:
   `validation.py`, and `aggregate.py`;
 - proof and public projection code in `src/agentflow/proof.py`, `coverage.py`,
   `review.py`, `capabilities.py`, `workflow_contract.py`, `events.py`,
-  `stuck.py`, `porcelain.py`, `viewer.py`, and `handoff.py`; and
+  `stuck.py`, `runtime.py`, `porcelain.py`, `viewer.py`, and `handoff.py`; and
 - their pinning tests in `tests/test_schema_contracts.py`,
-  `tests/test_artifact_versioning.py`, `tests/test_cli.py`,
-  `tests/test_packs.py`, `tests/test_draft_plan.py`,
+  `tests/test_artifact_versioning.py`, `tests/test_versioning.py`,
+  `tests/test_cli.py`, `tests/test_packs.py`, `tests/test_draft_plan.py`,
   `tests/test_execution_contract.py`, `tests/test_execution_state.py`,
   `tests/test_execution_verification.py`, `tests/test_receipts.py`,
   `tests/test_hunks.py`, `tests/test_risk.py`, `tests/test_aggregate.py`,
   `tests/test_proof.py`, `tests/test_review.py`,
   `tests/test_capabilities.py`, `tests/test_workflow_contract.py`,
-  `tests/test_events.py`, `tests/test_stuck.py`, `tests/test_porcelain.py`,
-  `tests/test_view_proof.py`, `tests/test_handoff.py`,
-  `tests/test_proof_compatibility.py`, `tests/fixtures/compatibility/`, and
+  `tests/test_events.py`, `tests/test_stuck.py`, `tests/test_runtime.py`,
+  `tests/test_porcelain.py`, `tests/test_view_proof.py`,
+  `tests/test_handoff.py`, `tests/test_proof_compatibility.py`,
+  `tests/test_ci_proof_bundle.py`, `tests/fixtures/compatibility/`, and
   `tests/fixtures/proof-bundle/`.
+
+`runtime.py` is frozen because `proof.runtime_block` folds the recorded runtime
+snapshot into the proof canonical core; a reshape there is a load-bearing
+change even though `runtime.py` never names a load-bearing constant.
 
 CI must diff that declared freeze set from the candidate commit. Any shape,
 requiredness, canonical serialization, or load-bearing semantic change makes
-the check fail and must reset the candidate commit, start time, evidence, and
-21-day clock. In issue #5's date-level wording, it must "reset the candidate commit, start date, and 21-day clock."
-A version-only change after an unchanged soak is allowed. This makes a reset a
-Git fact rather than a judgment call.
+the check fail and must reset the candidate commit, evidence, and 21-day clock.
+This makes a reset a Git fact rather than a judgment call.
+
+The one exception is issue #5's version-only change. Once the 21 days have
+elapsed, and only then, the guard accepts a `contracts.py` whose sole difference
+from the candidate is a strict increase in one or more of the eight load-bearing
+constants; the file must be otherwise identical after AST normalization, and
+every other frozen path must still match. That is what lets the soaked shape
+become the shape assigned 1.0.0 without discarding the soak that earned it.
+Before the clock elapses the same edit is rejected, and the guard refuses any
+candidate that already declares a 1.0 load-bearing constant.

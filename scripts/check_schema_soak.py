@@ -1,8 +1,12 @@
 #!/usr/bin/env python3
 """Validate the pre-bump schema-soak candidate and its frozen paths.
 
-The eventual 1.0 work must add its narrowly tested version-only transition;
-this guard deliberately grants no exemption while the 21-day soak is active.
+The soak clock is a Git fact. It starts at the commit that first records the
+candidate in ``docs/schema-freeze-soak.json`` and runs for 21 days; the manifest
+never declares it, so it cannot be back-dated. Until the clock elapses the
+freeze set must not change at all and the load-bearing constants must stay
+pre-1.0. Once it elapses the guard grants exactly one carve-out -- issue #5's
+version-only bump of those constants -- and nothing else.
 """
 
 from __future__ import annotations
@@ -10,6 +14,7 @@ from __future__ import annotations
 import argparse
 import ast
 import json
+import os
 import re
 import subprocess
 import sys
@@ -20,7 +25,9 @@ from typing import Any, Sequence
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 MANIFEST_PATH = Path("docs/schema-freeze-soak.json")
-MANIFEST_SCHEMA_VERSION = "0.1.0"
+MANIFEST_SCHEMA_VERSION = "0.2.0"
+CONTRACTS_PATH = "src/agentflow/contracts.py"
+SOAK_DURATION = timedelta(days=21)
 SHA_RE = re.compile(r"^[0-9a-f]{40}$")
 SEMVER_RE = re.compile(r"^(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)$")
 
@@ -68,6 +75,7 @@ FREEZE_PATHS = frozenset(
         "src/agentflow/receipts.py",
         "src/agentflow/review.py",
         "src/agentflow/risk.py",
+        "src/agentflow/runtime.py",
         "src/agentflow/stuck.py",
         "src/agentflow/validation.py",
         "src/agentflow/versioning.py",
@@ -78,6 +86,7 @@ FREEZE_PATHS = frozenset(
         "tests/test_aggregate.py",
         "tests/test_artifact_versioning.py",
         "tests/test_capabilities.py",
+        "tests/test_ci_proof_bundle.py",
         "tests/test_cli.py",
         "tests/test_draft_plan.py",
         "tests/test_events.py",
@@ -93,9 +102,11 @@ FREEZE_PATHS = frozenset(
         "tests/test_receipts.py",
         "tests/test_review.py",
         "tests/test_risk.py",
+        "tests/test_runtime.py",
         "tests/test_schema_contracts.py",
         "tests/test_schema_soak.py",
         "tests/test_stuck.py",
+        "tests/test_versioning.py",
         "tests/test_view_proof.py",
         "tests/test_workflow_contract.py",
     }
@@ -107,7 +118,7 @@ WORKLOAD_IDS = frozenset(
         "mcp-stdio",
         "workflow-pack",
         "aggregation",
-        "released-v0.4.0",
+        "released-pyz",
     }
 )
 
@@ -115,8 +126,6 @@ MANIFEST_FIELDS = frozenset(
     {
         "schema_version",
         "candidate_commit",
-        "start_time_utc",
-        "minimum_end_time_utc",
         "schema_versions",
         "freeze_paths",
         "workloads",
@@ -212,15 +221,21 @@ def _validate_candidate(root: Path, value: Any) -> str:
     return value
 
 
-def _candidate_time(root: Path, candidate: str) -> datetime:
-    value = _git(root, "show", "-s", "--format=%cI", candidate).stdout.strip()
+def _commit_time(root: Path, commit: str) -> datetime:
+    value = _git(root, "show", "-s", "--format=%cI", commit).stdout.strip()
     try:
         return datetime.fromisoformat(value).astimezone(timezone.utc)
     except ValueError as exc:
-        raise SoakCheckError("candidate commit has an invalid commit timestamp") from exc
+        raise SoakCheckError(f"commit {commit} has an invalid commit timestamp") from exc
 
 
-def _manifest_recorded_time(root: Path, candidate: str) -> datetime:
+def _soak_start_time(root: Path, candidate: str) -> datetime:
+    """Return the commit time of the commit that first recorded this candidate.
+
+    Deriving the start from Git rather than a declared manifest field is what
+    makes the clock un-back-datable: shortening the soak would require rewriting
+    published history rather than editing a string.
+    """
     commits = _git(
         root,
         "log",
@@ -228,8 +243,9 @@ def _manifest_recorded_time(root: Path, candidate: str) -> datetime:
         "--reverse",
         "--",
         MANIFEST_PATH.as_posix(),
-    ).stdout.splitlines()
-    recorded_at: datetime | None = None
+    ).stdout.split()
+    started_at: datetime | None = None
+    unreadable = False
     for commit in commits:
         snapshot = _git(
             root,
@@ -238,21 +254,27 @@ def _manifest_recorded_time(root: Path, candidate: str) -> datetime:
             check=False,
         )
         if snapshot.returncode != 0:
-            recorded_at = None
+            started_at = None
             continue
         try:
-            data = json.loads(snapshot.stdout)
-        except json.JSONDecodeError:
-            recorded_at = None
+            data = _load_json(snapshot.stdout)
+        except (json.JSONDecodeError, DuplicateJsonKeyError):
+            unreadable = True
+            started_at = None
             continue
         if isinstance(data, dict) and data.get("candidate_commit") == candidate:
-            if recorded_at is None:
-                recorded_at = _candidate_time(root, commit)
+            if started_at is None:
+                started_at = _commit_time(root, commit)
         else:
-            recorded_at = None
-    if recorded_at is None:
+            started_at = None
+    if started_at is None:
+        if unreadable:
+            raise SoakCheckError(
+                f"cannot determine the soak start: {MANIFEST_PATH.as_posix()} is "
+                "unreadable in Git history"
+            )
         raise SoakCheckError("manifest candidate must be recorded in Git history")
-    return recorded_at
+    return started_at
 
 
 def _schema_versions(source: str, label: str) -> dict[str, str]:
@@ -277,49 +299,90 @@ def _schema_versions(source: str, label: str) -> dict[str, str]:
     return versions
 
 
-def _candidate_schema_versions(root: Path, candidate: str) -> dict[str, str]:
-    source = _git(
-        root, "show", f"{candidate}:src/agentflow/contracts.py"
-    ).stdout
-    return _schema_versions(source, "candidate contracts.py")
+def _version_blind(source: str, label: str) -> str:
+    """Dump the AST with the load-bearing constant *values* erased.
 
-
-def _validate_pre_soak_schema_versions(root: Path) -> None:
-    path = root / "src/agentflow/contracts.py"
+    Two ``contracts.py`` revisions compare equal here exactly when they differ
+    only in those version strings, which is the one post-soak change issue #5
+    allows. Everything else in the file still has to match byte-for-byte after
+    AST normalization.
+    """
     try:
-        versions = _schema_versions(path.read_text(encoding="utf-8"), str(path))
-    except (OSError, UnicodeDecodeError) as exc:
-        raise SoakCheckError(f"cannot read {path}: {exc}") from exc
+        tree = ast.parse(source)
+    except SyntaxError as exc:
+        raise SoakCheckError(f"{label} is not valid Python") from exc
+    for node in tree.body:
+        if not isinstance(node, ast.Assign) or len(node.targets) != 1:
+            continue
+        target = node.targets[0]
+        if (
+            isinstance(target, ast.Name)
+            and target.id in SCHEMA_CONSTANTS
+            and isinstance(node.value, ast.Constant)
+            and isinstance(node.value.value, str)
+        ):
+            node.value.value = ""
+    return ast.dump(tree, annotate_fields=True, include_attributes=False)
+
+
+def _version_tuple(version: str) -> tuple[int, ...]:
+    return tuple(int(part) for part in version.split("."))
+
+
+def _require_pre_1_0(versions: dict[str, str], detail: str) -> None:
+    # ponytail: the literal 0.x ceiling is issue #5's 1.0 freeze. A later 2.0
+    # soak swaps this for the then-current released major.
     if any(
         SEMVER_RE.fullmatch(version) is None or not version.startswith("0.")
         for version in versions.values()
     ):
-        raise SoakCheckError(
-            "load-bearing schema constants must remain pre-1.0 until the soak starts"
-        )
+        raise SoakCheckError(detail)
 
 
-def _validate_schema_versions(root: Path, candidate: str, value: Any) -> None:
+def _current_schema_versions(root: Path) -> dict[str, str]:
+    path = root / CONTRACTS_PATH
+    try:
+        source = path.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError) as exc:
+        raise SoakCheckError(f"cannot read {path}: {exc}") from exc
+    return _schema_versions(source, str(path))
+
+
+def _validate_schema_versions(value: Any, blob: bytes) -> None:
     if not isinstance(value, dict) or set(value) != SCHEMA_CONSTANTS:
         raise SoakCheckError("schema_versions must contain exactly the eight load-bearing constants")
     if any(not isinstance(version, str) or SEMVER_RE.fullmatch(version) is None for version in value.values()):
         raise SoakCheckError("schema_versions values must be MAJOR.MINOR.PATCH strings")
-    if value != _candidate_schema_versions(root, candidate):
-        raise SoakCheckError("schema_versions do not match candidate contracts.py")
-
-
-def _git_blob(root: Path, candidate: str, path: str) -> bytes:
-    result = subprocess.run(
-        ["git", "show", f"{candidate}:{path}"],
-        cwd=root,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        check=False,
+    candidate_versions = _schema_versions(
+        blob.decode("utf-8", errors="replace"), "candidate contracts.py"
     )
-    if result.returncode != 0:
-        detail = result.stderr.decode("utf-8", errors="replace").strip()
-        raise SoakCheckError(detail or f"cannot read candidate path: {path}")
-    return result.stdout
+    if value != candidate_versions:
+        raise SoakCheckError("schema_versions do not match candidate contracts.py")
+    _require_pre_1_0(
+        candidate_versions,
+        "candidate_commit must record pre-1.0 schema constants; 1.0 is reached "
+        "by the post-soak version-only bump",
+    )
+
+
+def _is_version_only_bump(candidate_source: str, current_source: str) -> bool:
+    """True when ``contracts.py`` changed only by increasing load-bearing versions."""
+    if _version_blind(candidate_source, "candidate contracts.py") != _version_blind(
+        current_source, CONTRACTS_PATH
+    ):
+        return False
+    before = _schema_versions(candidate_source, "candidate contracts.py")
+    after = _schema_versions(current_source, CONTRACTS_PATH)
+    for name, new_version in after.items():
+        old_version = before[name]
+        if new_version == old_version:
+            continue
+        if (
+            SEMVER_RE.fullmatch(new_version) is None
+            or _version_tuple(new_version) <= _version_tuple(old_version)
+        ):
+            return False
+    return True
 
 
 def _semantic_value(path: str, data: bytes) -> Any:
@@ -347,39 +410,123 @@ def _semantic_value(path: str, data: bytes) -> Any:
     return data
 
 
-def _candidate_files(root: Path, candidate: str, paths: list[str]) -> dict[str, str]:
-    result = _git(
-        root, "ls-tree", "-r", candidate, "--", *paths
+def _candidate_tree(root: Path, candidate: str, paths: Sequence[str]) -> dict[str, str]:
+    """Map every frozen path in the candidate tree to its Git file mode."""
+    result = _git(root, "ls-tree", "-r", "-z", candidate, "--", *paths)
+    tree: dict[str, str] = {}
+    for entry in result.stdout.split("\0"):
+        if not entry:
+            continue
+        metadata, path = entry.split("\t", 1)
+        tree[path] = metadata.split(" ", 1)[0]
+    return tree
+
+
+def _candidate_blobs(
+    root: Path, candidate: str, paths: Sequence[str]
+) -> dict[str, bytes]:
+    """Read every frozen blob in one `git cat-file --batch`.
+
+    One `git show` per path costs ~150 subprocesses on the real freeze set; this
+    is a single pipe, which keeps the guard well under a second on every job in
+    the CI matrix.
+    """
+    if not paths:
+        return {}
+    # A newline in a frozen path would desynchronize the batch protocol below.
+    unsafe = sorted(path for path in paths if "\n" in path)
+    if unsafe:
+        raise SoakCheckError("frozen path contains a newline: " + ", ".join(unsafe))
+    request = "".join(f"{candidate}:{path}\n" for path in paths).encode("utf-8")
+    result = subprocess.run(
+        ["git", "cat-file", "--batch"],
+        cwd=root,
+        input=request,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
     )
-    files: dict[str, str] = {}
-    for line in result.stdout.splitlines():
-        metadata, path = line.split("\t", 1)
-        mode = metadata.split(" ", 1)[0]
-        files[path] = mode
-    return files
+    if result.returncode != 0:
+        detail = result.stderr.decode("utf-8", errors="replace").strip()
+        raise SoakCheckError(detail or "cannot read candidate blobs")
+    blobs: dict[str, bytes] = {}
+    stream = result.stdout
+    offset = 0
+    for path in paths:
+        end = stream.find(b"\n", offset)
+        if end < 0:
+            raise SoakCheckError(f"cannot read candidate path: {path}")
+        header = stream[offset:end].decode("utf-8", errors="replace")
+        offset = end + 1
+        parts = header.rsplit(" ", 2)
+        if len(parts) != 3 or not parts[2].isdigit():
+            raise SoakCheckError(f"cannot read candidate path: {path}")
+        size = int(parts[2])
+        blobs[path] = stream[offset : offset + size]
+        offset += size + 1
+    return blobs
 
 
-def _current_files(root: Path, paths: list[str]) -> dict[str, str]:
+def _current_mode(root: Path, path: str) -> str | None:
+    target = root / path
+    if target.is_symlink():
+        return "120000"
+    if not target.is_file():
+        return None
+    return "100755" if target.stat().st_mode & 0o111 else "100644"
+
+
+def _current_tree(root: Path, paths: Sequence[str]) -> dict[str, str]:
     result = _git(
         root,
         "ls-files",
         "--cached",
         "--others",
         "--exclude-standard",
+        "-z",
         "--",
         *paths,
     )
-    files: dict[str, str] = {}
-    for path in result.stdout.splitlines():
-        target = root / path
-        if target.is_symlink():
-            files[path] = "120000"
-        elif target.is_file():
-            files[path] = "100755" if target.stat().st_mode & 0o111 else "100644"
-    return files
+    tree: dict[str, str] = {}
+    for path in result.stdout.split("\0"):
+        if not path:
+            continue
+        mode = _current_mode(root, path)
+        if mode is not None:
+            tree[path] = mode
+    return tree
 
 
-def _validate_freeze_paths(root: Path, candidate: str, value: Any) -> None:
+def _current_bytes(root: Path, path: str, mode: str) -> bytes:
+    target = root / path
+    try:
+        if mode == "120000":
+            return os.readlink(target).encode("utf-8")
+        return target.read_bytes()
+    except OSError as exc:
+        raise SoakCheckError(f"cannot read frozen path: {path}") from exc
+
+
+def _frozen_paths_present(root: Path) -> None:
+    """Catch a stale ``FREEZE_PATHS`` entry before the soak makes it load-bearing.
+
+    The list is hand-maintained; without this a rename would sit undetected
+    until the day someone tries to start the clock.
+    """
+    missing = sorted(path for path in FREEZE_PATHS if not (root / path).exists())
+    if missing:
+        raise SoakCheckError(
+            "freeze path missing from the working tree: " + ", ".join(missing)
+        )
+
+
+def _validate_freeze_paths(
+    root: Path,
+    value: Any,
+    blobs: dict[str, bytes],
+    candidate_tree: dict[str, str],
+    allow_version_only: bool,
+) -> None:
     if (
         not isinstance(value, list)
         or not all(isinstance(path, str) for path in value)
@@ -387,30 +534,23 @@ def _validate_freeze_paths(root: Path, candidate: str, value: Any) -> None:
         or set(value) != FREEZE_PATHS
     ):
         raise SoakCheckError("freeze_paths must match the audited freeze set")
-    paths = sorted(FREEZE_PATHS)
-    candidate_files = _candidate_files(root, candidate, paths)
-    missing_paths = [
-        path
-        for path in paths
-        if path not in candidate_files
-        and not any(file.startswith(path + "/") for file in candidate_files)
-    ]
-    if missing_paths:
-        raise SoakCheckError(
-            "freeze path missing from candidate: " + ", ".join(missing_paths)
-        )
-    current_files = _current_files(root, paths)
-    differences = set(candidate_files) ^ set(current_files)
-    for path in set(candidate_files) & set(current_files):
-        if candidate_files[path] != current_files[path] or current_files[path] == "120000":
+    current_tree = _current_tree(root, sorted(FREEZE_PATHS))
+    differences = set(candidate_tree) ^ set(current_tree)
+    for path in sorted(set(candidate_tree) & set(current_tree)):
+        if candidate_tree[path] != current_tree[path]:
             differences.add(path)
             continue
-        candidate_value = _semantic_value(path, _git_blob(root, candidate, path))
-        try:
-            current_data = (root / path).read_bytes()
-        except OSError as exc:
-            raise SoakCheckError(f"cannot read frozen path: {path}") from exc
-        if candidate_value != _semantic_value(path, current_data):
+        candidate_data = blobs[path]
+        current_data = _current_bytes(root, path, current_tree[path])
+        if candidate_data == current_data:
+            continue
+        if path == CONTRACTS_PATH and allow_version_only:
+            if _is_version_only_bump(
+                candidate_data.decode("utf-8", errors="replace"),
+                current_data.decode("utf-8", errors="replace"),
+            ):
+                continue
+        if _semantic_value(path, candidate_data) != _semantic_value(path, current_data):
             differences.add(path)
     if differences:
         raise SoakCheckError(
@@ -422,7 +562,7 @@ def _validate_workloads(
     value: Any,
     candidate: str,
     candidate_time: datetime,
-    start_time: datetime,
+    now: datetime,
 ) -> None:
     if not isinstance(value, list) or not all(isinstance(item, dict) for item in value):
         raise SoakCheckError("workloads must be an array of objects")
@@ -456,9 +596,11 @@ def _validate_workloads(
             raise SoakCheckError(
                 f"workload {workload_id} recorded_at_utc must not be earlier than candidate_commit"
             )
-        if recorded_at > start_time:
+        # Issue #5 requires these workloads to be exercised *during* the soak, so
+        # the only upper bound is the present.
+        if recorded_at > now:
             raise SoakCheckError(
-                f"workload {workload_id} recorded_at_utc must not be later than start_time_utc"
+                f"workload {workload_id} recorded_at_utc must not be in the future"
             )
         url = item["url"]
         if url is not None and (not isinstance(url, str) or not url.strip()):
@@ -466,6 +608,7 @@ def _validate_workloads(
 
 
 def check_soak(root: Path) -> str:
+    now = datetime.now(timezone.utc)
     manifest_path = root / MANIFEST_PATH
     if not manifest_path.exists():
         history = _git(
@@ -478,33 +621,55 @@ def check_soak(root: Path) -> str:
         )
         if history.stdout.strip():
             raise SoakCheckError("manifest was removed after the soak started")
-        _validate_pre_soak_schema_versions(root)
+        _frozen_paths_present(root)
+        _require_pre_1_0(
+            _current_schema_versions(root),
+            "load-bearing schema constants must remain pre-1.0 until the soak starts",
+        )
         return f"schema soak not started: {MANIFEST_PATH.as_posix()} is absent"
+
     manifest = _read_manifest(manifest_path)
     candidate = _validate_candidate(root, manifest["candidate_commit"])
-    candidate_time = _candidate_time(root, candidate)
-    manifest_recorded_time = _manifest_recorded_time(root, candidate)
-    start_time = _utc_timestamp(manifest["start_time_utc"], "start_time_utc")
+    candidate_time = _commit_time(root, candidate)
+    start_time = _soak_start_time(root, candidate)
     if start_time < candidate_time:
-        raise SoakCheckError("start_time_utc must not be earlier than candidate_commit")
-    if start_time < manifest_recorded_time:
-        raise SoakCheckError("start_time_utc must not predate manifest record")
-    minimum_end = _utc_timestamp(
-        manifest["minimum_end_time_utc"], "minimum_end_time_utc"
-    )
-    if minimum_end - start_time != timedelta(days=21):
+        raise SoakCheckError("the recording commit must not predate candidate_commit")
+    minimum_end = start_time + SOAK_DURATION
+    elapsed = now >= minimum_end
+
+    paths = sorted(FREEZE_PATHS)
+    candidate_tree = _candidate_tree(root, candidate, paths)
+    missing_paths = [
+        path
+        for path in paths
+        if path not in candidate_tree
+        and not any(file.startswith(path + "/") for file in candidate_tree)
+    ]
+    if missing_paths:
         raise SoakCheckError(
-            "minimum_end_time_utc must be exactly 21 days after start_time_utc"
+            "freeze path missing from candidate: " + ", ".join(missing_paths)
         )
-    _validate_schema_versions(root, candidate, manifest["schema_versions"])
-    _validate_workloads(
-        manifest["workloads"], candidate, candidate_time, start_time
+    blobs = _candidate_blobs(root, candidate, sorted(candidate_tree))
+
+    _validate_schema_versions(manifest["schema_versions"], blobs[CONTRACTS_PATH])
+    _validate_workloads(manifest["workloads"], candidate, candidate_time, now)
+    _validate_freeze_paths(
+        root,
+        manifest["freeze_paths"],
+        blobs,
+        candidate_tree,
+        allow_version_only=elapsed,
     )
-    _validate_freeze_paths(root, candidate, manifest["freeze_paths"])
-    return (
-        f"schema soak guard passed: {candidate} unchanged through "
-        f"{manifest['minimum_end_time_utc']}"
-    )
+
+    stamp = minimum_end.isoformat().replace("+00:00", "Z")
+    if not elapsed:
+        remaining = minimum_end - now
+        return (
+            f"schema soak in progress: {candidate} unchanged, "
+            f"{remaining.days}d {remaining.seconds // 3600}h remain "
+            f"(minimum end {stamp})"
+        )
+    return f"schema soak complete: {candidate} unchanged through {stamp}"
 
 
 def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
