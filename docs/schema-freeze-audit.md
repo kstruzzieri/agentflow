@@ -1,14 +1,20 @@
 # V1 schema-freeze audit
 
 Delta-audit baseline: commit
-`3fd6e79c4eb1c763f03c128338d719af344ec8cb`, Agentflow 0.4.0, 1,307
+`bfa0b82608ec3eb390d1dae944fecf167b320bdd`, Agentflow 0.4.0, 1,379
 tests passing and 1 skipped on Python 3.13. Issues
 [#4](https://github.com/kstruzzieri/agentflow/issues/4),
 [#5](https://github.com/kstruzzieri/agentflow/issues/5), and
 [#11](https://github.com/kstruzzieri/agentflow/issues/11) define the scope.
 
-This baseline includes the aggregation fix from PR #24, the locked-plan design
-reference work from PR #26, and the distribution preparation from PR #27.
+This baseline includes the schema-soak guard from PR #30 and the two pre-soak
+blocker fixes from PR #31, on top of the earlier aggregation fix (PR #24),
+locked-plan design references (PR #26), and distribution preparation (PR #27).
+
+**Result: GO.** Every schema-affecting defect this audit opened is closed, the
+eight published patterns agree with their runtime validators, and the candidate
+survives the full suite and all five soak workloads. `bfa0b82` is the recorded
+soak candidate.
 
 ## Load-bearing inventory
 
@@ -39,56 +45,77 @@ plans are auxiliary. Their versions continue independently; the load-bearing
 
 ## Defects and blockers
 
-The aggregation 0.x-only JSON Schema pattern and runtime
-`_AGGREGATION_SCHEMA_VERSION_RE` originally tracked in
-[#14](https://github.com/kstruzzieri/agentflow/issues/14) were fixed by PR #24.
-The delta audit found two current-schema defects:
+Every schema-affecting defect this audit opened is now closed:
 
-- [`build-proof` accepts schema-invalid working state](https://github.com/kstruzzieri/agentflow/issues/28).
-  At `3fd6e79`, the reproduced plan fails its full validator with ten missing
-  required fields and the execution contract fails with two structural errors.
-  `build-proof` nevertheless exits successfully and emits proof schema 0.11.0
-  with `steps_total=0`, `steps_completed=2`, and no failed checks. The build
-  path does not apply either full validator.
-- [The plan JSON Schema omits the design-reference version gate](https://github.com/kstruzzieri/agentflow/issues/29).
-  The published schema allows `design_decisions` and
-  `steps[].design_decision_ids` under 0.3.x, while runtime validation and
-  `docs/agent-workflow.md` require 0.4.0 or newer.
+- The aggregation 0.x-only JSON Schema pattern and runtime
+  `_AGGREGATION_SCHEMA_VERSION_RE`
+  ([#14](https://github.com/kstruzzieri/agentflow/issues/14)) were fixed by
+  PR #24; the published aggregation pattern is now full three-part semver and
+  accepts a supported 1.0 manifest.
+- [`build-proof` accepts schema-invalid working state](https://github.com/kstruzzieri/agentflow/issues/28)
+  was fixed by PR #31. `build_proof` now applies the full `validation.validate_plan`
+  and `execution.validate_execution_contract` contracts before any proof output,
+  and writes nothing when either fails, so the internally impossible
+  `steps_total=0` / `steps_completed=2` proof from `3fd6e79` can no longer be
+  produced.
+- [The plan JSON Schema omits the design-reference version gate](https://github.com/kstruzzieri/agentflow/issues/29)
+  was fixed by PR #31. `schemas/plan-lock.schema.json` now forbids
+  `design_decisions` and `steps[].design_decision_ids` on `0.0.x`-`0.3.x` plans
+  through a conditional whose version pattern is pinned to
+  `validation.LEGACY_DESIGN_DECISION_VERSION_PATTERN`, so the published schema
+  and runtime agree.
 
-Issues #28 and #29 are pre-soak blockers. Commit `3fd6e79` is an audit baseline,
-**not** a soak candidate. After both close, issue #5 must delta-audit the
-then-current `main` again before recording a candidate.
+The `bfa0b82` delta audit found no new schema-affecting defect. The eight
+published patterns each accept their current constant version, and the two
+representations of the design-reference boundary — the schema regex and the
+runtime version-tuple comparison — select the same versions.
 
-One non-blocking maintenance discrepancy remains: `STEP_EVENT_KINDS` omits the
-runtime and schema event `amendment_started`, but that constant currently has no
-consumer and does not alter emitted or accepted artifacts.
+One non-blocking maintenance discrepancy remains, unchanged from the prior
+audit: `STEP_EVENT_KINDS` omits the runtime and schema event
+`amendment_started`. That event is emitted by `execution.py`, accepted by the
+`step-runs` schema enum, and read by `proof.py`, `review.py`, and
+`execution_coverage.py`; `STEP_EVENT_KINDS` itself has no consumer in `src/` or
+`tests/`, so the stale constant does not gate, emit, or accept anything. It is
+not part of the frozen load-bearing set.
 
 No load-bearing constant may become 1.0.0 until every schema-affecting issue
-identified by this audit is closed and the soak below completes.
+identified by this audit is closed and the soak below completes. As of this
+baseline, the first condition holds.
 
 ## Mechanical soak gate
 
 The soak begins only when issue #5 records an exact candidate commit after all
-schema defects are closed. A follow-up tracking commit adds
-`docs/schema-freeze-soak.json` because that file is outside the freeze set.
-The manifest must contain:
+schema defects are closed. A tracking commit adds `docs/schema-freeze-soak.json`
+because that file is outside the freeze set. The manifest must contain:
 
 - the candidate commit;
+- a `workflow_run_id` — `null` until a trusted main-CI run is observed, then the
+  numeric id of that run;
 - the eight load-bearing constants exactly as the candidate declares them;
 - the freeze set of load-bearing paths; and
-- recorded CI, MCP, workflow-pack, aggregation, and released-pyz workload runs.
+- the CI, MCP, workflow-pack, aggregation, and released-pyz workload runs,
+  recorded during the soak.
 
-The manifest does **not** declare the clock. `scripts/check_schema_soak.py`
-derives the start from the commit that first records the candidate and sets the
-minimum end 21 days later, so shortening the soak would require rewriting
-published history rather than editing a string. The guard compares that minimum
-end against the current time on every run and reports the remaining time until
-it passes.
+The manifest does **not** declare the clock, and the guard does not trust a
+local timestamp for it. `scripts/check_schema_soak.py` starts the soak from a
+trusted observation of `main`: the `workflow_run_id` must resolve, through the
+GitHub API, to a completed successful **push** run of this repository's
+`.github/workflows/ci.yml` on `main` whose head commit contains the manifest's
+recording commit. The soak start is that run's `created_at`, and the minimum end
+is 21 days later. Anchoring the start to a CI observation rather than a commit
+time means shortening the soak would require forging a GitHub Actions run, not
+editing a string.
 
-Each workload must be recorded at the candidate commit, no earlier than the
-candidate and no later than the present, so issue #5's requirement to exercise
-them *during* the soak is satisfied by appending to the manifest as the runs
-happen.
+Recording proceeds in two phases. First the manifest lands with
+`workflow_run_id` `null` and no workloads; the guard reports the candidate as
+*awaiting trusted main-CI observation* and holds the freeze diff without starting
+the clock. Once that manifest is on `main` and its own push run has succeeded,
+the `workflow_run_id` is set to that run and the clock starts. Each workload is
+then recorded with a timestamp no earlier than the trusted start and no later
+than the present, so issue #5's requirement to exercise them *during* the soak
+is satisfied by appending to the manifest as the runs happen. The guard reports
+the soak complete only once the 21 days have elapsed **and** all five workloads
+are recorded.
 
 The freeze set is:
 
