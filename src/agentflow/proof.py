@@ -556,8 +556,15 @@ class InvalidWorkingState(ValueError):
     """A load-bearing input failed its full runtime contract.
 
     Distinct from the ledger errors `build_proof` already raises so callers can
-    say which side is at fault.
+    say which side is at fault. `subject` and `errors` are kept separate so a
+    caller can list the failures one per line; a plan can easily fail ten of
+    them at once.
     """
+
+    def __init__(self, subject: str, errors: List[str]) -> None:
+        super().__init__(f"{subject}: " + "; ".join(errors))
+        self.subject = subject
+        self.errors = list(errors)
 
 
 def _reject_invalid_working_state(root: Path, plan: Dict[str, Any]) -> None:
@@ -572,7 +579,7 @@ def _reject_invalid_working_state(root: Path, plan: Dict[str, Any]) -> None:
     """
     plan_errors = validate_plan(plan)
     if plan_errors:
-        raise InvalidWorkingState("plan: " + "; ".join(plan_errors))
+        raise InvalidWorkingState("plan", plan_errors)
 
     contract_path = root / EXECUTION_ARTIFACT_PATHS["execution-contract"]
     if not contract_path.exists():
@@ -584,9 +591,7 @@ def _reject_invalid_working_state(root: Path, plan: Dict[str, Any]) -> None:
         if finding.get("severity") == "error"
     ]
     if contract_errors:
-        raise InvalidWorkingState(
-            "execution contract: " + "; ".join(contract_errors)
-        )
+        raise InvalidWorkingState("execution contract", contract_errors)
 
 
 def build_proof(root: Path, plan_path: Path, strict: bool = False) -> Dict[str, Any]:

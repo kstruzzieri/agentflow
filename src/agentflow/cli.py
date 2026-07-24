@@ -1150,7 +1150,9 @@ def command_build_proof(args: argparse.Namespace) -> int:
     except InvalidWorkingState as exc:
         # #28: nothing is written, so a rejected build leaves any existing proof
         # in place rather than replacing it with one built from invalid input.
-        print(f"invalid working state: {exc}", file=sys.stderr)
+        print(f"invalid working state: {exc.subject}:", file=sys.stderr)
+        for error in exc.errors:
+            print(f"- {error}", file=sys.stderr)
         return 1
     except ValueError as exc:
         print(f"invalid ledger: {exc}", file=sys.stderr)
