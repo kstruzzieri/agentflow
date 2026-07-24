@@ -39,6 +39,7 @@ from agentflow.contracts import (
     WORKFLOW_CONTRACT_SCHEMA_VERSION,
     WORKFLOW_REVIEW_DEPTHS,
 )
+from agentflow.validation import validate_plan
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -76,7 +77,185 @@ def artifact_schema_version(artifact: str) -> str:
     )
 
 
+def valid_plan() -> dict:
+    return {
+        "schema_version": PLAN_SCHEMA_VERSION,
+        "objective": "Validate schema parity.",
+        "scope": ["validators"],
+        "non_goals": [],
+        "invariants": ["Published constraints are enforced."],
+        "allowed_files": ["src/"],
+        "blocked_files": [],
+        "validation_gates": ["python3 -m unittest"],
+        "rollback_plan": "Revert the change.",
+        "risk_level": "low",
+        "drift_budget": {
+            "unrelated_edits": 0,
+            "new_dependencies": 0,
+            "formatting_drift": "minimal",
+            "architecture_drift": "none",
+            "test_weakening": 0,
+        },
+        "steps": [
+            {
+                "id": "P1",
+                "action": "Validate.",
+                "files": ["src/"],
+                "preconditions": [],
+                "expected_diff": [],
+                "validation": ["python3 -m unittest"],
+                "evidence_ids": [],
+            }
+        ],
+        "evidence_ids": [],
+        "locked": True,
+        "locked_at": "2026-07-24T00:00:00+00:00",
+    }
+
+
 class SchemaContractTests(unittest.TestCase):
+    def test_plan_validator_is_total_for_non_object_json(self) -> None:
+        for value in (None, [], "plan", 1, True):
+            with self.subTest(value=value):
+                self.assertEqual(validate_plan(value), ["plan must be an object"])
+
+    def test_plan_validator_rejects_invalid_drift_budget_numbers(self) -> None:
+        for field in ("unrelated_edits", "new_dependencies", "test_weakening"):
+            for value in (-1, True, "0"):
+                with self.subTest(field=field, value=value):
+                    plan = valid_plan()
+                    plan["drift_budget"][field] = value
+
+                    errors = validate_plan(plan)
+
+                    self.assertIn(
+                        f"drift_budget.{field} must be a non-negative integer",
+                        errors,
+                    )
+
+    def test_plan_validator_rejects_invalid_list_items(self) -> None:
+        cases = (
+            (("non_goals",), [1], "non_goals must contain only strings"),
+            (("blocked_files",), [1], "blocked_files must contain only strings"),
+            (
+                ("steps", 0, "preconditions"),
+                [1],
+                "steps[1].preconditions must contain only strings",
+            ),
+            (
+                ("steps", 0, "expected_diff"),
+                [1],
+                "steps[1].expected_diff must contain only strings",
+            ),
+            (
+                ("steps", 0, "evidence_ids"),
+                [1],
+                "steps[1].evidence_ids must contain only strings",
+            ),
+        )
+        for path, value, expected in cases:
+            with self.subTest(path=path):
+                plan = valid_plan()
+                target = plan
+                for part in path[:-1]:
+                    target = target[part]
+                target[path[-1]] = value
+
+                self.assertIn(expected, validate_plan(plan))
+
+    def test_plan_validator_enforces_list_minimums(self) -> None:
+        cases = (
+            (("scope",), "scope must contain at least one non-empty string"),
+            (("invariants",), "invariants must contain at least one non-empty string"),
+            (("allowed_files",), "allowed_files must contain at least one non-empty string"),
+            (
+                ("validation_gates",),
+                "validation_gates must contain at least one non-empty string",
+            ),
+            (
+                ("steps", 0, "files"),
+                "steps[1].files must contain at least one file",
+            ),
+            (
+                ("steps", 0, "validation"),
+                "steps[1].validation must contain at least one command or inspection",
+            ),
+        )
+        for path, expected in cases:
+            with self.subTest(path=path):
+                plan = valid_plan()
+                target = plan
+                for part in path[:-1]:
+                    target = target[part]
+                target[path[-1]] = []
+
+                self.assertIn(expected, validate_plan(plan))
+
+    def test_plan_validator_rejects_invalid_lock_metadata(self) -> None:
+        for field, value, expected in (
+            ("locked", 1, "locked must be boolean"),
+            ("locked_at", 1, "locked_at must be a string or null"),
+        ):
+            with self.subTest(field=field):
+                plan = valid_plan()
+                plan[field] = value
+
+                self.assertIn(expected, validate_plan(plan))
+
+    def test_plan_validator_rejects_boolean_context_budget_numbers(self) -> None:
+        plan = valid_plan()
+        plan["context_budget"] = {"max_files": True}
+
+        self.assertIn(
+            "context_budget.max_files must be a non-negative integer",
+            validate_plan(plan),
+        )
+
+    def test_plan_validator_rejects_present_null_optional_fields(self) -> None:
+        cases = (
+            (("context_budget",), "context_budget must be an object"),
+            (
+                ("requirements", 0, "acceptance_criteria", 0, "review"),
+                "requirements[1].acceptance_criteria[1].review must be an object",
+            ),
+            (("steps", 0, "depends_on"), "steps[1].depends_on must be a list"),
+            (
+                ("steps", 0, "gates"),
+                "steps[1].gates must contain at least one gate",
+            ),
+            (
+                ("steps", 0, "execution_mode"),
+                "steps[1].execution_mode must be one of:",
+            ),
+            (
+                ("steps", 0, "runtime_role"),
+                "steps[1].runtime_role must be a non-empty string",
+            ),
+            (("steps", 0, "authority"), "steps[1].authority must be one of:"),
+        )
+        for path, expected in cases:
+            with self.subTest(path=path):
+                plan = valid_plan()
+                if path[0] == "requirements":
+                    plan["requirements"] = [
+                        {
+                            "id": "R1",
+                            "text": "Null review is invalid.",
+                            "acceptance_criteria": [
+                                {"id": "AC1", "text": "Reject null review."}
+                            ],
+                        }
+                    ]
+                    plan["steps"][0]["criterion_ids"] = ["AC1"]
+                target = plan
+                for part in path[:-1]:
+                    target = target[part]
+                target[path[-1]] = None
+
+                self.assertTrue(
+                    any(expected in error for error in validate_plan(plan))
+                )
+
     def test_every_declared_artifact_has_one_compatibility_policy(self) -> None:
         # The policy table is a hand-written literal (not derived from the
         # schema-version dicts), so this equality genuinely fails when a new
@@ -186,6 +365,63 @@ class SchemaContractTests(unittest.TestCase):
         )
         gate_kind = plan_schema["properties"]["steps"]["items"]["properties"]["gates"]["items"]["properties"]["kind"]["enum"]
         self.assertEqual(tuple(sorted(gate_kind)), GATE_KINDS)
+
+    def test_plan_schema_gates_design_references_on_0_4(self) -> None:
+        # #29: PR #26 added both design-reference fields to the published schema
+        # but no conditional, so a structurally complete 0.3.0 plan carrying them
+        # satisfied the schema while runtime rejected it. There is no jsonschema
+        # dependency here, so this pins the conditional's shape and its version
+        # pattern; the runtime side of the same boundary is asserted below.
+        from agentflow.validation import LEGACY_DESIGN_DECISION_VERSION_PATTERN
+
+        schema = load_schema("plan-lock.schema.json")
+        conditional = next(
+            entry
+            for entry in schema["allOf"]
+            if "design" in entry.get("$comment", "").lower()
+        )
+
+        self.assertEqual(
+            conditional["if"]["properties"]["schema_version"]["pattern"],
+            LEGACY_DESIGN_DECISION_VERSION_PATTERN,
+        )
+        self.assertEqual(conditional["if"]["required"], ["schema_version"])
+        forbidden = conditional["then"]["not"]["anyOf"]
+        self.assertIn({"required": ["design_decisions"]}, forbidden)
+        self.assertIn(
+            {
+                "required": ["steps"],
+                "properties": {
+                    "steps": {"contains": {"required": ["design_decision_ids"]}}
+                },
+            },
+            forbidden,
+        )
+
+    def test_legacy_design_pattern_agrees_with_the_runtime_gate(self) -> None:
+        # The schema compares a regex and the runtime compares a version tuple.
+        # Prove the two representations select the same versions, so neither can
+        # drift into disagreeing again.
+        from agentflow.validation import (
+            LEGACY_DESIGN_DECISION_VERSION_PATTERN,
+            _design_decision_schema_is_legacy,
+        )
+
+        legacy_pattern = re.compile(LEGACY_DESIGN_DECISION_VERSION_PATTERN)
+        plan_version_pattern = re.compile(
+            load_schema("plan-lock.schema.json")["properties"]["schema_version"][
+                "pattern"
+            ]
+        )
+
+        for version in ("0.0.0", "0.1.9", "0.3.0", "0.3.11", "0.4.0", "0.4.7"):
+            self.assertRegex(version, plan_version_pattern, version)
+            plan = {"schema_version": version, "design_decisions": [{"id": "D1"}]}
+            self.assertEqual(
+                bool(legacy_pattern.fullmatch(version)),
+                _design_decision_schema_is_legacy(plan),
+                version,
+            )
 
     def test_plan_schema_documents_requirement_traceability(self) -> None:
         schema = load_schema("plan-lock.schema.json")
