@@ -1,0 +1,48 @@
+# Index of this repository's AI review kit: the entry point that says which
+# file governs what, so an agent can orient without reading the whole tree.
+#
+# This file is an index, not a policy. It deliberately restates nothing:
+# `config.json` is the machine policy the runner loads, `config.yaml` is its
+# human-readable workflow mirror, and duplicating either here would just add a
+# third copy to drift out of step.
+#
+# Nothing parses this at runtime -- Agentflow is standard-library-only and ships
+# no YAML parser. tests/test_ai_kit.py pins every path below to a real file.
+
+schema_version: 1
+project: agentflow-proof
+runtime: python>=3.11
+
+orientation:
+  context: docs/ai/PROJECT-CONTEXT.md
+  agent_instructions: CLAUDE.md
+  contributing: CONTRIBUTING.md
+
+review_kit:
+  machine_policy: docs/ai/config.json
+  workflow_mirror: docs/ai/config.yaml
+  finding_schema: docs/ai/finding-schema.md
+  severity_rubric: docs/ai/severity-rubric.md
+  prompts: docs/ai/prompts
+  state_root: docs/ai/state
+
+contracts:
+  workflow: docs/agent-workflow.md
+  artifacts: docs/agent-artifacts.md
+  compatibility: docs/compatibility.md
+  stability: docs/stability.md
+  security_model: docs/security-model.md
+  review_checklist: docs/review-checklist.md
+
+conventions:
+  dependencies: none
+  test_framework: unittest
+  test_command: PYTHONPATH=src python3 -m unittest discover -s tests
+
+# The v1 schema freeze. While a soak is active, any shape or semantic change to
+# a path in the declared freeze set resets the candidate and the 21-day clock.
+schema_freeze:
+  issue: 5
+  audit: docs/schema-freeze-audit.md
+  manifest: docs/schema-freeze-soak.json
+  guard: scripts/check_schema_soak.py
