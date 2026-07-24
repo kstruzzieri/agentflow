@@ -22,6 +22,7 @@ from agentflow.coverage import (
 )
 from agentflow.execution import init_execution_artifacts
 from agentflow.proof import (
+    InvalidWorkingState,
     build_proof,
     canonical_core,
     core_sha256,
@@ -49,8 +50,8 @@ PLAN_CONTRACT_FIELDS = {
     "rollback_plan": "git revert the fixture commit.",
     "risk_level": "low",
     "drift_budget": {
-        "unrelated_edits": "none",
-        "new_dependencies": "none",
+        "unrelated_edits": 0,
+        "new_dependencies": 0,
         "formatting_drift": "none",
         "architecture_drift": "none",
     },
@@ -918,6 +919,70 @@ class CoverageTests(unittest.TestCase):
 
             with self.assertRaisesRegex(
                 ValueError, "duplicate acceptance criterion id: AC-1"
+            ):
+                build_proof(root, plan_path)
+
+    def test_build_proof_rejects_completed_steps_absent_from_plan(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            create_initial_artifacts(root)
+            complete_initial_plan(root)
+            init_execution_artifacts(root)
+            for step_id, attempt_id in (("P1", "A1"), ("P2", "A2")):
+                append_jsonl(
+                    root / ".agent/step-runs.jsonl",
+                    {
+                        "schema_version": "0.5.0",
+                        "event": "claimed",
+                        "step_id": step_id,
+                        "attempt_id": attempt_id,
+                    },
+                )
+                append_jsonl(
+                    root / ".agent/step-runs.jsonl",
+                    {
+                        "schema_version": "0.5.0",
+                        "event": "completed",
+                        "step_id": step_id,
+                        "attempt_id": attempt_id,
+                    },
+                )
+
+            with self.assertRaisesRegex(
+                InvalidWorkingState,
+                "execution ledger.*undeclared step ids: P1, P2",
+            ):
+                build_proof(root, root / ".agent/plan.lock.json")
+
+    def test_build_proof_rejects_aliased_raw_ledger_step(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            create_initial_artifacts(root)
+            plan_path = complete_initial_plan(root)
+            plan = json.loads(plan_path.read_text(encoding="utf-8"))
+            plan["steps"] = [
+                {**STEP_CONTRACT_FIELDS, "id": "P1", "evidence_ids": []}
+            ]
+            write_json(plan_path, plan)
+            init_execution_artifacts(root)
+            for event, step_id in (
+                ("claimed", "P1"),
+                ("lease_renewed", "GHOST"),
+                ("completed", "P1"),
+            ):
+                append_jsonl(
+                    root / ".agent/step-runs.jsonl",
+                    {
+                        "schema_version": "0.5.0",
+                        "event": event,
+                        "step_id": step_id,
+                        "attempt_id": "A1",
+                    },
+                )
+
+            with self.assertRaisesRegex(
+                InvalidWorkingState,
+                "execution ledger.*undeclared step ids: GHOST",
             ):
                 build_proof(root, plan_path)
 
@@ -2483,7 +2548,8 @@ class HunkProofSummaryTests(unittest.TestCase):
             plan = self._minimal_plan()
             plan["allowed_files"] = ["fixture.txt", ".agent/"]
             plan["steps"] = [{"id": "P1", "action": "edit", "files": ["fixture.txt"],
-                              "preconditions": [], "expected_diff": [], "validation": [], "evidence_ids": []}]
+                              "preconditions": [], "expected_diff": [],
+                              "validation": ["fixture gate"], "evidence_ids": []}]
             write_json(root / ".agent/plan.lock.json", plan)
             claim_step(root, plan, "P1", "agent-a")
             seed = "\n".join(f"l{i}" for i in range(1, 21)) + "\n"

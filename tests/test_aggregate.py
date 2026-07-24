@@ -81,13 +81,24 @@ def build_tree(root: Path, *, steps, files=None, contract=None):
         "rollback_plan": "discard the stub worktree.",
         "risk_level": "low",
         "drift_budget": {
-            "unrelated_edits": "none",
-            "new_dependencies": "none",
+            "unrelated_edits": 0,
+            "new_dependencies": 0,
             "formatting_drift": "none",
             "architecture_drift": "none",
         },
         "evidence_ids": [],
-        "steps": [],
+        "steps": [
+            {
+                "id": step_id,
+                "action": "stub action",
+                "files": ["src/"],
+                "preconditions": [],
+                "expected_diff": [],
+                "validation": ["stub gate"],
+                "evidence_ids": [],
+            }
+            for step_id in ("P0", "P1", "P2", "P3")
+        ],
     })
     write_json(agent / "execution.contract.json", contract or default_execution_contract())
     for step_id in steps:
@@ -1390,6 +1401,38 @@ class EndToEndAggregateTests(unittest.TestCase):
             retampered = self._run(out, "verify-proof")
             self.assertNotEqual(retampered.returncode, 0, retampered.stdout + retampered.stderr)
             self.assertIn("hash mismatch for .agent/aggregation.json", retampered.stdout)
+
+    def test_build_proof_rejects_aggregated_steps_removed_from_plan(self):
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmp:
+            out, a, b = _repo_with_worktrees(tmp)
+            agg = self._run(
+                tmp,
+                "aggregate-ledgers",
+                "--input",
+                str(a),
+                "--source-id",
+                "w1",
+                "--input",
+                str(b),
+                "--source-id",
+                "w2",
+                "--output",
+                str(out),
+                "--base",
+                "HEAD",
+            )
+            self.assertEqual(agg.returncode, 0, agg.stdout + agg.stderr)
+            plan_path = out / ".agent/plan.lock.json"
+            plan = json.loads(plan_path.read_text(encoding="utf-8"))
+            plan["steps"] = []
+            write_json(plan_path, plan)
+
+            proof = self._run(out, "build-proof")
+
+            self.assertEqual(proof.returncode, 1, proof.stdout + proof.stderr)
+            self.assertIn("undeclared step ids: P1, P2", proof.stderr)
 
 
 class EndToEndNegativeTests(unittest.TestCase):

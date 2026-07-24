@@ -581,6 +581,21 @@ def _reject_invalid_working_state(root: Path, plan: Dict[str, Any]) -> None:
     if plan_errors:
         raise InvalidWorkingState("plan", plan_errors)
 
+    declared_step_ids = {step["id"] for step in plan["steps"]}
+    ledger_step_ids = {
+        event["step_id"]
+        for event in read_step_events(root)
+        if isinstance(event.get("step_id"), str)
+    }
+    undeclared_step_ids = sorted(
+        ledger_step_ids - declared_step_ids
+    )
+    if undeclared_step_ids:
+        raise InvalidWorkingState(
+            "execution ledger",
+            ["undeclared step ids: " + ", ".join(undeclared_step_ids)],
+        )
+
     contract_path = root / EXECUTION_ARTIFACT_PATHS["execution-contract"]
     if not contract_path.exists():
         return

@@ -18,6 +18,7 @@ from .contracts import (
     EXECUTION_CONTRACT_SCHEMA_VERSION,
     HUNK_ATTRIBUTION_POLICIES,
     LEASE_POLICIES,
+    REVIEW_GATE_POLICIES,
     RISK_POLICIES,
     STEP_RUNS_SCHEMA_VERSION,
 )
@@ -185,6 +186,17 @@ def _positive_int(value: Any) -> bool:
     return isinstance(value, int) and not isinstance(value, bool) and value >= 1
 
 
+def _non_negative_int(value: Any) -> bool:
+    return isinstance(value, int) and not isinstance(value, bool) and value >= 0
+
+
+def _non_empty_string_list(value: Any) -> bool:
+    return (
+        isinstance(value, list)
+        and all(isinstance(item, str) and item for item in value)
+    )
+
+
 def _lease_minutes_or_default(value: Optional[int], default: Optional[int]) -> Optional[int]:
     if value is not None:
         if not _positive_int(value):
@@ -193,91 +205,159 @@ def _lease_minutes_or_default(value: Optional[int], default: Optional[int]) -> O
     return default
 
 
-def validate_execution_contract(contract: Dict[str, Any]) -> List[Dict[str, str]]:
+def validate_execution_contract(contract: Any) -> List[Dict[str, str]]:
     findings: List[Dict[str, str]] = []
-    for error in validate_schema_version_policy(
-        contract.get("schema_version"),
-        EXECUTION_CONTRACT_SCHEMA_VERSION,
-        "execution-contract",
-        ARTIFACT_COMPATIBILITY_POLICIES["execution-contract"],
-    ):
-        findings.append(
-            {
-                "severity": "error",
-                "message": error,
-            }
-        )
-    if contract.get("contract_type") != "agentflow_execution_contract":
-        findings.append(
-            {
-                "severity": "error",
-                "message": "contract_type must be agentflow_execution_contract",
-            }
-        )
-    writer_model = contract.get("concurrency", {}).get("writer_model")
-    if writer_model != "single_writer":
-        findings.append(
-            {
-                "severity": "error",
-                "message": f"writer_model {writer_model} is not supported in v0.3",
-            }
-        )
-    concurrency = contract.get("concurrency", {})
-    if isinstance(concurrency, dict):
-        if "lease_policy" in concurrency and concurrency["lease_policy"] not in LEASE_POLICIES:
-            findings.append({
-                "severity": "error",
-                "message": f"lease_policy {concurrency['lease_policy']} is invalid",
-            })
-        if "lease_ttl_minutes" in concurrency and not _positive_int(concurrency["lease_ttl_minutes"]):
-            findings.append({
-                "severity": "error",
-                "message": "lease_ttl_minutes must be a positive integer",
-            })
-        grace = concurrency.get("lease_grace_seconds")
-        if "lease_grace_seconds" in concurrency and (
-            not isinstance(grace, int) or isinstance(grace, bool) or grace < 0
+
+    def error(message: str) -> None:
+        findings.append({"severity": "error", "message": message})
+
+    if not isinstance(contract, dict):
+        error("execution contract must be an object")
+        return findings
+
+    required = (
+        "schema_version",
+        "contract_type",
+        "root",
+        "shell",
+        "agent_interface",
+        "concurrency",
+        "command_policy",
+        "proof_policy",
+    )
+    for field in required:
+        if field not in contract:
+            error(f"missing required field: {field}")
+
+    if "schema_version" in contract:
+        for message in validate_schema_version_policy(
+            contract["schema_version"],
+            EXECUTION_CONTRACT_SCHEMA_VERSION,
+            "execution-contract",
+            ARTIFACT_COMPATIBILITY_POLICIES["execution-contract"],
         ):
-            findings.append({
-                "severity": "error",
-                "message": "lease_grace_seconds must be a non-negative integer",
-            })
-    receipt_store = contract.get("command_policy", {}).get("receipt_store")
-    if receipt_store not in {"by_attempt", "content_addressed"}:
-        findings.append(
-            {
-                "severity": "error",
-                "message": f"receipt_store {receipt_store} is invalid",
-            }
-        )
-    command_policy = contract.get("command_policy", {})
-    if "command_timeout_seconds" in command_policy and not _positive_int(
-        command_policy["command_timeout_seconds"]
+            error(message)
+    if (
+        "contract_type" in contract
+        and contract["contract_type"] != "agentflow_execution_contract"
     ):
-        findings.append(
-            {
-                "severity": "error",
-                "message": "command_timeout_seconds must be a positive integer",
-            }
-        )
-    if "risk_policy" in command_policy:
-        risk_policy = command_policy["risk_policy"]
-        if risk_policy not in RISK_POLICIES:
-            findings.append(
-                {
-                    "severity": "error",
-                    "message": f"risk_policy {risk_policy} is invalid",
-                }
+        error("contract_type must be agentflow_execution_contract")
+    if "root" in contract and not isinstance(contract["root"], str):
+        error("root must be a string")
+
+    shell = contract.get("shell")
+    if "shell" in contract and not isinstance(shell, dict):
+        error("shell must be an object")
+    elif isinstance(shell, dict):
+        for field in ("default", "requires_posix"):
+            if field not in shell:
+                error(f"shell missing required field: {field}")
+        if "default" in shell and (
+            not isinstance(shell["default"], str) or not shell["default"]
+        ):
+            error("shell.default must be a non-empty string")
+        if "requires_posix" in shell and not isinstance(shell["requires_posix"], bool):
+            error("shell.requires_posix must be boolean")
+
+    agent_interface = contract.get("agent_interface")
+    if "agent_interface" in contract and not isinstance(agent_interface, dict):
+        error("agent_interface must be an object")
+    elif isinstance(agent_interface, dict):
+        for field in ("minimum_capabilities", "forbidden_assumptions"):
+            if field not in agent_interface:
+                error(f"agent_interface missing required field: {field}")
+            elif not _non_empty_string_list(agent_interface[field]):
+                error(
+                    f"agent_interface.{field} must contain only non-empty strings"
+                )
+
+    concurrency = contract.get("concurrency")
+    if "concurrency" in contract and not isinstance(concurrency, dict):
+        error("concurrency must be an object")
+    elif isinstance(concurrency, dict):
+        for field in ("writer_model", "reconcile_ignore"):
+            if field not in concurrency:
+                error(f"concurrency missing required field: {field}")
+        if "writer_model" in concurrency and concurrency["writer_model"] != "single_writer":
+            error(
+                f"writer_model {concurrency['writer_model']} is not supported in v0.3"
             )
-    proof_policy = contract.get("proof_policy", {})
-    if isinstance(proof_policy, dict) and "hunk_attribution" in proof_policy:
-        hunk_policy = proof_policy["hunk_attribution"]
-        if hunk_policy not in HUNK_ATTRIBUTION_POLICIES:
-            findings.append(
-                {
-                    "severity": "error",
-                    "message": f"hunk_attribution {hunk_policy} is invalid",
-                }
+        if "reconcile_ignore" in concurrency and not _non_empty_string_list(
+            concurrency["reconcile_ignore"]
+        ):
+            error("concurrency.reconcile_ignore must contain only non-empty strings")
+        if "lease_policy" in concurrency and concurrency["lease_policy"] not in LEASE_POLICIES:
+            error(f"lease_policy {concurrency['lease_policy']} is invalid")
+        if "lease_ttl_minutes" in concurrency and not _positive_int(concurrency["lease_ttl_minutes"]):
+            error("lease_ttl_minutes must be a positive integer")
+        if "lease_grace_seconds" in concurrency and not _non_negative_int(
+            concurrency["lease_grace_seconds"]
+        ):
+            error("lease_grace_seconds must be a non-negative integer")
+
+    command_policy = contract.get("command_policy")
+    if "command_policy" in contract and not isinstance(command_policy, dict):
+        error("command_policy must be an object")
+    elif isinstance(command_policy, dict):
+        for field in (
+            "record_outputs",
+            "max_output_bytes",
+            "capture_stderr",
+            "receipt_store",
+        ):
+            if field not in command_policy:
+                error(f"command_policy missing required field: {field}")
+        for field in ("record_outputs", "capture_stderr"):
+            if field in command_policy and not isinstance(command_policy[field], bool):
+                error(f"command_policy.{field} must be boolean")
+        if "max_output_bytes" in command_policy and not _non_negative_int(
+            command_policy["max_output_bytes"]
+        ):
+            error("command_policy.max_output_bytes must be a non-negative integer")
+        if (
+            "receipt_store" in command_policy
+            and command_policy["receipt_store"]
+            not in ("by_attempt", "content_addressed")
+        ):
+            error(f"receipt_store {command_policy['receipt_store']} is invalid")
+        if "command_timeout_seconds" in command_policy and not _positive_int(
+            command_policy["command_timeout_seconds"]
+        ):
+            error("command_timeout_seconds must be a positive integer")
+        if (
+            "risk_policy" in command_policy
+            and command_policy["risk_policy"] not in RISK_POLICIES
+        ):
+            error(f"risk_policy {command_policy['risk_policy']} is invalid")
+
+    proof_policy = contract.get("proof_policy")
+    if "proof_policy" in contract and not isinstance(proof_policy, dict):
+        error("proof_policy must be an object")
+    elif isinstance(proof_policy, dict):
+        boolean_fields = (
+            "strict_by_default",
+            "require_command_receipts_for_validation",
+            "require_file_receipts_for_changed_files",
+            "require_managed_receipts_for_validation",
+            "require_evidence_for_inspection_gates",
+        )
+        for field in boolean_fields:
+            if field not in proof_policy:
+                error(f"proof_policy missing required field: {field}")
+            elif not isinstance(proof_policy[field], bool):
+                error(f"proof_policy.{field} must be boolean")
+        if "review_gate" in proof_policy and proof_policy["review_gate"] not in REVIEW_GATE_POLICIES:
+            error(f"review_gate {proof_policy['review_gate']} is invalid")
+        if "require_review_run" in proof_policy and not isinstance(
+            proof_policy["require_review_run"], bool
+        ):
+            error("proof_policy.require_review_run must be boolean")
+        if (
+            "hunk_attribution" in proof_policy
+            and proof_policy["hunk_attribution"] not in HUNK_ATTRIBUTION_POLICIES
+        ):
+            error(
+                f"hunk_attribution {proof_policy['hunk_attribution']} is invalid"
             )
     return findings
 
@@ -298,6 +378,8 @@ def doctor(root: Path) -> Dict[str, Any]:
         )
         return {"status": "failed", "contract": None, "findings": findings}
     findings.extend(validate_execution_contract(contract))
+    if any(finding["severity"] == "error" for finding in findings):
+        return {"status": "failed", "contract": contract, "findings": findings}
     if contract.get("shell", {}).get("requires_posix") and shutil.which("sh") is None:
         findings.append({"severity": "error", "message": "required POSIX sh is not available"})
     if shutil.which("git") is None:

@@ -11,6 +11,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from agentflow.artifacts import append_jsonl
 from agentflow.contracts import AMENDMENTS_SCHEMA_VERSION, FAILURES_SCHEMA_VERSION
 from agentflow.validation import validate_plan
 
@@ -1042,6 +1043,30 @@ class AgentflowCliTests(unittest.TestCase):
 
             self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
             self.assertIn("invalid working state: execution contract:", result.stderr)
+            self.assertFalse((cwd / ".agent/proof-pack.json").exists())
+
+    def test_build_proof_rejects_execution_steps_absent_from_plan(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            cwd = Path(tmp)
+            plan = self._reject_fixture(cwd)
+            plan["steps"] = []
+            self._write_plan(cwd, plan)
+            self.assertEqual(run_agentflow(cwd, "init-execution").returncode, 0)
+            for step_id, attempt_id in (("P1", "A1"), ("P2", "A2")):
+                append_jsonl(
+                    cwd / ".agent/step-runs.jsonl",
+                    {
+                        "schema_version": "0.5.0",
+                        "event": "completed",
+                        "step_id": step_id,
+                        "attempt_id": attempt_id,
+                    },
+                )
+
+            result = run_agentflow(cwd, "build-proof")
+
+            self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+            self.assertIn("undeclared step ids: P1, P2", result.stderr)
             self.assertFalse((cwd / ".agent/proof-pack.json").exists())
 
     def test_rejected_build_proof_leaves_the_previous_proof_in_place(self) -> None:

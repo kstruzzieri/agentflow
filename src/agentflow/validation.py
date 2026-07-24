@@ -50,6 +50,18 @@ def _is_non_empty_string_list(value: Any) -> bool:
     return isinstance(value, list) and all(isinstance(item, str) and item for item in value)
 
 
+def _is_required_non_empty_string_list(value: Any) -> bool:
+    return bool(value) and _is_non_empty_string_list(value)
+
+
+def _is_string_list(value: Any) -> bool:
+    return isinstance(value, list) and all(isinstance(item, str) for item in value)
+
+
+def _is_non_negative_int(value: Any) -> bool:
+    return isinstance(value, int) and not isinstance(value, bool) and value >= 0
+
+
 def _validate_trace_refs(
     prefix: str,
     value: Any,
@@ -138,8 +150,8 @@ def _validate_requirements(plan: Dict[str, Any], errors: List[str]) -> set[str]:
                 criterion_ids.add(criterion_id)
             if not isinstance(criterion.get("text"), str) or not criterion["text"].strip():
                 errors.append(f"{criterion_prefix}.text must be a non-empty string")
-            review = criterion.get("review")
-            if review is not None:
+            if "review" in criterion:
+                review = criterion["review"]
                 if not isinstance(review, dict):
                     errors.append(f"{criterion_prefix}.review must be an object")
                 elif review.get("minimum_depth") not in ("spec_quality", "deep"):
@@ -318,7 +330,7 @@ def _validate_gate(
         return
     if kind == "command":
         run = gate.get("run")
-        if not _is_non_empty_string_list(run):
+        if not _is_required_non_empty_string_list(run):
             errors.append(f"{prefix}.run must contain at least one command argument")
         if "timeout_seconds" in gate:
             timeout = gate["timeout_seconds"]
@@ -347,8 +359,6 @@ def _detect_depends_on_errors(steps: List[Dict[str, Any]]) -> List[str]:
         if not isinstance(step_id, str):
             continue
         depends_on = step.get("depends_on", [])
-        if depends_on is None:
-            depends_on = []
         if not isinstance(depends_on, list):
             errors.append(f"steps[{index}].depends_on must be a list")
             continue
@@ -383,8 +393,11 @@ def _detect_depends_on_errors(steps: List[Dict[str, Any]]) -> List[str]:
     return errors
 
 
-def validate_plan(plan: Dict[str, Any]) -> List[str]:
+def validate_plan(plan: Any) -> List[str]:
     errors: List[str] = []
+
+    if not isinstance(plan, dict):
+        return ["plan must be an object"]
 
     for field, expected_type in REQUIRED_PLAN_FIELDS.items():
         if field not in plan:
@@ -403,13 +416,17 @@ def validate_plan(plan: Dict[str, Any]) -> List[str]:
         errors.append("objective must not be empty")
     if plan["risk_level"] not in RISK_LEVELS:
         errors.append(f"risk_level must be one of: {', '.join(RISK_LEVELS)}")
-    if not _is_non_empty_string_list(plan["scope"]):
+    if not _is_required_non_empty_string_list(plan["scope"]):
         errors.append("scope must contain at least one non-empty string")
-    if not _is_non_empty_string_list(plan["invariants"]):
+    if not _is_string_list(plan["non_goals"]):
+        errors.append("non_goals must contain only strings")
+    if not _is_required_non_empty_string_list(plan["invariants"]):
         errors.append("invariants must contain at least one non-empty string")
-    if not _is_non_empty_string_list(plan["allowed_files"]):
+    if not _is_required_non_empty_string_list(plan["allowed_files"]):
         errors.append("allowed_files must contain at least one non-empty string")
-    if not _is_non_empty_string_list(plan["validation_gates"]):
+    if not _is_string_list(plan["blocked_files"]):
+        errors.append("blocked_files must contain only strings")
+    if not _is_required_non_empty_string_list(plan["validation_gates"]):
         errors.append("validation_gates must contain at least one non-empty string")
     if not plan["rollback_plan"].strip():
         errors.append("rollback_plan must not be empty")
@@ -418,15 +435,21 @@ def validate_plan(plan: Dict[str, Any]) -> List[str]:
     for field in ("unrelated_edits", "new_dependencies", "formatting_drift", "architecture_drift"):
         if field not in drift_budget:
             errors.append(f"drift_budget missing field: {field}")
+    for field in ("unrelated_edits", "new_dependencies", "test_weakening"):
+        if field in drift_budget and not _is_non_negative_int(drift_budget[field]):
+            errors.append(f"drift_budget.{field} must be a non-negative integer")
+    for field in ("formatting_drift", "architecture_drift"):
+        if field in drift_budget and not isinstance(drift_budget[field], str):
+            errors.append(f"drift_budget.{field} must be a string")
 
-    context_budget = plan.get("context_budget")
-    if context_budget is not None:
+    if "context_budget" in plan:
+        context_budget = plan["context_budget"]
         if not isinstance(context_budget, dict):
             errors.append("context_budget must be an object")
         else:
             for field in ("max_files", "max_total_bytes", "max_log_lines_per_failure"):
-                if field in context_budget and (
-                    not isinstance(context_budget[field], int) or context_budget[field] < 0
+                if field in context_budget and not _is_non_negative_int(
+                    context_budget[field]
                 ):
                     errors.append(f"context_budget.{field} must be a non-negative integer")
             if "receipts_required" in context_budget and not isinstance(
@@ -440,12 +463,22 @@ def validate_plan(plan: Dict[str, Any]) -> List[str]:
     if "runtime_routes" in plan and not isinstance(plan["runtime_routes"], dict):
         errors.append("runtime_routes must be an object")
 
+    if "locked" in plan and not isinstance(plan["locked"], bool):
+        errors.append("locked must be boolean")
+    if "locked_at" in plan and not (
+        isinstance(plan["locked_at"], str) or plan["locked_at"] is None
+    ):
+        errors.append("locked_at must be a string or null")
+
     errors.extend(validate_requirement_traceability(plan))
     errors.extend(validate_design_decision_traceability(plan))
 
-    evidence_ids = set(plan["evidence_ids"])
-    if any(not isinstance(item, str) or not item for item in evidence_ids):
+    evidence_values = plan["evidence_ids"]
+    if any(not isinstance(item, str) or not item for item in evidence_values):
         errors.append("evidence_ids must contain only non-empty strings")
+    evidence_ids = {
+        item for item in evidence_values if isinstance(item, str) and item
+    }
 
     step_ids = set()
     for index, step in enumerate(plan["steps"], start=1):
@@ -465,28 +498,36 @@ def validate_plan(plan: Dict[str, Any]) -> List[str]:
                 errors.append(f"{prefix} missing field: {field}")
         if not isinstance(step.get("action"), str) or not step.get("action", "").strip():
             errors.append(f"{prefix}.action must be a non-empty string")
-        if not _is_non_empty_string_list(step.get("files")):
+        if not _is_required_non_empty_string_list(step.get("files")):
             errors.append(f"{prefix}.files must contain at least one file")
-        if not _is_non_empty_string_list(step.get("validation")):
+        if not _is_required_non_empty_string_list(step.get("validation")):
             errors.append(f"{prefix}.validation must contain at least one command or inspection")
+        for field in ("preconditions", "expected_diff", "evidence_ids"):
+            if field in step and not _is_string_list(step[field]):
+                errors.append(f"{prefix}.{field} must contain only strings")
         execution_mode = step.get("execution_mode")
-        if execution_mode is not None and execution_mode not in EXECUTION_MODES:
+        if "execution_mode" in step and execution_mode not in EXECUTION_MODES:
             errors.append(
                 f"{prefix}.execution_mode must be one of: {', '.join(EXECUTION_MODES)}"
             )
         authority = step.get("authority")
-        if authority is not None and authority not in AUTHORITIES:
+        if "authority" in step and authority not in AUTHORITIES:
             errors.append(f"{prefix}.authority must be one of: {', '.join(AUTHORITIES)}")
         runtime_role = step.get("runtime_role")
-        if runtime_role is not None and (
+        if "runtime_role" in step and (
             not isinstance(runtime_role, str) or not runtime_role.strip()
         ):
             errors.append(f"{prefix}.runtime_role must be a non-empty string")
-        for evidence_id in step.get("evidence_ids", []):
-            if evidence_id not in evidence_ids:
-                errors.append(f"{prefix}.evidence_ids references unknown evidence id: {evidence_id}")
-        gates = step.get("gates")
-        if gates is not None:
+        step_evidence_ids = step.get("evidence_ids", [])
+        if isinstance(step_evidence_ids, list):
+            for evidence_id in step_evidence_ids:
+                if isinstance(evidence_id, str) and evidence_id not in evidence_ids:
+                    errors.append(
+                        f"{prefix}.evidence_ids references unknown evidence id: "
+                        f"{evidence_id}"
+                    )
+        if "gates" in step:
+            gates = step["gates"]
             if not isinstance(gates, list) or not gates:
                 errors.append(f"{prefix}.gates must contain at least one gate")
             else:

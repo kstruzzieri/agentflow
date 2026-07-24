@@ -17,6 +17,107 @@ from agentflow.validation import validate_plan
 
 
 class ExecutionContractTests(unittest.TestCase):
+    def test_validation_is_total_for_any_json_value(self) -> None:
+        for value in (None, [], "contract", 1, True):
+            with self.subTest(value=value):
+                findings = validate_execution_contract(value)
+
+                self.assertEqual(findings[0]["severity"], "error")
+                self.assertIn("must be an object", findings[0]["message"])
+
+    def test_validation_rejects_missing_required_nested_fields(self) -> None:
+        cases = (
+            (("root",), "missing required field: root"),
+            (("shell", "default"), "shell missing required field: default"),
+            (
+                ("agent_interface", "minimum_capabilities"),
+                "agent_interface missing required field: minimum_capabilities",
+            ),
+            (
+                ("concurrency", "reconcile_ignore"),
+                "concurrency missing required field: reconcile_ignore",
+            ),
+            (
+                ("command_policy", "record_outputs"),
+                "command_policy missing required field: record_outputs",
+            ),
+            (
+                ("proof_policy", "strict_by_default"),
+                "proof_policy missing required field: strict_by_default",
+            ),
+        )
+        for path, expected in cases:
+            with self.subTest(path=path):
+                contract = default_execution_contract(".")
+                target = contract
+                for part in path[:-1]:
+                    target = target[part]
+                del target[path[-1]]
+
+                messages = [
+                    finding["message"]
+                    for finding in validate_execution_contract(contract)
+                ]
+
+                self.assertIn(expected, messages)
+
+    def test_validation_rejects_schema_type_and_value_mismatches(self) -> None:
+        cases = (
+            (("root",), 1, "root must be a string"),
+            (("shell",), [], "shell must be an object"),
+            (("shell", "default"), "", "shell.default must be a non-empty string"),
+            (("shell", "requires_posix"), 1, "shell.requires_posix must be boolean"),
+            (
+                ("agent_interface", "minimum_capabilities"),
+                [""],
+                "agent_interface.minimum_capabilities must contain only non-empty strings",
+            ),
+            (
+                ("concurrency", "reconcile_ignore"),
+                [1],
+                "concurrency.reconcile_ignore must contain only non-empty strings",
+            ),
+            (
+                ("command_policy", "record_outputs"),
+                1,
+                "command_policy.record_outputs must be boolean",
+            ),
+            (
+                ("command_policy", "max_output_bytes"),
+                True,
+                "command_policy.max_output_bytes must be a non-negative integer",
+            ),
+            (
+                ("command_policy", "receipt_store"),
+                [],
+                "receipt_store [] is invalid",
+            ),
+            (
+                ("proof_policy", "require_file_receipts_for_changed_files"),
+                "yes",
+                "proof_policy.require_file_receipts_for_changed_files must be boolean",
+            ),
+            (
+                ("proof_policy", "review_gate"),
+                "sometimes",
+                "review_gate sometimes is invalid",
+            ),
+        )
+        for path, value, expected in cases:
+            with self.subTest(path=path, value=value):
+                contract = default_execution_contract(".")
+                target = contract
+                for part in path[:-1]:
+                    target = target[part]
+                target[path[-1]] = value
+
+                messages = [
+                    finding["message"]
+                    for finding in validate_execution_contract(contract)
+                ]
+
+                self.assertIn(expected, messages)
+
     def test_default_contract_is_single_writer_and_provider_neutral(self) -> None:
         contract = default_execution_contract(".")
         self.assertEqual(contract["schema_version"], "0.3.0")
@@ -240,6 +341,31 @@ class ExecutionContractTests(unittest.TestCase):
                     for finding in result["findings"]
                 )
             )
+
+    def test_doctor_reports_structural_contract_errors_without_crashing(self) -> None:
+        for contract, expected in (
+            ([], "execution contract must be an object"),
+            (
+                {**default_execution_contract("."), "shell": []},
+                "shell must be an object",
+            ),
+        ):
+            with self.subTest(contract=contract), tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp)
+                init_execution_artifacts(root)
+                (root / ".agent/execution.contract.json").write_text(
+                    json.dumps(contract), encoding="utf-8"
+                )
+
+                result = doctor(root)
+
+                self.assertEqual(result["status"], "failed")
+                self.assertTrue(
+                    any(
+                        expected in finding["message"]
+                        for finding in result["findings"]
+                    )
+                )
 
     @unittest.skipIf(os.name == "nt", "chmod write-bit semantics differ on Windows")
     def test_doctor_reports_unwritable_agent_directory(self) -> None:
