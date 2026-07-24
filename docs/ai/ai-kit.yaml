@@ -37,7 +37,7 @@ contracts:
 conventions:
   dependencies: none
   test_framework: unittest
-  test_command: PYTHONPATH=src python3 -m unittest discover -s tests
+  test_command: PYTHONPATH=src python3 -m unittest discover -s tests -v
 
 # The v1 schema freeze. While a soak is active, any shape or semantic change to
 # a path in the declared freeze set resets the candidate and the 21-day clock.

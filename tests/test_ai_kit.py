@@ -27,11 +27,11 @@ CONTEXT = AI_DIR / "PROJECT-CONTEXT.md"
 CONFIG_JSON = AI_DIR / "config.json"
 CONFIG_YAML = AI_DIR / "config.yaml"
 
-# Repo-relative path-shaped tokens: a slash-separated name ending in a known
-# suffix, or one of the two bare directories the kit names.
+# Repo-relative path-shaped tokens: a root or slash-separated name ending in a
+# known suffix, or one of the two directories the kit names.
 PATH_TOKEN = re.compile(
-    r"(?<![\w./-])((?:[\w.-]+/)+[\w.-]+\.(?:md|json|yaml|py)"
-    r"|docs/ai/prompts|docs/ai/state)(?![\w/-])"
+    r"(?<![\w./-])((?:[\w.-]+/)*[\w.-]+\.(?:md|json|yaml|py)"
+    r"|docs/ai/prompts|docs/ai/state)(?![\w./-])"
 )
 
 # Written at run time and gitignored, so absence in a clean tree is expected.
@@ -44,17 +44,27 @@ def _uncommented(text: str) -> str:
     )
 
 
-def _unresolved(text: str) -> list[str]:
+def _unresolved(text: str, *, include_bare: bool = True) -> list[str]:
     return sorted(
         {
             token
             for token in PATH_TOKEN.findall(_uncommented(text))
-            if not token.startswith(RUNTIME_ROOTS) and not (ROOT / token).exists()
+            if (include_bare or "/" in token)
+            and not token.startswith(RUNTIME_ROOTS)
+            and not (ROOT / token).exists()
         }
     )
 
+
 def _yaml_list(text: str) -> list[str]:
     return [item.strip().strip("\"'") for item in text.split(",") if item.strip()]
+
+
+def _yaml_scalar(text: str) -> str | bool:
+    value = text.strip()
+    if value in {"true", "false"}:
+        return value == "true"
+    return value.strip("\"'")
 
 
 def _mirrored_gate_policy() -> dict[str, dict[str, list[str]]]:
@@ -83,12 +93,12 @@ def _mirrored_gate_policy() -> dict[str, dict[str, list[str]]]:
     return policy
 
 
-def _mirrored_branch_gates() -> dict[str, str]:
+def _mirrored_branch_modifiers() -> dict[str, dict[str, str | bool]]:
     text = CONFIG_YAML.read_text(encoding="utf-8")
     section = text.split("\nbranch_modifiers:", 1)
     if len(section) != 2:
         return {}
-    gates: dict[str, str] = {}
+    modifiers: dict[str, dict[str, str | bool]] = {}
     branch = None
     for line in section[1].splitlines():
         if not line.strip() or line.lstrip().startswith("#"):
@@ -98,11 +108,12 @@ def _mirrored_branch_gates() -> dict[str, str]:
         name = re.match(r"""^  "?([^":]+)"?:\s*$""", line)
         if name:
             branch = name.group(1)
+            modifiers[branch] = {}
             continue
-        gate = re.match(r"^\s+gate:\s*(\S+)\s*$", line)
-        if gate and branch:
-            gates[branch] = gate.group(1).strip("\"'")
-    return gates
+        entry = re.match(r"^\s+([a-z_]+):\s*(\S+)\s*$", line)
+        if entry and branch:
+            modifiers[branch][entry.group(1)] = _yaml_scalar(entry.group(2))
+    return modifiers
 
 
 class AiKitCrossReferenceTests(unittest.TestCase):
@@ -112,6 +123,11 @@ class AiKitCrossReferenceTests(unittest.TestCase):
 
     def test_every_path_the_index_names_exists(self) -> None:
         self.assertEqual(_unresolved(KIT.read_text(encoding="utf-8")), [])
+        self.assertEqual(
+            _unresolved("MISSING_ROOT_REFERENCE.md"),
+            ["MISSING_ROOT_REFERENCE.md"],
+        )
+        self.assertEqual(_unresolved("MISSING_ROOT_REFERENCE.md.bak"), [])
 
     def test_every_link_the_context_names_resolves(self) -> None:
         # Markdown links in PROJECT-CONTEXT.md are relative to docs/ai/.
@@ -135,7 +151,9 @@ class AiKitCrossReferenceTests(unittest.TestCase):
     def test_index_records_the_stdlib_only_test_command(self) -> None:
         text = KIT.read_text(encoding="utf-8")
 
-        self.assertIn("PYTHONPATH=src python3 -m unittest discover -s tests", text)
+        self.assertIn(
+            "PYTHONPATH=src python3 -m unittest discover -s tests -v", text
+        )
         self.assertIn("dependencies: none", text)
 
 
@@ -148,13 +166,11 @@ class MachinePolicyMirrorTests(unittest.TestCase):
     def test_gate_policy_mirrors_the_machine_policy(self) -> None:
         self.assertEqual(_mirrored_gate_policy(), self.policy["gate_policy"])
 
-    def test_branch_modifier_gates_mirror_the_machine_policy(self) -> None:
-        expected = {
-            branch: spec["gate"]
-            for branch, spec in self.policy["branch_modifiers"].items()
-        }
-
-        self.assertEqual(_mirrored_branch_gates(), expected)
+    def test_branch_modifiers_mirror_the_machine_policy(self) -> None:
+        self.assertEqual(
+            _mirrored_branch_modifiers(), self.policy["branch_modifiers"]
+        )
+        self.assertEqual(_yaml_scalar('"true"'), "true")
 
     def test_mirror_declares_itself_a_mirror(self) -> None:
         header = CONFIG_YAML.read_text(encoding="utf-8").splitlines()[0]
@@ -162,7 +178,12 @@ class MachinePolicyMirrorTests(unittest.TestCase):
         self.assertIn("config.json", header)
 
     def test_every_path_the_mirror_names_exists(self) -> None:
-        self.assertEqual(_unresolved(CONFIG_YAML.read_text(encoding="utf-8")), [])
+        self.assertEqual(
+            _unresolved(
+                CONFIG_YAML.read_text(encoding="utf-8"), include_bare=False
+            ),
+            [],
+        )
 
 
 if __name__ == "__main__":

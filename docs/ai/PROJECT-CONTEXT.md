@@ -9,11 +9,11 @@ Machine-readable index: [`ai-kit.yaml`](ai-kit.yaml).
 
 ## What Agentflow is
 
-A standard-library-only Python CLI (`agentflow-proof`, version `0.4.0`, Python
-3.11-3.13) for plan-locked, auditable agent work. An agent locks a plan, claims
-a step, runs validation through the tool so the command becomes a receipt,
-records every file it changes, and builds a proof pack that a third party can
-verify later without trusting the agent.
+The standard-library-only `agentflow` Python CLI (from the `agentflow-proof`
+distribution, version `0.4.0`, Python 3.11-3.13) supports plan-locked, auditable
+agent work. An agent locks a plan, claims a step, runs validation through the
+tool so the command becomes a receipt, records every file it changes, and builds
+a proof pack that a third party can verify later without trusting the agent.
 
 The product promise is that **a proof verifies later**. Most invariants below
 exist to protect that one sentence.
@@ -30,7 +30,7 @@ exist to protect that one sentence.
    you change one side you must change the other, and a test must pin them
    together.
 2. **Tests are `unittest`.** CI runs
-   `PYTHONPATH=src python3 -m unittest discover -s tests`. Verify with that
+   `PYTHONPATH=src python3 -m unittest discover -s tests -v`. Verify with that
    exact command.
 3. **Proofs stay verifiable.** `verify-proof` carries a bounded historical
    guarantee; the other artifact-loading surfaces do not. See
