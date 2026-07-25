@@ -1,5 +1,5 @@
 {
-  "candidate_commit": "af26f3baae8bfd238ad1c5734bb86c68a4814561",
+  "candidate_commit": "29e35c3bc7a1ec51d67cda28a54d4d197ddc844b",
   "freeze_paths": [
     ".github/workflows/ci.yml",
     "schemas/command-receipts.schema.json",
