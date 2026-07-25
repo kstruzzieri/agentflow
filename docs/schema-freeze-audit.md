@@ -91,8 +91,17 @@ baseline, the first condition holds.
 ## Mechanical soak gate
 
 The soak begins only when issue #5 records an exact candidate commit after all
-schema defects are closed. A tracking commit adds `docs/schema-freeze-soak.json`
-because that file is outside the freeze set. The manifest must contain:
+schema defects are closed.
+
+**The candidate must be a commit that already exists on `main`.** This repository
+squash-merges, so a commit authored on a branch is discarded at merge and the
+manifest would name a revision that no longer resolves; the guard then fails
+every build on `main` with `fatal: Needed a single revision`. Record the
+candidate in a follow-up commit that names an already-merged `main` commit --
+never a commit from the branch doing the recording. A tracking commit adds
+`docs/schema-freeze-soak.json` because that file is outside the freeze set.
+
+The manifest must contain:
 
 - the candidate commit;
 - a `transition_commit` — `null` throughout the soak, then the exact mechanical
