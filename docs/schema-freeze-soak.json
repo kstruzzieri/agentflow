@@ -1,5 +1,5 @@
 {
-  "candidate_commit": "41e696079e619ed9a12e7fe45bc9185d731b5ef2",
+  "candidate_commit": "af26f3baae8bfd238ad1c5734bb86c68a4814561",
   "freeze_paths": [
     ".github/workflows/ci.yml",
     "schemas/command-receipts.schema.json",
@@ -69,7 +69,7 @@
     "tests/test_view_proof.py",
     "tests/test_workflow_contract.py"
   ],
-  "schema_version": "0.3.0",
+  "schema_version": "0.4.0",
   "schema_versions": {
     "COMMAND_RECEIPTS_SCHEMA_VERSION": "0.4.0",
     "DRIFT_REPORT_SCHEMA_VERSION": "0.2.2",
@@ -80,6 +80,7 @@
     "STEP_RUNS_SCHEMA_VERSION": "0.5.0",
     "VERIFICATION_RUNS_SCHEMA_VERSION": "0.4.0"
   },
+  "transition_commit": null,
   "workflow_run_id": null,
   "workloads": []
 }
