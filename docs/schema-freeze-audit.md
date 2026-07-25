@@ -13,8 +13,14 @@ locked-plan design references (PR #26), and distribution preparation (PR #27).
 
 **Result: GO.** Every schema-affecting defect this audit opened is closed, the
 eight published patterns agree with their runtime validators, and the candidate
-survives the full suite and all five soak workloads. `bfa0b82` is the recorded
-soak candidate.
+survives the full suite and all five soak workloads.
+
+The candidate was reset after that audit, before the clock started. Review of
+the recorded soak found that the freeze set as declared made issue #5's own 1.0
+transition impossible to land, that the ledger lock serializing every append to
+the frozen ledgers was outside the set, and that the transition exception needed
+to close after one recorded commit. Those corrections are the recorded
+candidate. No clock was running, so nothing was lost by the reset.
 
 ## Load-bearing inventory
 
@@ -89,6 +95,8 @@ schema defects are closed. A tracking commit adds `docs/schema-freeze-soak.json`
 because that file is outside the freeze set. The manifest must contain:
 
 - the candidate commit;
+- a `transition_commit` — `null` throughout the soak, then the exact mechanical
+  1.0 transition commit after the soak and workloads complete;
 - a `workflow_run_id` — `null` until a trusted main-CI run is observed, then the
   numeric id of that run;
 - the eight load-bearing constants exactly as the candidate declares them;
@@ -130,6 +138,7 @@ The freeze set is:
   `src/agentflow/cli.py`, `packs.py`, `draft_plan.py`, `execution.py`,
   `receipts.py`, `hunks.py`, `risk.py`, `git.py`, `execution_coverage.py`,
   `validation.py`, and `aggregate.py`;
+- ledger-serialization code in `src/agentflow/locks.py`;
 - proof and public projection code in `src/agentflow/proof.py`, `coverage.py`,
   `review.py`, `capabilities.py`, `workflow_contract.py`, `events.py`,
   `stuck.py`, `runtime.py`, `porcelain.py`, `viewer.py`, and `handoff.py`; and
@@ -144,12 +153,20 @@ The freeze set is:
   `tests/test_events.py`, `tests/test_stuck.py`, `tests/test_runtime.py`,
   `tests/test_porcelain.py`, `tests/test_view_proof.py`,
   `tests/test_handoff.py`, `tests/test_proof_compatibility.py`,
-  `tests/test_ci_proof_bundle.py`, `tests/fixtures/compatibility/`, and
-  `tests/fixtures/proof-bundle/`.
+  `tests/test_ci_proof_bundle.py`, `tests/test_lease_locking.py`,
+  `tests/test_receipt_concurrency.py`, `tests/test_lease_enforcement.py`,
+  `tests/fixtures/compatibility/`, and `tests/fixtures/proof-bundle/`.
 
 `runtime.py` is frozen because `proof.runtime_block` folds the recorded runtime
 snapshot into the proof canonical core; a reshape there is a load-bearing
 change even though `runtime.py` never names a load-bearing constant.
+
+`locks.py` and its concurrency tests (`tests/test_lease_locking.py`,
+`tests/test_receipt_concurrency.py`, `tests/test_lease_enforcement.py`) are
+frozen for the same reason: `execution.py`, `receipts.py`, and `review.py` hold
+`file_lock` while appending the frozen ledgers, so that lock's correctness is
+what prevents duplicate attempt and receipt ids. Those are load-bearing mutation
+semantics, and they must not be able to change without resetting the soak.
 
 CI must diff that declared freeze set from the candidate commit. Any shape,
 requiredness, canonical serialization, or load-bearing semantic change makes
@@ -157,10 +174,48 @@ the check fail and must reset the candidate commit, evidence, and 21-day clock.
 This makes a reset a Git fact rather than a judgment call.
 
 The one exception is issue #5's version-only change. Once the 21 days have
-elapsed, and only then, the guard accepts a `contracts.py` whose sole difference
-from the candidate is a strict increase in one or more of the eight load-bearing
-constants; the file must be otherwise identical after AST normalization, and
-every other frozen path must still match. That is what lets the soaked shape
-become the shape assigned 1.0.0 without discarding the soak that earned it.
-Before the clock elapses the same edit is rejected, and the guard refuses any
-candidate that already declares a 1.0 load-bearing constant.
+elapsed **and** all five workloads are recorded, and only then, the guard opens
+a narrow transition window.
+
+The 1.0 transition is not a `contracts.py` edit in isolation. Every published
+pattern is `0.x`-only today, so a constants-only bump would leave all eight
+schemas rejecting the version the tree declares. Issue #5 requires the constants,
+the patterns, the version-pinning tests, and a new 1.0 fixture to move together.
+The guard requires all eight constants to become exactly `1.0.0` and accepts
+exactly these changes, each verified mechanically:
+
+- `contracts.py` whose sole difference is a strict increase in one or more of
+  the eight constants, identical otherwise after AST normalization;
+- any of the eight published schemas whose sole difference is its
+  `schema_version` pattern, identical otherwise after canonical JSON
+  normalization;
+- any frozen test whose sole difference is which semver string literals it
+  pins, identical otherwise after AST normalization; and
+- **additions** under `tests/fixtures/compatibility/` and
+  `tests/fixtures/proof-bundle/`, so the 1.0 fixture can be added while every
+  existing immutable snapshot stays byte-identical.
+
+Independently of which files changed, the guard requires the execution-contract
+schema to use the canonical exact pattern `^1\.0\.0$`, the six ordinary
+working-state schemas to use the canonical same-major pattern
+`^1\.0\.(?:0|[1-9][0-9]*)$`, and the proof-pack schema to admit both strict
+`1.0.x` and its promised historical `0.4.0+` range. Those patterns exactly
+match the runtime policies and reject malformed semver. A schema left untouched
+is byte-identical to the candidate and would otherwise sail past the freeze
+diff while still rejecting the new version; that silent half-transition is what
+#5's "published schema patterns and runtime validators agree" criterion
+forbids.
+
+The transition is recorded in two commits. The first commit contains only the
+mechanical freeze-set transition above. The following manifest-only commit sets
+`transition_commit` to that first commit. The guard verifies that it descends
+from the candidate, that the soak and all workloads are complete, and that the
+current freeze-set paths still match the recorded transition commit byte for
+byte and mode for mode. This closes the exception immediately instead of
+leaving a reusable post-soak window.
+
+Anything else still fails, inside that window as much as outside it. Before the
+clock elapses the same edits are rejected, and the guard refuses any candidate
+that already declares a 1.0 load-bearing constant. Issue #5's new
+compatibility-matrix test lands as a new file, which is outside the freeze set
+and so needs no exception.
