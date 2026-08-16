@@ -1,0 +1,2 @@
+{"attempt_id": "A1", "findings": [], "id": "VR1", "recorded_at": "2026-06-09T04:03:02+00:00", "replay": false, "schema_version": "0.3.0", "scope": "step", "status": "passed", "step_id": "P1", "strict": false}
+{"findings": [], "id": "VR2", "recorded_at": "2026-06-09T04:03:53+00:00", "replay": false, "schema_version": "0.3.0", "scope": "run", "status": "passed", "strict": false}

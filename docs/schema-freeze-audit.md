@@ -199,10 +199,20 @@ exactly these changes, each verified mechanically:
   `schema_version` pattern, identical otherwise after canonical JSON
   normalization;
 - any frozen test whose sole difference is which semver string literals it
-  pins, identical otherwise after AST normalization; and
+  pins, identical otherwise after AST normalization;
 - **additions** under `tests/fixtures/compatibility/` and
   `tests/fixtures/proof-bundle/`, so the 1.0 fixture can be added while every
-  existing immutable snapshot stays byte-identical.
+  existing immutable snapshot stays byte-identical; and
+- a wholesale **regeneration** of `tests/fixtures/proof-bundle/`. That tree is
+  the live bundle CI runs `verify-run` against, and working-state readers carry
+  no cross-major promise (`docs/compatibility.md`), so a pre-1.0 bundle cannot
+  pass `verify-run` under the 1.0 code. The transition rebuilds it with the 1.0
+  code in the same commit; the 0.3-era snapshot it replaces is preserved
+  byte-exact as `tests/fixtures/compatibility/legacy-0.3/`, which the
+  compatibility matrix keeps verifying through `verify-proof`. The regenerated
+  bundle is not exempt from scrutiny: CI's `verify-run` and `verify-proof`
+  steps validate it, and the recorded transition commit pins it byte for byte
+  immediately afterwards.
 
 Independently of which files changed, the guard requires the execution-contract
 schema to use the canonical exact pattern `^1\.0\.0$`, the six ordinary
@@ -214,6 +224,14 @@ is byte-identical to the candidate and would otherwise sail past the freeze
 diff while still rejecting the new version; that silent half-transition is what
 #5's "published schema patterns and runtime validators agree" criterion
 forbids.
+
+The proof-pack schema's `bundle_version` field is written from the same
+constant as its `schema_version` but sits outside the guard's pattern
+exception, so its published pattern must already admit both the historical
+`0.4.0+` range and `1.0.x` **before** the soak starts. A transition rehearsal
+against the full test suite caught the earlier `0.x`-only pattern; the pattern
+was widened as a pre-soak correction so the transition itself never needs to
+touch it.
 
 The transition is recorded in two commits. The first commit contains only the
 mechanical freeze-set transition above. The following manifest-only commit sets

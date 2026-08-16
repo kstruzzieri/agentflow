@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `tests/fixtures/compatibility/legacy-0.3/`: a byte-exact snapshot of the
+  0.3-era CI proof bundle, now the compatibility matrix's preserved-legacy
+  fixture, so the historical `verify-proof` guarantee stays exercised after the
+  1.0 transition regenerates the live `tests/fixtures/proof-bundle`.
 - Amendment-ready review-manifest v1.0 fields with locked-plan ownership
   validation, durable ledger/proof projection, and HTML proof viewing.
 - Authoritative, actor-aware resumability state in `next-action --json` and
@@ -24,6 +28,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- The 1.0 schema transition is landable again, caught by rehearsing the full
+  test suite against a transitioned tree: the published proof-pack
+  `bundle_version` pattern now admits the historical `0.4.0+` range and
+  `1.0.x` (it is written from the same constant as `schema_version` but sits
+  outside the soak guard's pattern exception), and the guard's transition
+  window now lets the recorded transition regenerate the live CI proof bundle,
+  since `verify-run` carries no cross-major promise. Both changes reset the
+  soak candidate; the 21-day clock restarts on the corrected shape.
+- `scripts/check_schema_soak.py` now reports an unresolvable
+  `candidate_commit` or `transition_commit` with the field, the recorded SHA,
+  and the squash-merge cause instead of `fatal: Needed a single revision`
+  (#36).
 - The `aggregate-ledgers --json` contract now declares the two payload shapes
   the runtime actually emits: analysis/collision (`status`, `sources`,
   `collisions`, `planned`) and successful write (`status`, `sources`,

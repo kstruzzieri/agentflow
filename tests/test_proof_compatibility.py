@@ -52,7 +52,7 @@ def mutated_current_fixture(tmp: str, schema_version: str, drop_meta: bool = Fal
 class ProofCompatibilityMatrixTests(unittest.TestCase):
     def test_promised_verify_proof_matrix(self) -> None:
         roots = {
-            "preserved-legacy": ROOT / "tests/fixtures/proof-bundle",
+            "preserved-legacy": FIXTURES / "legacy-0.3",
             "released-v0.4.0": FIXTURES / "released-v0.4.0",
             "current-full": FIXTURES / "current-full",
             "current-aggregated": FIXTURES / "current-aggregated",

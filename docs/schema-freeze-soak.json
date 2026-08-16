@@ -1,5 +1,5 @@
 {
-  "candidate_commit": "29e35c3bc7a1ec51d67cda28a54d4d197ddc844b",
+  "candidate_commit": "3a4ca570f97f076d3138000b97089c7f44acd974",
   "freeze_paths": [
     ".github/workflows/ci.yml",
     "schemas/command-receipts.schema.json",
@@ -81,47 +81,6 @@
     "VERIFICATION_RUNS_SCHEMA_VERSION": "0.4.0"
   },
   "transition_commit": null,
-  "workflow_run_id": 30137782640,
-  "workloads": [
-    {
-      "command": "PYTHONPATH=src python3 examples/aggregation/run.py",
-      "commit": "29e35c3bc7a1ec51d67cda28a54d4d197ddc844b",
-      "id": "aggregation",
-      "outcome": "passed",
-      "recorded_at_utc": "2026-07-25T01:36:10Z",
-      "url": null
-    },
-    {
-      "command": "PYTHONPATH=src PYTHON=python3 sh examples/ci-proof/smoke.sh",
-      "commit": "29e35c3bc7a1ec51d67cda28a54d4d197ddc844b",
-      "id": "ci-proof",
-      "outcome": "passed",
-      "recorded_at_utc": "2026-07-25T01:36:06Z",
-      "url": null
-    },
-    {
-      "command": "PYTHONPATH=src python3 examples/mcp-clients/initialize_smoke.py",
-      "commit": "29e35c3bc7a1ec51d67cda28a54d4d197ddc844b",
-      "id": "mcp-stdio",
-      "outcome": "passed",
-      "recorded_at_utc": "2026-07-25T01:36:07Z",
-      "url": null
-    },
-    {
-      "command": "python3 scripts/build_zipapp.py && python3 dist/agentflow.pyz --version",
-      "commit": "29e35c3bc7a1ec51d67cda28a54d4d197ddc844b",
-      "id": "released-pyz",
-      "outcome": "passed",
-      "recorded_at_utc": "2026-07-25T01:36:11Z",
-      "url": null
-    },
-    {
-      "command": "PYTHONPATH=src python3 examples/workflow-pack/run.py",
-      "commit": "29e35c3bc7a1ec51d67cda28a54d4d197ddc844b",
-      "id": "workflow-pack",
-      "outcome": "passed",
-      "recorded_at_utc": "2026-07-25T01:36:08Z",
-      "url": null
-    }
-  ]
+  "workflow_run_id": null,
+  "workloads": []
 }

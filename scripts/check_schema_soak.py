@@ -166,6 +166,14 @@ FIXTURE_ROOTS = (
     "tests/fixtures/proof-bundle",
 )
 
+# The live bundle CI runs `verify-run` against. Working-state readers carry no
+# cross-major promise (docs/compatibility.md), so a pre-1.0 bundle cannot pass
+# `verify-run` under the 1.0 code: the transition must regenerate this tree
+# with the 1.0 code in the same commit. The 0.3-era snapshot it replaces is
+# preserved byte-exact under tests/fixtures/compatibility/legacy-0.3, and the
+# recorded transition_commit pins the regenerated bundle immediately after.
+REGENERATED_FIXTURE_ROOT = "tests/fixtures/proof-bundle"
+
 
 class SoakCheckError(ValueError):
     """The soak manifest or candidate state is invalid."""
@@ -248,7 +256,17 @@ def _validate_ancestor_commit(root: Path, value: Any, field: str) -> str:
         raise SoakCheckError(
             f"{field} must be an exact 40-character lowercase SHA"
         )
-    resolved = _git(root, "rev-parse", "--verify", f"{value}^{{commit}}").stdout.strip()
+    lookup = _git(root, "rev-parse", "--verify", f"{value}^{{commit}}", check=False)
+    if lookup.returncode != 0:
+        # Issue #36: the raw `fatal: Needed a single revision` named neither the
+        # field nor the likely cause. This is the most likely operator mistake in
+        # the manifest -- recording a branch commit that squash merge discarded.
+        raise SoakCheckError(
+            f"{field} {value} does not exist in this repository; it must name "
+            "a commit already merged to main (a branch commit is discarded by "
+            "squash merge)"
+        )
+    resolved = lookup.stdout.strip()
     if resolved != value:
         raise SoakCheckError(f"{field} does not resolve to the recorded commit")
     ancestor = _git(root, "merge-base", "--is-ancestor", value, "HEAD", check=False)
@@ -789,8 +807,9 @@ def _validate_freeze_paths(
     the mechanical parts of the 1.0 transition -- a version-only ``contracts.py``
     bump, a schema whose only edit is a ``schema_version`` pattern that accepts
     the new constant, a test whose only edit is which semver literals it pins,
-    and additions under the immutable fixture trees. Everything else still
-    fails, in that window as much as outside it.
+    additions under the immutable fixture trees, and a regenerated
+    ``tests/fixtures/proof-bundle`` (see ``REGENERATED_FIXTURE_ROOT``).
+    Everything else still fails, in that window as much as outside it.
     """
     if (
         not isinstance(value, list)
@@ -816,9 +835,17 @@ def _validate_freeze_paths(
             _require_pattern_coherence(root, current_supported)
             transition_allowed = True
 
+    def _regenerated(path: str) -> bool:
+        # The recorded transition may replace the live CI bundle wholesale; the
+        # regenerated tree is verified by CI's verify-run/verify-proof steps and
+        # pinned by transition_commit, not by the freeze diff.
+        return transition_allowed and path.startswith(
+            REGENERATED_FIXTURE_ROOT + "/"
+        )
+
     added = set(current_tree) - set(candidate_tree)
     removed = set(candidate_tree) - set(current_tree)
-    differences = set(removed)
+    differences = {path for path in removed if not _regenerated(path)}
     for path in sorted(added):
         # A new fixture is the one addition #5 asks for; anything else appearing
         # inside the freeze set is drift.
@@ -829,6 +856,8 @@ def _validate_freeze_paths(
         differences.add(path)
 
     for path in sorted(set(candidate_tree) & set(current_tree)):
+        if _regenerated(path):
+            continue
         if candidate_tree[path] != current_tree[path]:
             differences.add(path)
             continue
