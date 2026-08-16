@@ -1,0 +1,39 @@
+{
+  "blocked_files_changed": [],
+  "changed_files": [
+    ".gitignore",
+    "README.md",
+    "docs/agent-workflow.md",
+    "docs/review-checklist.md",
+    "docs/verification-matrix.md",
+    "pyproject.toml",
+    "schemas/amendments.schema.json",
+    "schemas/assumptions.schema.json",
+    "schemas/drift-report.schema.json",
+    "schemas/evidence.schema.json",
+    "schemas/plan-lock.schema.json",
+    "schemas/proof-pack.schema.json",
+    "src/agentflow/__init__.py",
+    "src/agentflow/__main__.py",
+    "src/agentflow/artifacts.py",
+    "src/agentflow/cli.py",
+    "src/agentflow/git.py",
+    "src/agentflow/validation.py",
+    "templates/model-profiles/anthropic.example.json",
+    "templates/model-profiles/local.example.json",
+    "templates/model-profiles/openai.example.json",
+    "tests/test_cli.py"
+  ],
+  "dependency_changes": [
+    "pyproject.toml"
+  ],
+  "generated_at": "2026-05-30T02:01:35+00:00",
+  "notes": [
+    "Dependency-related files changed; verify dependency budget manually."
+  ],
+  "out_of_scope_files": [],
+  "schema_version": "0.1.0",
+  "status": "pass",
+  "test_weakening": [],
+  "unmapped_hunks": []
+}

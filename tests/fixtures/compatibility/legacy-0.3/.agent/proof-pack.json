@@ -1,0 +1,179 @@
+{
+  "bundle_type": "agentflow_proof_pack",
+  "bundle_version": "0.4.0",
+  "capabilities": {
+    "missing": [],
+    "recorded": [],
+    "required": [],
+    "waived": []
+  },
+  "checks": [
+    {
+      "count": 0,
+      "id": "missing_plan_evidence_ids",
+      "status": "passed"
+    },
+    {
+      "count": 0,
+      "id": "unused_evidence_ids",
+      "status": "passed"
+    },
+    {
+      "count": 0,
+      "id": "steps_without_support",
+      "status": "passed"
+    },
+    {
+      "count": 0,
+      "id": "dangling_supports",
+      "status": "passed"
+    },
+    {
+      "count": 0,
+      "id": "dangling_used_for",
+      "status": "passed"
+    },
+    {
+      "count": 0,
+      "id": "dangling_route_runtimes",
+      "status": "passed"
+    },
+    {
+      "drift_status": "pass",
+      "id": "drift_audit",
+      "status": "passed"
+    },
+    {
+      "id": "required_review_satisfied",
+      "message": "no required review run (review_depth=None)",
+      "required_review_depth": null,
+      "status": "passed"
+    },
+    {
+      "id": "review_gate",
+      "message": "no review run recorded",
+      "status": "not_run"
+    },
+    {
+      "count": 0,
+      "id": "required_capabilities_satisfied",
+      "status": "passed"
+    }
+  ],
+  "core_sha256": "93d81d3fbbcd470a033afe45ba5476312ce9b8b1f5a9fe352e9a3174c9fe4aad",
+  "coverage": {
+    "dangling_route_runtimes": [],
+    "dangling_supports": [],
+    "dangling_used_for": [],
+    "missing_plan_evidence_ids": [],
+    "steps_without_support": [],
+    "unused_evidence_ids": []
+  },
+  "execution": {
+    "amendments": [],
+    "attempts": 1,
+    "command_confirmed_high_risk": 0,
+    "command_decision_counts": {},
+    "command_finding_categories": {},
+    "command_receipts": 2,
+    "command_receipts_by_provenance": {
+      "observed": 2
+    },
+    "command_risk_counts": {},
+    "command_timed_out": 0,
+    "command_timeout_seconds": {},
+    "failed_attempts": [],
+    "file_receipts": 3,
+    "normalized_execution_sha256": "6b490a8997ef746d38b9a8bd3f1ad321cd0c4f61224383b71ad1c2b9dce3a44f",
+    "steps_completed": 1,
+    "steps_total": 1,
+    "unmapped_changed_files": [],
+    "verification_runs": 2
+  },
+  "files": [
+    {
+      "path": ".agent/amendments.jsonl",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": ".agent/assumptions.json",
+      "sha256": "a054b7b5d8bed917c9b81ab69c61139f78e9687aa5fe88c6b816b5c087dc9a4e"
+    },
+    {
+      "path": ".agent/command-receipts.jsonl",
+      "sha256": "c7516456ab8ffa6de763e2d2ac33811e19551c4a155db9d6b1ae125af360a7d2"
+    },
+    {
+      "path": ".agent/context-receipts.jsonl",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": ".agent/drift-report.json",
+      "sha256": "cec94373599be989569ee2ec70e4e4d479bf87bab8bfcd0136c977565529b43d"
+    },
+    {
+      "path": ".agent/evidence.jsonl",
+      "sha256": "93df8b36ccbc20bfffc190427dd7a1449b13f5686aae5eb9667b4e50d98df159"
+    },
+    {
+      "path": ".agent/execution.contract.json",
+      "sha256": "c34f92aef420a7b600bed72c7722eb9771712f311a8718b4a61d54feef23ba57"
+    },
+    {
+      "path": ".agent/failures.jsonl",
+      "sha256": "445866bb363bb9bfe7e1d35baaf69c3502b354c4f260e8bab13890ee742a93fc"
+    },
+    {
+      "path": ".agent/file-receipts.jsonl",
+      "sha256": "9090c97d265138817c7de0533c512898e372e36f7a7d719a3dbd96c15e97fe2c"
+    },
+    {
+      "path": ".agent/plan.lock.json",
+      "sha256": "8af470cbd46da3d98169783f36620383a495a4f312bc2e5206eb73fb7b078831"
+    },
+    {
+      "path": ".agent/step-runs.jsonl",
+      "sha256": "bf7bb33a1a604dc4246158f6fa4bf7a2395308f79f28c22a622dde43d9ba764c"
+    },
+    {
+      "path": ".agent/verification-runs.jsonl",
+      "sha256": "9e0309d192c2e4b39b43e8b5931c6abbb8b451ab517b2ee82132f4579f70581d"
+    }
+  ],
+  "generated_from": [
+    ".agent/amendments.jsonl",
+    ".agent/assumptions.json",
+    ".agent/command-receipts.jsonl",
+    ".agent/context-receipts.jsonl",
+    ".agent/drift-report.json",
+    ".agent/evidence.jsonl",
+    ".agent/execution.contract.json",
+    ".agent/failures.jsonl",
+    ".agent/file-receipts.jsonl",
+    ".agent/plan.lock.json",
+    ".agent/step-runs.jsonl",
+    ".agent/verification-runs.jsonl"
+  ],
+  "meta": {
+    "created_at": "2026-06-30T21:07:22+00:00",
+    "tool_version": "0.3.0"
+  },
+  "review": {
+    "correlations": [],
+    "latest_review_run_id": null,
+    "policy": {
+      "proof_strict_effective": false,
+      "require_review_run": false,
+      "required_review_depth": null,
+      "review_gate_effective": "warn",
+      "verification_semantics": "ratchet-v1"
+    },
+    "review_runs": [],
+    "unresolved_finding_refs": []
+  },
+  "schema_version": "0.4.0",
+  "stuck": {
+    "findings": [],
+    "rules_evaluated": 3
+  }
+}
