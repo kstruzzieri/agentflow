@@ -82,5 +82,46 @@
   },
   "transition_commit": null,
   "workflow_run_id": 31925019090,
-  "workloads": []
+  "workloads": [
+    {
+      "command": "PYTHONPATH=src python3 examples/aggregation/run.py",
+      "commit": "3a4ca570f97f076d3138000b97089c7f44acd974",
+      "id": "aggregation",
+      "outcome": "passed",
+      "recorded_at_utc": "2026-08-22T14:48:22Z",
+      "url": null
+    },
+    {
+      "command": "PYTHONPATH=src PYTHON=python3 sh examples/ci-proof/smoke.sh",
+      "commit": "3a4ca570f97f076d3138000b97089c7f44acd974",
+      "id": "ci-proof",
+      "outcome": "passed",
+      "recorded_at_utc": "2026-08-22T14:48:22Z",
+      "url": null
+    },
+    {
+      "command": "PYTHONPATH=src python3 examples/mcp-clients/initialize_smoke.py",
+      "commit": "3a4ca570f97f076d3138000b97089c7f44acd974",
+      "id": "mcp-stdio",
+      "outcome": "passed",
+      "recorded_at_utc": "2026-08-22T14:48:22Z",
+      "url": null
+    },
+    {
+      "command": "python3 scripts/build_zipapp.py && python3 dist/agentflow.pyz --version",
+      "commit": "3a4ca570f97f076d3138000b97089c7f44acd974",
+      "id": "released-pyz",
+      "outcome": "passed",
+      "recorded_at_utc": "2026-08-22T14:48:22Z",
+      "url": null
+    },
+    {
+      "command": "PYTHONPATH=src python3 examples/workflow-pack/run.py",
+      "commit": "3a4ca570f97f076d3138000b97089c7f44acd974",
+      "id": "workflow-pack",
+      "outcome": "passed",
+      "recorded_at_utc": "2026-08-22T14:48:22Z",
+      "url": null
+    }
+  ]
 }
