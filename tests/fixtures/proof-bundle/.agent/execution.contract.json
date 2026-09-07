@@ -35,7 +35,7 @@
     "strict_by_default": false
   },
   "root": ".",
-  "schema_version": "0.3.0",
+  "schema_version": "1.0.0",
   "shell": {
     "default": "sh",
     "requires_posix": true

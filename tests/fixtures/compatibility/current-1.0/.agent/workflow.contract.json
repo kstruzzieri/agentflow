@@ -1,0 +1,23 @@
+{
+  "proof_policy": {
+    "hunk_attribution": "enforce",
+    "require_review_run": false
+  },
+  "required_capabilities": [
+    {
+      "id": "tdd",
+      "required": true
+    }
+  ],
+  "review_depth": "standard",
+  "schema_version": "0.1.0",
+  "selected_by": "operator",
+  "selection_reason": "Exercise optional proof blocks.",
+  "validation_policy": {
+    "required_gates": [
+      "focused"
+    ]
+  },
+  "workflow_pack": "compatibility.fixture",
+  "workflow_profile": "full"
+}
