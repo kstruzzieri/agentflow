@@ -119,9 +119,22 @@ trusted observation of `main`: the `workflow_run_id` must resolve, through the
 GitHub API, to a completed successful **push** run of this repository's
 `.github/workflows/ci.yml` on `main` whose head commit contains the manifest's
 recording commit. The soak start is that run's `created_at`, and the minimum end
-is 21 days later. Anchoring the start to a CI observation rather than a commit
-time means shortening the soak would require forging a GitHub Actions run, not
-editing a string.
+is `SOAK_DURATION` later. Anchoring the start to a CI observation rather than a
+commit time means shortening the soak would require forging a GitHub Actions
+run, not editing a string.
+
+`SOAK_DURATION` is **72 hours**. It began as 21 days, chosen as a proxy for
+outside scrutiny by external consumers; none materialised, and across two full
+cycles the elapsed window caught nothing. What did the catching was the rest of
+the gate: the candidate pinned to a real commit in `main`'s history, the trusted
+CI observation, the five recorded workloads, and the freeze diff. Those still
+carry the substantive promise — whatever is stamped `1.0.0` is exactly the shape
+CI saw green with every workload passing.
+
+What the window still buys is a separate sitting: the freeze cannot happen in
+the same session as the decision to freeze, and the trusted run must precede it.
+72 hours buys that. Retuning it is a frozen-path edit and therefore resets the
+candidate, so it is cheap only while the candidate is being reset anyway.
 
 Recording proceeds in two phases. First the manifest lands with
 `workflow_run_id` `null` and no workloads; the guard reports the candidate as
@@ -131,7 +144,7 @@ the `workflow_run_id` is set to that run and the clock starts. Each workload is
 then recorded with a timestamp no earlier than the trusted start and no later
 than the present, so issue #5's requirement to exercise them *during* the soak
 is satisfied by appending to the manifest as the runs happen. The guard reports
-the soak complete only once the 21 days have elapsed **and** all five workloads
+the soak complete only once the soak window has elapsed **and** all five workloads
 are recorded.
 
 The freeze set is:
@@ -179,10 +192,10 @@ semantics, and they must not be able to change without resetting the soak.
 
 CI must diff that declared freeze set from the candidate commit. Any shape,
 requiredness, canonical serialization, or load-bearing semantic change makes
-the check fail and must reset the candidate commit, evidence, and 21-day clock.
+the check fail and must reset the candidate commit, evidence, and soak clock.
 This makes a reset a Git fact rather than a judgment call.
 
-The one exception is issue #5's version-only change. Once the 21 days have
+The one exception is issue #5's version-only change. Once the soak window has
 elapsed **and** all five workloads are recorded, and only then, the guard opens
 a narrow transition window.
 

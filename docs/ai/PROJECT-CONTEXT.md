@@ -46,8 +46,10 @@ exist to protect that one sentence.
 ## Current state: the v1 schema freeze
 
 The load-bearing schemas are being frozen at 1.0 under
-[issue #5](https://github.com/kstruzzieri/agentflow/issues/5). A 21-day soak
+[issue #5](https://github.com/kstruzzieri/agentflow/issues/5). A 72-hour soak
 proves the shape stopped moving before the version number promises it did.
+`SOAK_DURATION` in `scripts/check_schema_soak.py` is the only authority on the
+window; see the audit for why it is 72 hours and not the original 21 days.
 
 - [`docs/schema-freeze-audit.md`](../schema-freeze-audit.md) — the audit, the
   freeze set, and the rules of the soak.

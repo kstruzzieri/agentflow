@@ -12,6 +12,9 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from agentflow.contracts import (
+    PLAN_SCHEMA_VERSION,
+)
 from agentflow import draft_plan
 from agentflow.draft_plan import DraftPlanError
 from agentflow.validation import validate_plan
@@ -37,7 +40,7 @@ def brief(**overrides):
 
 def _template(steps, gates):
     return {
-        "schema_version": "0.3.0",
+        "schema_version": PLAN_SCHEMA_VERSION,
         "objective": "TODO: describe the change",
         "scope": ["src/", "tests/"],
         "non_goals": ["No new runtime dependencies"],

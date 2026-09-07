@@ -26,7 +26,14 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 MANIFEST_PATH = Path("docs/schema-freeze-soak.json")
 MANIFEST_SCHEMA_VERSION = "0.4.0"
 CONTRACTS_PATH = "src/agentflow/contracts.py"
-SOAK_DURATION = timedelta(days=21)
+# The soak proves the frozen shape sat still between a trusted CI observation
+# and the 1.0 stamp. Three weeks was a proxy for outside scrutiny that this
+# repository never had: with a single committer the elapsed window caught
+# nothing across two full cycles, while the candidate pin, the trusted CI run
+# and the five recorded workloads caught every real defect. What is left worth
+# buying is a separate sitting -- the freeze cannot happen in the same session
+# as the decision -- and 72 hours buys that.
+SOAK_DURATION = timedelta(hours=72)
 ONE_ZERO_VERSION = "1.0.0"
 SHA_RE = re.compile(r"^[0-9a-f]{40}$")
 SEMVER_RE = re.compile(r"^(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)$")

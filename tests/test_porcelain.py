@@ -5,6 +5,12 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest import mock
 
+from agentflow.contracts import (
+    COMMAND_RECEIPTS_SCHEMA_VERSION,
+    FILE_RECEIPTS_SCHEMA_VERSION,
+    PLAN_SCHEMA_VERSION,
+    STEP_RUNS_SCHEMA_VERSION,
+)
 from agentflow import cli, porcelain
 
 
@@ -36,7 +42,7 @@ def _step():
 
 def _plan(steps):
     return {
-        "schema_version": "0.3.0",
+        "schema_version": PLAN_SCHEMA_VERSION,
         "objective": "porcelain fixture",
         "scope": ["exercise execution porcelain"],
         "non_goals": ["no production behavior outside porcelain"],
@@ -428,7 +434,7 @@ class TestResumabilityProjection(unittest.TestCase):
             _ready_repo_with_steps(root, [first, second])
             rows = [
                 {
-                    "schema_version": "0.5.0",
+                    "schema_version": STEP_RUNS_SCHEMA_VERSION,
                     "event": "claimed",
                     "step_id": "P1",
                     "attempt_id": "A1",
@@ -436,7 +442,7 @@ class TestResumabilityProjection(unittest.TestCase):
                     "recorded_at": "2026-01-01T00:00:00+00:00",
                 },
                 {
-                    "schema_version": "0.5.0",
+                    "schema_version": STEP_RUNS_SCHEMA_VERSION,
                     "event": "claimed",
                     "step_id": "P2",
                     "attempt_id": "A1",
@@ -465,7 +471,7 @@ class TestResumabilityProjection(unittest.TestCase):
             root = Path(d)
             _ready_repo(root)
             event = {
-                "schema_version": "0.5.0",
+                "schema_version": STEP_RUNS_SCHEMA_VERSION,
                 "event": "verified",
                 "step_id": "P1",
                 "attempt_id": "A1",
@@ -544,7 +550,7 @@ class TestResumabilityProjection(unittest.TestCase):
             _ready_repo(root)
             _set_concurrency(root, lease_policy="enforce")
             event = {
-                "schema_version": "0.5.0",
+                "schema_version": STEP_RUNS_SCHEMA_VERSION,
                 "event": "claimed",
                 "step_id": "P1",
                 "attempt_id": "A1",
@@ -598,7 +604,7 @@ class TestResumabilityProjection(unittest.TestCase):
             second["depends_on"] = ["P1"]
             _ready_repo_with_steps(root, [first, second])
             event = {
-                "schema_version": "0.5.0",
+                "schema_version": STEP_RUNS_SCHEMA_VERSION,
                 "event": "completed",
                 "step_id": "P1",
                 "attempt_id": "A1",
@@ -630,7 +636,7 @@ class TestResumabilityProjection(unittest.TestCase):
             ])
             path = root / ".agent/step-runs.jsonl"
             renewal = {
-                "schema_version": "0.5.0",
+                "schema_version": STEP_RUNS_SCHEMA_VERSION,
                 "event": "lease_renewed",
                 "step_id": "P1",
                 "attempt_id": "A1",
@@ -655,14 +661,14 @@ class TestResumabilityProjection(unittest.TestCase):
     def test_incomplete_receipt_rows_are_invalid(self):
         cases = {
             "command-receipts.jsonl": {
-                "schema_version": "0.4.0",
+                "schema_version": COMMAND_RECEIPTS_SCHEMA_VERSION,
                 "step_id": "P1",
                 "attempt_id": "A1",
                 "gate": "python3 -c print(1)",
                 "exit_code": 0,
             },
             "file-receipts.jsonl": {
-                "schema_version": "0.4.0",
+                "schema_version": FILE_RECEIPTS_SCHEMA_VERSION,
                 "step_id": "P1",
                 "attempt_id": "A1",
                 "path": "src/feature.py",

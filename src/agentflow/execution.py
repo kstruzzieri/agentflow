@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 import shutil
 from datetime import datetime, timedelta, timezone
@@ -24,7 +25,7 @@ from .contracts import (
 )
 from .git import is_git_repo
 from .locks import file_lock
-from .versioning import validate_schema_version_policy
+from .versioning import parse_schema_version, validate_schema_version_policy
 
 
 ATTEMPT_OPENING_EVENTS = {"claimed", "amendment_started"}
@@ -362,6 +363,41 @@ def validate_execution_contract(contract: Any) -> List[Dict[str, str]]:
     return findings
 
 
+def _older_major_remedy(root: Path) -> str:
+    """The upgrade ritual, when the root's contract is a whole major behind.
+
+    docs/compatibility.md gives working state no cross-major promise, so this
+    build genuinely cannot read the tree. The bundle has to be produced by the
+    *older* Agentflow before upgrading -- this installation is the one doing the
+    rejecting, so it cannot export that state itself.
+    """
+    path = root / EXECUTION_ARTIFACT_PATHS["execution-contract"]
+    try:
+        recorded = json.loads(path.read_text(encoding="utf-8")).get("schema_version")
+    except (OSError, AttributeError, json.JSONDecodeError):
+        return ""
+    # A non-string schema_version (null, number, list, object) is exactly what
+    # load_execution_contract already rejected; parse_schema_version would raise
+    # TypeError on it, which the caller does not catch, and doctor would abandon
+    # its structured report for a traceback. This function only ever adds
+    # advice, so anything it cannot read is simply not its business.
+    if not isinstance(recorded, str):
+        return ""
+    try:
+        actual = parse_schema_version(recorded)
+        supported = parse_schema_version(EXECUTION_CONTRACT_SCHEMA_VERSION)
+    except ValueError:
+        return ""
+    if actual.major >= supported.major:
+        return ""
+    return (
+        f"; this working state was written by Agentflow {actual.major}.x and "
+        f"working state carries no cross-major promise. Run `build-proof` with "
+        f"the older Agentflow and retain the bundle before upgrading, then "
+        f"re-initialise execution state here. See docs/compatibility.md."
+    )
+
+
 def doctor(root: Path) -> Dict[str, Any]:
     findings: List[Dict[str, str]] = []
     # An incompatible or unreadable contract is exactly what doctor exists to
@@ -370,7 +406,11 @@ def doctor(root: Path) -> Dict[str, Any]:
     try:
         contract = load_execution_contract(root)
     except (ValueError, OSError) as exc:
-        findings.append({"severity": "error", "message": str(exc)})
+        # Keep the original diagnostic -- path and version gap are what make it
+        # actionable -- and append the remedy rather than replacing it.
+        findings.append(
+            {"severity": "error", "message": str(exc) + _older_major_remedy(root)}
+        )
         return {"status": "failed", "contract": None, "findings": findings}
     if contract is None:
         findings.append(

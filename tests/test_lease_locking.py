@@ -7,6 +7,9 @@ import unittest
 from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
 
+from agentflow.contracts import (
+    PLAN_SCHEMA_VERSION,
+)
 from agentflow.artifacts import create_initial_artifacts, write_json
 from agentflow.execution import claim_step, init_execution_artifacts, read_step_state
 
@@ -15,7 +18,7 @@ WORKERS = 8
 
 def _plan() -> dict:
     return {
-        "schema_version": "0.3.0",
+        "schema_version": PLAN_SCHEMA_VERSION,
         "objective": "Exercise concurrent claims.",
         "scope": ["Claim the same step concurrently."],
         "non_goals": [],

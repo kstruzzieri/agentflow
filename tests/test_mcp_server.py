@@ -13,6 +13,9 @@ import urllib.request
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
+from agentflow.contracts import (
+    PLAN_SCHEMA_VERSION,
+)
 from agentflow import __version__
 from agentflow import mcp_server as m
 
@@ -205,7 +208,7 @@ class ToolsCallTests(unittest.TestCase):
         plan = json.loads(plan_path.read_text(encoding="utf-8"))
         plan.update(
             {
-                "schema_version": "0.4.0",
+                "schema_version": PLAN_SCHEMA_VERSION,
                 "objective": "Exercise MCP step passthrough.",
                 "scope": ["Return the raw step."],
                 "invariants": ["MCP does not reinterpret decisions."],

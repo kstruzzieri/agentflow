@@ -16,6 +16,9 @@ import unittest
 from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
 
+from agentflow.contracts import (
+    PLAN_SCHEMA_VERSION,
+)
 from agentflow.artifacts import create_initial_artifacts, write_json
 from agentflow.execution import claim_step, init_execution_artifacts
 
@@ -28,7 +31,7 @@ BARRIER_TIMEOUT = 30
 
 def _plan() -> dict:
     return {
-        "schema_version": "0.3.0",
+        "schema_version": PLAN_SCHEMA_VERSION,
         "objective": "Exercise parallel receipt writes.",
         "scope": ["Hammer the receipt ledgers concurrently."],
         "non_goals": [],
