@@ -9,7 +9,12 @@ from pathlib import Path
 from unittest.mock import patch
 
 from agentflow.artifacts import append_jsonl, try_read_json, write_json
-from agentflow.contracts import PLAN_SCHEMA_VERSION
+from agentflow.contracts import (
+    DRIFT_REPORT_SCHEMA_VERSION,
+    EXECUTION_CONTRACT_SCHEMA_VERSION,
+    PLAN_SCHEMA_VERSION,
+    PROOF_PACK_SCHEMA_VERSION,
+)
 from agentflow.viewer import collect_view_model, render_html
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -237,7 +242,7 @@ def _write_fixture(root: Path, with_execution: bool = True) -> None:
     write_json(
         root / ".agent/proof-pack.json",
         {
-            "schema_version": "0.5.0",
+            "schema_version": PROOF_PACK_SCHEMA_VERSION,
             "meta": {"created_at": "2026-07-01T00:00:00+00:00", "tool_version": "0.3.0"},
             "core_sha256": "ab" * 32,
             "files": [{"path": ".agent/plan.lock.json", "sha256": "cd" * 32}],
@@ -246,11 +251,11 @@ def _write_fixture(root: Path, with_execution: bool = True) -> None:
     )
     write_json(
         root / ".agent/drift-report.json",
-        {"schema_version": "0.2.0", "status": "pass", "notes": []},
+        {"schema_version": DRIFT_REPORT_SCHEMA_VERSION, "status": "pass", "notes": []},
     )
     if not with_execution:
         return
-    write_json(root / ".agent/execution.contract.json", {"schema_version": "0.3.0"})
+    write_json(root / ".agent/execution.contract.json", {"schema_version": EXECUTION_CONTRACT_SCHEMA_VERSION})
     stdout_file = root / ".agent/receipts/A1/CR1.stdout.txt"
     stdout_file.parent.mkdir(parents=True, exist_ok=True)
     stdout_file.write_text("ok\n", encoding="utf-8")
@@ -284,7 +289,7 @@ class CollectViewModelTests(unittest.TestCase):
                 root, root / ".agent/proof-pack.json", root / ".agent/proof-report.html"
             )
             self.assertEqual(model["plan"]["objective"], "Fixture objective.")
-            self.assertEqual(model["proof"]["schema_version"], "0.5.0")
+            self.assertEqual(model["proof"]["schema_version"], PROOF_PACK_SCHEMA_VERSION)
             self.assertEqual(len(model["command_receipts"]), 1)
             self.assertEqual(len(model["file_receipts"]), 1)
             self.assertEqual(model["drift"]["status"], "pass")
@@ -446,7 +451,7 @@ class ViewProofCliTests(unittest.TestCase):
             write_json(
                 proof_path,
                 {
-                    "schema_version": "0.5.0",
+                    "schema_version": PROOF_PACK_SCHEMA_VERSION,
                     "meta": {},
                     "core_sha256": "ab" * 32,
                     "files": [],

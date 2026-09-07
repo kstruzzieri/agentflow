@@ -8,6 +8,14 @@ from pathlib import Path
 from agentflow import aggregate
 from agentflow.aggregate import Source, parse_sources
 from agentflow.artifacts import append_jsonl, write_json
+from agentflow.contracts import (
+    COMMAND_RECEIPTS_SCHEMA_VERSION,
+    EXECUTION_CONTRACT_SCHEMA_VERSION,
+    FILE_RECEIPTS_SCHEMA_VERSION,
+    PLAN_SCHEMA_VERSION,
+    STEP_RUNS_SCHEMA_VERSION,
+    VERIFICATION_RUNS_SCHEMA_VERSION,
+)
 from agentflow.execution import default_execution_contract
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -55,9 +63,13 @@ class ParseSourcesTests(unittest.TestCase):
 
 def build_tree(root: Path, *, steps, files=None, contract=None):
     """Write a stub input worktree at `root`. The #110 dry-run analysis reads
-    bytes/rows, not schemas, so the ledger rows stay minimal; schema_version
-    strings only track current constants (plan-lock 0.3.0, execution-contract
-    0.3.0) to avoid drift, they are not validated here.
+    bytes/rows, not schemas, so the ledger rows stay minimal.
+
+    Every schema_version is derived from the live constant rather than
+    restated. Working-state readers carry no cross-major promise
+    (docs/compatibility.md), so a literal pinned here becomes unreadable the
+    day a load-bearing schema changes major -- which is how these stubs broke
+    the 1.0 transition rehearsal.
 
     The plan and execution contract are the exception: since #28 the end-to-end
     `build-proof` on an aggregated root applies both full runtime contracts, so
@@ -70,7 +82,7 @@ def build_tree(root: Path, *, steps, files=None, contract=None):
     agent = root / ".agent"
     agent.mkdir(parents=True, exist_ok=True)
     write_json(agent / "plan.lock.json", {
-        "schema_version": "0.3.0",
+        "schema_version": PLAN_SCHEMA_VERSION,
         "objective": "o",
         "scope": ["src/"],
         "non_goals": [],
@@ -102,10 +114,10 @@ def build_tree(root: Path, *, steps, files=None, contract=None):
     })
     write_json(agent / "execution.contract.json", contract or default_execution_contract())
     for step_id in steps:
-        append_jsonl(agent / "step-runs.jsonl", {"schema_version": "0.4.0", "event": "claimed", "step_id": step_id, "attempt_id": "A1", "recorded_at": "2026-07-04T00:00:00+00:00"})
-        append_jsonl(agent / "step-runs.jsonl", {"schema_version": "0.4.0", "event": "completed", "step_id": step_id, "attempt_id": "A1", "recorded_at": "2026-07-04T00:01:00+00:00"})
+        append_jsonl(agent / "step-runs.jsonl", {"schema_version": STEP_RUNS_SCHEMA_VERSION, "event": "claimed", "step_id": step_id, "attempt_id": "A1", "recorded_at": "2026-07-04T00:00:00+00:00"})
+        append_jsonl(agent / "step-runs.jsonl", {"schema_version": STEP_RUNS_SCHEMA_VERSION, "event": "completed", "step_id": step_id, "attempt_id": "A1", "recorded_at": "2026-07-04T00:01:00+00:00"})
     for path, sha in (files or []):
-        append_jsonl(agent / "file-receipts.jsonl", {"schema_version": "0.3.1", "id": "FR1", "step_id": steps[0], "attempt_id": "A1", "path": path, "change_kind": "modified", "before_git_blob": None, "after_sha256": sha, "recorded_at": "2026-07-04T00:01:00+00:00"})
+        append_jsonl(agent / "file-receipts.jsonl", {"schema_version": FILE_RECEIPTS_SCHEMA_VERSION, "id": "FR1", "step_id": steps[0], "attempt_id": "A1", "path": path, "change_kind": "modified", "before_git_blob": None, "after_sha256": sha, "recorded_at": "2026-07-04T00:01:00+00:00"})
     return root
 
 
@@ -165,8 +177,8 @@ class MustMatchTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             sources = self._sources(
                 tmp,
-                {"schema_version": "0.3.0", "command_policy": {"receipt_store": "by_attempt"}},
-                {"schema_version": "0.3.0", "command_policy": {"receipt_store": "content_addressed"}},
+                {"schema_version": EXECUTION_CONTRACT_SCHEMA_VERSION, "command_policy": {"receipt_store": "by_attempt"}},
+                {"schema_version": EXECUTION_CONTRACT_SCHEMA_VERSION, "command_policy": {"receipt_store": "content_addressed"}},
             )
             cols = aggregate._must_match_collisions(sources)
             self.assertTrue(any(c["kind"] == "must_match_mismatch" and c["artifact"] == "execution-contract" for c in cols))
@@ -174,7 +186,7 @@ class MustMatchTests(unittest.TestCase):
     def test_identical_singletons_no_collision(self):
         import tempfile
         with tempfile.TemporaryDirectory() as tmp:
-            same = {"schema_version": "0.3.0", "command_policy": {"receipt_store": "by_attempt"}}
+            same = {"schema_version": EXECUTION_CONTRACT_SCHEMA_VERSION, "command_policy": {"receipt_store": "by_attempt"}}
             sources = self._sources(tmp, same, dict(same))
             self.assertEqual(aggregate._must_match_collisions(sources), [])
 
@@ -263,7 +275,7 @@ class ReceiptFileTests(unittest.TestCase):
         rdir.mkdir(parents=True, exist_ok=True)
         (rdir / "CR1.stdout.txt").write_text(stdout_text, encoding="utf-8")
         append_jsonl(root / ".agent/command-receipts.jsonl", {
-            "schema_version": "0.3.0", "id": "CR1", "step_id": "P1", "attempt_id": "A1",
+            "schema_version": COMMAND_RECEIPTS_SCHEMA_VERSION, "id": "CR1", "step_id": "P1", "attempt_id": "A1",
             "provenance": "observed", "command": ["true"], "cwd": ".", "started_at": "t",
             "finished_at": "t", "exit_code": 0, "truncated": False,
             "stdout_path": ".agent/receipts/A1/CR1.stdout.txt", "stdout_sha256": recorded_sha,
@@ -295,7 +307,7 @@ class ReceiptFileTests(unittest.TestCase):
             rdir = root / ".agent/receipts/A1"; rdir.mkdir(parents=True, exist_ok=True)
             f = rdir / "CR1.stdout.txt"; f.write_text("hello", encoding="utf-8")
             append_jsonl(root / ".agent/command-receipts.jsonl", {
-                "schema_version": "0.3.0", "id": "CR1", "step_id": "P1", "attempt_id": "A1",
+                "schema_version": COMMAND_RECEIPTS_SCHEMA_VERSION, "id": "CR1", "step_id": "P1", "attempt_id": "A1",
                 "provenance": "observed", "command": ["true"], "cwd": ".", "started_at": "t",
                 "finished_at": "t", "exit_code": 0, "truncated": False,
                 "stdout_path": ".agent/receipts/A1/CR1.stdout.txt", "stdout_sha256": sha256_path(f),
@@ -457,7 +469,7 @@ class PreconditionTests(unittest.TestCase):
             (out / "src/x.py").write_text("still here", encoding="utf-8")
             a = build_tree(Path(tmp) / "a", steps=["P1"])
             append_jsonl(a / ".agent/file-receipts.jsonl", {
-                "schema_version": "0.3.1", "id": "FR1", "step_id": "P1", "attempt_id": "A1",
+                "schema_version": FILE_RECEIPTS_SCHEMA_VERSION, "id": "FR1", "step_id": "P1", "attempt_id": "A1",
                 "path": "src/x.py", "change_kind": "deleted", "before_git_blob": "abc",
                 "after_sha256": None, "recorded_at": "2026-07-04T00:01:00+00:00",
             })
@@ -504,11 +516,11 @@ class AnalyzeTests(unittest.TestCase):
             out = Path(tmp) / "out"; out.mkdir()
             a = build_tree(Path(tmp) / "a", steps=["P1"])
             append_jsonl(a / ".agent/verification-runs.jsonl", {
-                "schema_version": "0.3.0", "id": "VR1", "scope": "run",
+                "schema_version": VERIFICATION_RUNS_SCHEMA_VERSION, "id": "VR1", "scope": "run",
                 "recorded_at": "2026-07-04T00:00:00+00:00", "findings": [],
             })
             append_jsonl(a / ".agent/verification-runs.jsonl", {
-                "schema_version": "0.3.0", "id": "VR2", "scope": "step", "step_id": "P1", "attempt_id": "A1",
+                "schema_version": VERIFICATION_RUNS_SCHEMA_VERSION, "id": "VR2", "scope": "step", "step_id": "P1", "attempt_id": "A1",
                 "recorded_at": "2026-07-04T00:00:00+00:00", "findings": [],
             })
             report = aggregate.analyze([Source(a, "w1", "a")], out, base_ref="HEAD")
@@ -627,7 +639,7 @@ class HardeningTests(unittest.TestCase):
 
     def _cr_row(self, stdout_path, sha="0" * 64):
         return {
-            "schema_version": "0.3.0", "id": "CR1", "step_id": "P1", "attempt_id": "A1",
+            "schema_version": COMMAND_RECEIPTS_SCHEMA_VERSION, "id": "CR1", "step_id": "P1", "attempt_id": "A1",
             "provenance": "observed", "command": ["true"], "cwd": ".", "started_at": "t",
             "finished_at": "t", "exit_code": 0, "truncated": False,
             "stdout_path": stdout_path, "stdout_sha256": sha,
@@ -737,7 +749,7 @@ class HardeningTests(unittest.TestCase):
             (out / "src/x.py").write_text("real", encoding="utf-8")
             a = build_tree(Path(tmp) / "a", steps=["P1"])
             append_jsonl(a / ".agent/file-receipts.jsonl", {
-                "schema_version": "0.3.1", "id": "FR1", "step_id": "P1", "attempt_id": "A1",
+                "schema_version": FILE_RECEIPTS_SCHEMA_VERSION, "id": "FR1", "step_id": "P1", "attempt_id": "A1",
                 "path": "src/x.py", "change_kind": "modified", "before_git_blob": None,
                 "after_sha256": None, "recorded_at": "2026-07-04T00:01:00+00:00",
             })
@@ -789,7 +801,7 @@ class HardeningTests(unittest.TestCase):
             out = Path(tmp) / "out"; out.mkdir()
             a = build_tree(Path(tmp) / "a", steps=["P1"])
             append_jsonl(a / ".agent/file-receipts.jsonl", {
-                "schema_version": "0.3.1", "id": "FR2", "step_id": "P1", "attempt_id": "A1",
+                "schema_version": FILE_RECEIPTS_SCHEMA_VERSION, "id": "FR2", "step_id": "P1", "attempt_id": "A1",
                 "path": "src/x.py", "change_kind": "modified", "before_git_blob": None,
                 "after_sha256": "a" * 64, "recorded_at": None,
             })
@@ -807,12 +819,16 @@ class SchemaBumpTests(unittest.TestCase):
         self.assertEqual(contracts.VERIFICATION_RUNS_SCHEMA_VERSION, "0.4.0")
 
     def test_pre_bump_rows_still_validate_backward_compat(self):
-        from agentflow import contracts
+        # The #30 namespacing bump had to keep rows written before it readable.
+        # Pinned as explicit (row, supported-at-the-time) pairs rather than against
+        # the live constants: those assert cross-major compatibility, which the 1.0
+        # freeze deliberately drops, so the check would have to be deleted -- taking
+        # this backward-compatibility coverage with it.
         from agentflow.versioning import is_schema_version_compatible
-        self.assertTrue(is_schema_version_compatible("0.4.0", contracts.STEP_RUNS_SCHEMA_VERSION))
-        self.assertTrue(is_schema_version_compatible("0.3.0", contracts.COMMAND_RECEIPTS_SCHEMA_VERSION))
-        self.assertTrue(is_schema_version_compatible("0.3.1", contracts.FILE_RECEIPTS_SCHEMA_VERSION))
-        self.assertTrue(is_schema_version_compatible("0.3.0", contracts.VERIFICATION_RUNS_SCHEMA_VERSION))
+        self.assertTrue(is_schema_version_compatible("0.4.0", "0.5.0"))  # step-runs
+        self.assertTrue(is_schema_version_compatible("0.3.0", "0.4.0"))  # command-receipts
+        self.assertTrue(is_schema_version_compatible("0.3.1", "0.4.0"))  # file-receipts
+        self.assertTrue(is_schema_version_compatible("0.3.0", "0.4.0"))  # verification-runs
 
 
 class WritePrimitiveTests(unittest.TestCase):
@@ -836,8 +852,8 @@ class WritePrimitiveTests(unittest.TestCase):
             a = Path(tmp) / "a"; b = Path(tmp) / "b"
             build_tree(a, steps=["P0"]); build_tree(b, steps=["P0"])
             for step, attempt in (("P1", "A2"),):
-                append_jsonl(a / ".agent/step-runs.jsonl", {"schema_version": "0.5.0", "event": "claimed", "step_id": step, "attempt_id": attempt, "recorded_at": "2026-07-05T00:02:00+00:00"})
-                append_jsonl(a / ".agent/step-runs.jsonl", {"schema_version": "0.5.0", "event": "completed", "step_id": step, "attempt_id": attempt, "recorded_at": "2026-07-05T00:03:00+00:00"})
+                append_jsonl(a / ".agent/step-runs.jsonl", {"schema_version": STEP_RUNS_SCHEMA_VERSION, "event": "claimed", "step_id": step, "attempt_id": attempt, "recorded_at": "2026-07-05T00:02:00+00:00"})
+                append_jsonl(a / ".agent/step-runs.jsonl", {"schema_version": STEP_RUNS_SCHEMA_VERSION, "event": "completed", "step_id": step, "attempt_id": attempt, "recorded_at": "2026-07-05T00:03:00+00:00"})
             sources = [Source(a, "w1", "a"), Source(b, "w2", "b")]
             baseline = aggregate._baseline_canon(sources, ".agent/step-runs.jsonl")
             amap = aggregate._attempt_map(Source(a, "w1", "a"), baseline)
@@ -848,7 +864,7 @@ class WritePrimitiveTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             a = build_tree(Path(tmp) / "a", steps=["P1"])
             self.assertEqual(aggregate._receipt_store([Source(a, "w1", "a")]), "by_attempt")
-            ca = build_tree(Path(tmp) / "b", steps=["P1"], contract={"schema_version": "0.3.0", "command_policy": {"receipt_store": "content_addressed"}})
+            ca = build_tree(Path(tmp) / "b", steps=["P1"], contract={"schema_version": EXECUTION_CONTRACT_SCHEMA_VERSION, "command_policy": {"receipt_store": "content_addressed"}})
             self.assertEqual(aggregate._receipt_store([Source(ca, "w2", "b")]), "content_addressed")
 
 
@@ -858,8 +874,8 @@ class RewriteMergeTests(unittest.TestCase):
         a = Path(tmp) / "a"; b = Path(tmp) / "b"
         build_tree(a, steps=["P0"]); build_tree(b, steps=["P0"])
         for root, step in ((a, "P1"), (b, "P2")):
-            append_jsonl(root / ".agent/step-runs.jsonl", {"schema_version": "0.5.0", "event": "claimed", "step_id": step, "attempt_id": "A2", "recorded_at": "2026-07-05T00:02:00+00:00"})
-            append_jsonl(root / ".agent/step-runs.jsonl", {"schema_version": "0.5.0", "event": "completed", "step_id": step, "attempt_id": "A2", "recorded_at": "2026-07-05T00:03:00+00:00"})
+            append_jsonl(root / ".agent/step-runs.jsonl", {"schema_version": STEP_RUNS_SCHEMA_VERSION, "event": "claimed", "step_id": step, "attempt_id": "A2", "recorded_at": "2026-07-05T00:02:00+00:00"})
+            append_jsonl(root / ".agent/step-runs.jsonl", {"schema_version": STEP_RUNS_SCHEMA_VERSION, "event": "completed", "step_id": step, "attempt_id": "A2", "recorded_at": "2026-07-05T00:03:00+00:00"})
         return [Source(a, "w1", "a"), Source(b, "w2", "b")]
 
     def test_step_runs_dedupe_baseline_and_namespace_local(self):
@@ -880,7 +896,7 @@ class RewriteMergeTests(unittest.TestCase):
         from agentflow.artifacts import append_jsonl
         with tempfile.TemporaryDirectory() as tmp:
             a = build_tree(Path(tmp) / "a", steps=["P1"])
-            append_jsonl(a / ".agent/step-runs.jsonl", {"schema_version": "0.5.0", "event": "claimed", "step_id": "P1", "attempt_id": "A2", "amends_attempt": "A1", "superseded_by": None, "recorded_at": "2026-07-05T00:05:00+00:00"})
+            append_jsonl(a / ".agent/step-runs.jsonl", {"schema_version": STEP_RUNS_SCHEMA_VERSION, "event": "claimed", "step_id": "P1", "attempt_id": "A2", "amends_attempt": "A1", "superseded_by": None, "recorded_at": "2026-07-05T00:05:00+00:00"})
             sources = [Source(a, "w1", "a")]
             baseline = aggregate._baseline_canon(sources, ".agent/step-runs.jsonl")
             amaps = {s.source_id: aggregate._attempt_map(s, baseline) for s in sources}
@@ -894,8 +910,8 @@ class RewriteMergeTests(unittest.TestCase):
         from agentflow.artifacts import append_jsonl
         with tempfile.TemporaryDirectory() as tmp:
             a = build_tree(Path(tmp) / "a", steps=["P1"])
-            append_jsonl(a / ".agent/verification-runs.jsonl", {"schema_version": "0.4.0", "id": "VR1", "scope": "run", "recorded_at": "2026-07-05T00:00:00+00:00", "findings": []})
-            append_jsonl(a / ".agent/verification-runs.jsonl", {"schema_version": "0.4.0", "id": "VR2", "scope": "step", "step_id": "P1", "attempt_id": "A1", "recorded_at": "2026-07-05T00:00:00+00:00", "findings": []})
+            append_jsonl(a / ".agent/verification-runs.jsonl", {"schema_version": VERIFICATION_RUNS_SCHEMA_VERSION, "id": "VR1", "scope": "run", "recorded_at": "2026-07-05T00:00:00+00:00", "findings": []})
+            append_jsonl(a / ".agent/verification-runs.jsonl", {"schema_version": VERIFICATION_RUNS_SCHEMA_VERSION, "id": "VR2", "scope": "step", "step_id": "P1", "attempt_id": "A1", "recorded_at": "2026-07-05T00:00:00+00:00", "findings": []})
             sources = [Source(a, "w1", "a")]
             baseline = aggregate._baseline_canon(sources, ".agent/step-runs.jsonl")
             amaps = {s.source_id: aggregate._attempt_map(s, baseline) for s in sources}
@@ -923,11 +939,11 @@ class CommandReceiptMergeTests(unittest.TestCase):
     def _tree_with_cr(self, root):
         from agentflow.receipts import sha256_path
         from agentflow.artifacts import append_jsonl
-        build_tree(root, steps=["P1"], contract={"schema_version": "0.3.0", "command_policy": {"receipt_store": "by_attempt"}})
+        build_tree(root, steps=["P1"], contract={"schema_version": EXECUTION_CONTRACT_SCHEMA_VERSION, "command_policy": {"receipt_store": "by_attempt"}})
         rdir = root / ".agent/receipts/A1"; rdir.mkdir(parents=True, exist_ok=True)
         f = rdir / "CR1.stdout.txt"; f.write_text("hello", encoding="utf-8")
         append_jsonl(root / ".agent/command-receipts.jsonl", {
-            "schema_version": "0.4.0", "id": "CR1", "step_id": "P1", "attempt_id": "A1",
+            "schema_version": COMMAND_RECEIPTS_SCHEMA_VERSION, "id": "CR1", "step_id": "P1", "attempt_id": "A1",
             "provenance": "observed", "command": ["true"], "cwd": ".", "started_at": "t",
             "finished_at": "t", "exit_code": 0, "truncated": False,
             "stdout_path": ".agent/receipts/A1/CR1.stdout.txt", "stdout_sha256": sha256_path(f),
@@ -957,14 +973,14 @@ class CommandReceiptMergeTests(unittest.TestCase):
         import hashlib
         from agentflow.artifacts import append_jsonl
         with tempfile.TemporaryDirectory() as tmp:
-            root = build_tree(Path(tmp) / "a", steps=["P1"], contract={"schema_version": "0.3.0", "command_policy": {"receipt_store": "content_addressed"}})
+            root = build_tree(Path(tmp) / "a", steps=["P1"], contract={"schema_version": EXECUTION_CONTRACT_SCHEMA_VERSION, "command_policy": {"receipt_store": "content_addressed"}})
             data = b"payload"
             digest = hashlib.sha256(data).hexdigest()
             cpath = root / ".agent/receipts/sha256" / digest[:2] / digest
             cpath.parent.mkdir(parents=True, exist_ok=True); cpath.write_bytes(data)
             rel = ".agent/receipts/sha256/" + digest[:2] + "/" + digest
             append_jsonl(root / ".agent/command-receipts.jsonl", {
-                "schema_version": "0.4.0", "id": "CR1", "step_id": "P1", "attempt_id": "A1",
+                "schema_version": COMMAND_RECEIPTS_SCHEMA_VERSION, "id": "CR1", "step_id": "P1", "attempt_id": "A1",
                 "provenance": "observed", "command": ["true"], "cwd": ".", "started_at": "t",
                 "finished_at": "t", "exit_code": 0, "truncated": False,
                 "stdout_path": rel, "stdout_sha256": digest, "stderr_path": None, "stderr_sha256": None,
@@ -985,7 +1001,7 @@ class MalformedIdTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             a = build_tree(Path(tmp) / "a", steps=["P1"])
             append_jsonl(a / ".agent/command-receipts.jsonl", {
-                "schema_version": "0.4.0", "id": "../../../../tmp/x", "step_id": "P1", "attempt_id": "A1",
+                "schema_version": COMMAND_RECEIPTS_SCHEMA_VERSION, "id": "../../../../tmp/x", "step_id": "P1", "attempt_id": "A1",
                 "provenance": "observed", "command": ["true"], "cwd": ".", "started_at": "t",
                 "finished_at": "t", "exit_code": 0, "truncated": False,
                 "stdout_path": None, "stdout_sha256": None, "stderr_path": None, "stderr_sha256": None,
@@ -998,7 +1014,7 @@ class MalformedIdTests(unittest.TestCase):
         from agentflow.artifacts import append_jsonl
         with tempfile.TemporaryDirectory() as tmp:
             a = build_tree(Path(tmp) / "a", steps=["P1"])
-            append_jsonl(a / ".agent/step-runs.jsonl", {"schema_version": "0.5.0", "event": "claimed", "step_id": "P2", "attempt_id": "A1/../evil", "recorded_at": "t"})
+            append_jsonl(a / ".agent/step-runs.jsonl", {"schema_version": STEP_RUNS_SCHEMA_VERSION, "event": "claimed", "step_id": "P2", "attempt_id": "A1/../evil", "recorded_at": "t"})
             cols = aggregate._malformed_id_collisions([Source(a, "w1", "a")])
             self.assertTrue(any(c["kind"] == "malformed_id" and c["field"] == "attempt_id" for c in cols))
 
@@ -1015,7 +1031,7 @@ class MalformedIdTests(unittest.TestCase):
             out = Path(tmp) / "out"; out.mkdir()
             a = build_tree(Path(tmp) / "a", steps=["P1"])
             append_jsonl(a / ".agent/file-receipts.jsonl", {
-                "schema_version": "0.4.0", "id": "FR1/../../evil", "step_id": "P1", "attempt_id": "A1",
+                "schema_version": FILE_RECEIPTS_SCHEMA_VERSION, "id": "FR1/../../evil", "step_id": "P1", "attempt_id": "A1",
                 "path": "src/x.py", "change_kind": "modified", "before_git_blob": None,
                 "after_sha256": "a" * 64, "recorded_at": "2026-07-05T00:01:00+00:00",
             })
@@ -1094,7 +1110,7 @@ class WriteCanonicalTests(unittest.TestCase):
             for root, extra in ((a, "one"), (b, "two")):
                 path = root / ".agent/step-runs.jsonl"
                 path.write_text(
-                    json.dumps({"schema_version": "0.5.0", "event": "completed", "step_id": "P1", "attempt_id": "A1", "agent_id": extra, "recorded_at": "2026-07-05T00:01:00+00:00"}, sort_keys=True) + "\n",
+                    json.dumps({"schema_version": STEP_RUNS_SCHEMA_VERSION, "event": "completed", "step_id": "P1", "attempt_id": "A1", "agent_id": extra, "recorded_at": "2026-07-05T00:01:00+00:00"}, sort_keys=True) + "\n",
                     encoding="utf-8",
                 )
             result = aggregate.write_canonical([Source(a, "w1", "a"), Source(b, "w2", "b")], out, base_ref="HEAD")
@@ -1225,7 +1241,7 @@ class AggregationProvenanceEmissionTests(unittest.TestCase):
             for source, extra in zip(sources, ("one", "two")):
                 path = source.root / ".agent/step-runs.jsonl"
                 path.write_text(
-                    json.dumps({"schema_version": "0.5.0", "event": "completed", "step_id": "P1", "attempt_id": "A1", "agent_id": extra, "recorded_at": "2026-07-05T00:01:00+00:00"}, sort_keys=True) + "\n",
+                    json.dumps({"schema_version": STEP_RUNS_SCHEMA_VERSION, "event": "completed", "step_id": "P1", "attempt_id": "A1", "agent_id": extra, "recorded_at": "2026-07-05T00:01:00+00:00"}, sort_keys=True) + "\n",
                     encoding="utf-8",
                 )
             result = aggregate.write_canonical(sources, out, base_ref="HEAD")
@@ -1330,7 +1346,7 @@ class CliWriteTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             out, a, b = self._setup(tmp)
             for root, extra in ((a, "one"), (b, "two")):
-                (root / ".agent/step-runs.jsonl").write_text(json.dumps({"schema_version": "0.5.0", "event": "completed", "step_id": "P1", "attempt_id": "A1", "agent_id": extra, "recorded_at": "t"}, sort_keys=True) + "\n", encoding="utf-8")
+                (root / ".agent/step-runs.jsonl").write_text(json.dumps({"schema_version": STEP_RUNS_SCHEMA_VERSION, "event": "completed", "step_id": "P1", "attempt_id": "A1", "agent_id": extra, "recorded_at": "t"}, sort_keys=True) + "\n", encoding="utf-8")
             proc = self._run(tmp, "aggregate-ledgers", "--input", str(a), "--source-id", "w1", "--input", str(b), "--source-id", "w2", "--output", str(out), "--base", "HEAD")
             self.assertEqual(proc.returncode, 1, proc.stdout + proc.stderr)
             self.assertFalse((out / ".agent").exists())
@@ -1362,7 +1378,7 @@ class EndToEndAggregateTests(unittest.TestCase):
             rdir = a / ".agent/receipts/A1"; rdir.mkdir(parents=True, exist_ok=True)
             f = rdir / "CR1.stdout.txt"; f.write_text("run output", encoding="utf-8")
             append_jsonl(a / ".agent/command-receipts.jsonl", {
-                "schema_version": "0.4.0", "id": "CR1", "step_id": "P1", "attempt_id": "A1",
+                "schema_version": COMMAND_RECEIPTS_SCHEMA_VERSION, "id": "CR1", "step_id": "P1", "attempt_id": "A1",
                 "provenance": "observed", "command": ["true"], "cwd": ".", "started_at": "t",
                 "finished_at": "t", "exit_code": 0, "truncated": False,
                 "stdout_path": ".agent/receipts/A1/CR1.stdout.txt", "stdout_sha256": sha256_path(f),
@@ -1487,7 +1503,7 @@ class ReviewFixTests(unittest.TestCase):
         from agentflow.artifacts import append_jsonl
         with tempfile.TemporaryDirectory() as tmp:
             out, a, b = self._repo(tmp)
-            contract = {"schema_version": "0.3.0", "command_policy": {"receipt_store": "content_addressed"}}
+            contract = {"schema_version": EXECUTION_CONTRACT_SCHEMA_VERSION, "command_policy": {"receipt_store": "content_addressed"}}
             build_tree(a, steps=["P1"], files=[("src/x.py", sha256_path(out / "src/x.py"))], contract=contract)
             build_tree(b, steps=["P2"], files=[("src/y.py", sha256_path(out / "src/y.py"))], contract=contract)
             data = b"content output"; digest = hashlib.sha256(data).hexdigest()
@@ -1495,7 +1511,7 @@ class ReviewFixTests(unittest.TestCase):
             cpath.parent.mkdir(parents=True, exist_ok=True); cpath.write_bytes(data)
             rel = ".agent/receipts/sha256/" + digest[:2] + "/" + digest
             append_jsonl(a / ".agent/command-receipts.jsonl", {
-                "schema_version": "0.4.0", "id": "CR1", "step_id": "P1", "attempt_id": "A1",
+                "schema_version": COMMAND_RECEIPTS_SCHEMA_VERSION, "id": "CR1", "step_id": "P1", "attempt_id": "A1",
                 "provenance": "observed", "command": ["true"], "cwd": ".", "started_at": "t",
                 "finished_at": "t", "exit_code": 0, "truncated": False,
                 "stdout_path": rel, "stdout_sha256": digest, "stderr_path": None, "stderr_sha256": None,
@@ -1548,7 +1564,7 @@ class ReviewFixTests(unittest.TestCase):
             build_tree(a, steps=["P1"], files=[("src/x.py", sha256_path(out / "src/x.py"))])
             build_tree(b, steps=["P2"], files=[("src/y.py", sha256_path(out / "src/y.py"))])
             append_jsonl(a / ".agent/command-receipts.jsonl", {
-                "schema_version": "0.4.0", "id": "../../../../etc/passwd", "step_id": "P1", "attempt_id": "A1",
+                "schema_version": COMMAND_RECEIPTS_SCHEMA_VERSION, "id": "../../../../etc/passwd", "step_id": "P1", "attempt_id": "A1",
                 "provenance": "observed", "command": ["true"], "cwd": ".", "started_at": "t",
                 "finished_at": "t", "exit_code": 0, "truncated": False,
                 "stdout_path": None, "stdout_sha256": None, "stderr_path": None, "stderr_sha256": None,
@@ -1619,7 +1635,7 @@ class CriticizeReviewTests(unittest.TestCase):
             # the same namespaced id + physical path and silently overwrite.
             for text in ("first", "second"):
                 append_jsonl(a / ".agent/command-receipts.jsonl", {
-                    "schema_version": "0.4.0", "id": "CR1", "step_id": "P1", "attempt_id": "A1",
+                    "schema_version": COMMAND_RECEIPTS_SCHEMA_VERSION, "id": "CR1", "step_id": "P1", "attempt_id": "A1",
                     "provenance": "observed", "command": [text], "cwd": ".", "started_at": "t",
                     "finished_at": "t", "exit_code": 0, "truncated": False,
                     "stdout_path": None, "stdout_sha256": None, "stderr_path": None, "stderr_sha256": None,
@@ -1633,7 +1649,7 @@ class CriticizeReviewTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             a = build_tree(Path(tmp) / "a", steps=["P1"], files=[("src/x.py", "a" * 64)])
             append_jsonl(a / ".agent/file-receipts.jsonl", {
-                "schema_version": "0.4.0", "id": "FR2", "step_id": "P1", "attempt_id": "A1",
+                "schema_version": FILE_RECEIPTS_SCHEMA_VERSION, "id": "FR2", "step_id": "P1", "attempt_id": "A1",
                 "path": "src/y.py", "change_kind": "modified", "before_git_blob": None,
                 "after_sha256": "b" * 64, "recorded_at": "2026-07-05T00:02:00+00:00",
             })

@@ -26,11 +26,12 @@ def _load_guard():
     return module
 
 
-# The freeze set, workload ids, and manifest version are imported rather than
-# restated so the guard stays the single source of truth for all three.
+# The freeze set, workload ids, soak window, and manifest version are imported
+# rather than restated so the guard stays the single source of truth for all.
 guard = _load_guard()
 FREEZE_PATHS = tuple(sorted(guard.FREEZE_PATHS))
 WORKLOAD_IDS = tuple(sorted(guard.WORKLOAD_IDS))
+SOAK_DURATION = guard.SOAK_DURATION
 FIXTURE_DIRECTORIES = ("tests/fixtures/compatibility", "tests/fixtures/proof-bundle")
 CONTRACTS = guard.CONTRACTS_PATH
 
@@ -176,7 +177,8 @@ class SoakHarness:
         }
 
     def _elapsed_manifest(self, manifest: dict | None = None) -> None:
-        self._write_manifest(manifest or self._manifest(), age=timedelta(days=25))
+        # Comfortably past the window, whatever the window currently is.
+        self._write_manifest(manifest or self._manifest(), age=SOAK_DURATION * 2)
 
     def _record_transition(self) -> str:
         transition = self._commit("1.0 transition", self.now)
@@ -279,13 +281,20 @@ class SchemaSoakCheckerTests(SoakHarness, unittest.TestCase):
     # -- the clock -------------------------------------------------------
 
     def test_active_soak_reports_remaining_time(self) -> None:
-        self._write_manifest(self._manifest(), age=timedelta(days=1))
+        # Derived from SOAK_DURATION, not restated: the remaining figure moves
+        # whenever the window is retuned, and a hardcoded one silently stops
+        # describing the clock it is meant to check. A quarter of the window
+        # keeps the truncated day figure clear of a boundary, since the guard
+        # measures from its own `now`, a moment after the recorded start.
+        elapsed = SOAK_DURATION / 4
+        remaining = SOAK_DURATION - elapsed - timedelta(minutes=5)
+        self._write_manifest(self._manifest(), age=elapsed)
 
         result = self._run()
 
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("schema soak in progress", result.stdout)
-        self.assertIn("19d", result.stdout)
+        self.assertIn(f"{remaining.days}d", result.stdout)
         self.assertNotIn("complete", result.stdout)
 
     def test_elapsed_soak_reports_complete(self) -> None:
@@ -372,8 +381,10 @@ class SchemaSoakCheckerTests(SoakHarness, unittest.TestCase):
         self.assertEqual(result.returncode, 1)
         self.assertIn("must contain the candidate recording commit", result.stderr)
 
-    def test_trusted_run_an_hour_short_of_21_days_is_in_progress(self) -> None:
-        self._write_manifest(self._manifest(), age=timedelta(days=20, hours=23))
+    def test_trusted_run_an_hour_short_of_the_window_is_in_progress(self) -> None:
+        # The boundary is expressed against SOAK_DURATION so retuning the
+        # window cannot leave this asserting the wrong side of it.
+        self._write_manifest(self._manifest(), age=SOAK_DURATION - timedelta(hours=1))
 
         result = self._run()
 
@@ -381,8 +392,12 @@ class SchemaSoakCheckerTests(SoakHarness, unittest.TestCase):
         self.assertIn("schema soak in progress", result.stdout)
 
     def test_github_run_timestamp_not_git_recording_timestamp_sets_clock(self) -> None:
-        self._write_manifest(self._manifest(), age=timedelta(days=40))
-        self.workflow_run["created_at"] = self._stamp(self.now - timedelta(days=20))
+        # Recorded long ago, but the trusted run is recent: the clock must
+        # follow the run, so the soak is still in progress.
+        self._write_manifest(self._manifest(), age=SOAK_DURATION * 10)
+        self.workflow_run["created_at"] = self._stamp(
+            self.now - (SOAK_DURATION - timedelta(hours=1))
+        )
 
         result = self._run()
 

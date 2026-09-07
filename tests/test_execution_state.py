@@ -4,6 +4,10 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from agentflow.contracts import (
+    PLAN_SCHEMA_VERSION,
+    STEP_RUNS_SCHEMA_VERSION,
+)
 from agentflow.artifacts import append_jsonl, create_initial_artifacts, write_json
 from agentflow.execution import (
     amend_step,
@@ -25,7 +29,7 @@ from agentflow.execution import (
 
 def plan() -> dict:
     return {
-        "schema_version": "0.3.0",
+        "schema_version": PLAN_SCHEMA_VERSION,
         "objective": "Exercise state machine.",
         "scope": ["State machine fixture."],
         "non_goals": [],
@@ -157,7 +161,7 @@ class ExecutionStateTests(unittest.TestCase):
             append_jsonl(
                 root / ".agent/step-runs.jsonl",
                 {
-                    "schema_version": "0.3.0",
+                    "schema_version": STEP_RUNS_SCHEMA_VERSION,
                     "event": "verified",
                     "step_id": "P1",
                     "attempt_id": "A2",

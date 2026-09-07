@@ -14,6 +14,8 @@ from agentflow.contracts import (
     ARTIFACT_PATHS,
     ARTIFACT_SCHEMA_VERSIONS,
     EVIDENCE_KINDS,
+    EXECUTION_CONTRACT_SCHEMA_VERSION,
+    PLAN_SCHEMA_VERSION,
     REVIEW_GATE_POLICIES,
 )
 from agentflow.review import (
@@ -587,7 +589,7 @@ class BuildReviewRunRecordTests(unittest.TestCase):
             plan_path.write_text(
                 json.dumps(
                     {
-                        "schema_version": "0.3.0",
+                        "schema_version": PLAN_SCHEMA_VERSION,
                         "locked": True,
                         "steps": [{"id": "P1"}, {"id": "P1"}],
                     }
@@ -750,7 +752,7 @@ class EffectiveReviewPolicyTests(unittest.TestCase):
         if proof_policy is not None:
             (root / ".agent/execution.contract.json").write_text(
                 json.dumps(
-                    {"schema_version": "0.3.0", "proof_policy": proof_policy}
+                    {"schema_version": EXECUTION_CONTRACT_SCHEMA_VERSION, "proof_policy": proof_policy}
                 ),
                 encoding="utf-8",
             )
@@ -831,7 +833,7 @@ class WorkflowContractReviewPolicyTests(unittest.TestCase):
             (root / ".agent/execution.contract.json").write_text(
                 json.dumps(
                     {
-                        "schema_version": "0.3.0",
+                        "schema_version": EXECUTION_CONTRACT_SCHEMA_VERSION,
                         "proof_policy": exec_proof_policy,
                     }
                 ),
@@ -1262,7 +1264,7 @@ class RequiredReviewSatisfiedCheckTests(unittest.TestCase):
             (root / ".agent/execution.contract.json").write_text(
                 json.dumps(
                     {
-                        "schema_version": "0.3.0",
+                        "schema_version": EXECUTION_CONTRACT_SCHEMA_VERSION,
                         "proof_policy": {"review_gate": "ignore"},
                     }
                 ),

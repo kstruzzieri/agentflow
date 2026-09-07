@@ -44,8 +44,12 @@ compatibility promise.
 
 Before a major Agentflow upgrade, run **build-proof before a major upgrade** and
 retain the proof bundle. That moves evidence from mutable working state into the
-historically supported format. Starting with the 1.0 line, `doctor` warns when
-the root working state was written by an older major and points to this ritual.
+historically supported format. The bundle must be produced by the older
+Agentflow: the newer one is the installation doing the rejecting, so it cannot
+export that state itself. Starting with the 1.0 line, `doctor` reports an error
+when the root working state was written by an older major, and points to this
+ritual. The severity is `error`, not `warning`, because the contract genuinely
+cannot be read — diagnosing that clearly is what `doctor` is for.
 
 ## Schema evolution
 

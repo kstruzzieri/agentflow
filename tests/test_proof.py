@@ -10,9 +10,18 @@ from unittest.mock import patch
 from agentflow.artifacts import append_jsonl, create_initial_artifacts, write_json
 from agentflow.contracts import (
     AGGREGATION_SCHEMA_VERSION,
+    COMMAND_RECEIPTS_SCHEMA_VERSION,
+    DRIFT_REPORT_SCHEMA_VERSION,
+    PLAN_SCHEMA_VERSION,
     PROOF_PACK_SCHEMA_VERSION,
     REVIEW_RUNS_SCHEMA_VERSION,
+    STEP_RUNS_SCHEMA_VERSION,
 )
+
+
+def _next_major(version: str) -> str:
+    """A version strictly newer than ``version``, derived rather than restated."""
+    return f"{int(version.split('.')[0]) + 1}.0.0"
 from agentflow.artifacts import plan_binding_sha256
 from agentflow.coverage import (
     build_coverage,
@@ -167,7 +176,7 @@ class CoverageTests(unittest.TestCase):
         root = Path(tmp)
         create_initial_artifacts(root)
         plan = {**PLAN_CONTRACT_FIELDS, 
-            "schema_version": "0.2.0",
+            "schema_version": PLAN_SCHEMA_VERSION,
             "objective": "Fixture objective.",
             "scope": ["Fixture scope."],
             "steps": [{**STEP_CONTRACT_FIELDS, "id": "P1", "action": "Do work.", "evidence_ids": ["E1"]}],
@@ -195,7 +204,7 @@ class CoverageTests(unittest.TestCase):
         write_json(
             root / ".agent/plan.lock.json",
             {**PLAN_CONTRACT_FIELDS, 
-                "schema_version": "0.3.0",
+                "schema_version": PLAN_SCHEMA_VERSION,
                 "objective": "Verify criterion coverage integrity.",
                 "steps": [
                     {**STEP_CONTRACT_FIELDS, 
@@ -229,7 +238,7 @@ class CoverageTests(unittest.TestCase):
             append_jsonl(
                 root / ".agent/command-receipts.jsonl",
                 {
-                    "schema_version": "0.4.0",
+                    "schema_version": COMMAND_RECEIPTS_SCHEMA_VERSION,
                     "id": "CR1",
                     "step_id": "P1",
                     "command": ["check", "criterion"],
@@ -247,7 +256,7 @@ class CoverageTests(unittest.TestCase):
         write_json(
             root / ".agent/plan.lock.json",
             {**PLAN_CONTRACT_FIELDS, 
-                "schema_version": "0.4.0",
+                "schema_version": PLAN_SCHEMA_VERSION,
                 "objective": "Verify design decision coverage integrity.",
                 "steps": [
                     {**STEP_CONTRACT_FIELDS, 
@@ -288,7 +297,7 @@ class CoverageTests(unittest.TestCase):
         write_json(
             plan_path,
             {**PLAN_CONTRACT_FIELDS, 
-                "schema_version": "0.3.0",
+                "schema_version": PLAN_SCHEMA_VERSION,
                 "objective": "Project plan-bound review evidence.",
                 "steps": [
                     {**STEP_CONTRACT_FIELDS, 
@@ -341,7 +350,7 @@ class CoverageTests(unittest.TestCase):
             append_jsonl(
                 root / ".agent/command-receipts.jsonl",
                 {
-                    "schema_version": "0.3.0",
+                    "schema_version": COMMAND_RECEIPTS_SCHEMA_VERSION,
                     "id": "CR1",
                     "step_id": "P1",
                     "attempt_id": "A1",
@@ -366,7 +375,7 @@ class CoverageTests(unittest.TestCase):
             append_jsonl(
                 root / ".agent/command-receipts.jsonl",
                 {
-                    "schema_version": "0.3.0",
+                    "schema_version": COMMAND_RECEIPTS_SCHEMA_VERSION,
                     "id": "CR2",
                     "step_id": "P1",
                     "attempt_id": "A1",
@@ -415,7 +424,7 @@ class CoverageTests(unittest.TestCase):
             append_jsonl(
                 root / ".agent/command-receipts.jsonl",
                 {
-                    "schema_version": "0.3.0",
+                    "schema_version": COMMAND_RECEIPTS_SCHEMA_VERSION,
                     "id": "CR1",
                     "step_id": "P1",
                     "attempt_id": "A1",
@@ -453,7 +462,7 @@ class CoverageTests(unittest.TestCase):
             append_jsonl(
                 root / ".agent/step-runs.jsonl",
                 {
-                    "schema_version": "0.3.0",
+                    "schema_version": STEP_RUNS_SCHEMA_VERSION,
                     "event": "amendment_started",
                     "step_id": "P1",
                     "attempt_id": "A2",
@@ -478,7 +487,7 @@ class CoverageTests(unittest.TestCase):
         root = Path(tmp)
         create_initial_artifacts(root)
         plan = {**PLAN_CONTRACT_FIELDS, 
-            "schema_version": "0.2.0",
+            "schema_version": PLAN_SCHEMA_VERSION,
             "objective": "Fixture objective.",
             "scope": ["Fixture scope."],
             "steps": [{**STEP_CONTRACT_FIELDS, "id": "P1", "action": "Do work.", "evidence_ids": []}],
@@ -557,7 +566,7 @@ class CoverageTests(unittest.TestCase):
             root = Path(tmp)
             create_initial_artifacts(root)
             plan = {**PLAN_CONTRACT_FIELDS, 
-                "schema_version": "0.3.0",
+                "schema_version": PLAN_SCHEMA_VERSION,
                 "objective": "Trace a command-backed criterion.",
                 "steps": [
                     {**STEP_CONTRACT_FIELDS, 
@@ -590,7 +599,7 @@ class CoverageTests(unittest.TestCase):
             append_jsonl(
                 root / ".agent/command-receipts.jsonl",
                 {
-                    "schema_version": "0.4.0",
+                    "schema_version": COMMAND_RECEIPTS_SCHEMA_VERSION,
                     "id": "CR1",
                     "step_id": "P1",
                     "command": ["python3", "-m", "unittest"],
@@ -737,7 +746,7 @@ class CoverageTests(unittest.TestCase):
                     ]
                 steps.append(step)
             plan = {**PLAN_CONTRACT_FIELDS, 
-                "schema_version": "0.3.0",
+                "schema_version": PLAN_SCHEMA_VERSION,
                 "objective": "Project every criterion state.",
                 "steps": steps,
                 "evidence_ids": [],
@@ -763,7 +772,7 @@ class CoverageTests(unittest.TestCase):
                 append_jsonl(
                     root / ".agent/command-receipts.jsonl",
                     {
-                        "schema_version": "0.4.0",
+                        "schema_version": COMMAND_RECEIPTS_SCHEMA_VERSION,
                         "id": receipt_id,
                         "step_id": step_id,
                         "command": command,
@@ -815,7 +824,7 @@ class CoverageTests(unittest.TestCase):
                 {"id": "AC-NOT-INSPECTED", "text": "Inspection is missing."},
             ]
             plan = {**PLAN_CONTRACT_FIELDS, 
-                "schema_version": "0.3.0",
+                "schema_version": PLAN_SCHEMA_VERSION,
                 "objective": "Project inspection gates.",
                 "steps": [
                     {**STEP_CONTRACT_FIELDS, 
@@ -932,7 +941,7 @@ class CoverageTests(unittest.TestCase):
                 append_jsonl(
                     root / ".agent/step-runs.jsonl",
                     {
-                        "schema_version": "0.5.0",
+                        "schema_version": STEP_RUNS_SCHEMA_VERSION,
                         "event": "claimed",
                         "step_id": step_id,
                         "attempt_id": attempt_id,
@@ -941,7 +950,7 @@ class CoverageTests(unittest.TestCase):
                 append_jsonl(
                     root / ".agent/step-runs.jsonl",
                     {
-                        "schema_version": "0.5.0",
+                        "schema_version": STEP_RUNS_SCHEMA_VERSION,
                         "event": "completed",
                         "step_id": step_id,
                         "attempt_id": attempt_id,
@@ -973,7 +982,7 @@ class CoverageTests(unittest.TestCase):
                 append_jsonl(
                     root / ".agent/step-runs.jsonl",
                     {
-                        "schema_version": "0.5.0",
+                        "schema_version": STEP_RUNS_SCHEMA_VERSION,
                         "event": event,
                         "step_id": step_id,
                         "attempt_id": "A1",
@@ -1066,7 +1075,11 @@ class CoverageTests(unittest.TestCase):
     def test_verify_proof_hints_schema_growth_for_older_decision_proof(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root, proof = self._design_decision_proof_fixture(tmp)
-            proof["schema_version"] = "0.10.0"
+            # The supported side of the hint is derived, never restated: it moves
+            # with the constant, and a literal would pin a version this assertion
+            # has no control over.
+            older = "0.10.0"
+            proof["schema_version"] = older
             proof["coverage"].pop("design_decisions")
             proof["core_sha256"] = core_sha256(proof)
             write_json(root / ".agent/proof-pack.json", proof)
@@ -1076,7 +1089,10 @@ class CoverageTests(unittest.TestCase):
             self.assertTrue(
                 any(
                     "design decision coverage is stale or tampered" in finding["message"]
-                    and "older schema version (0.10.0 < 0.11.0)" in finding["message"]
+                    and (
+                        f"older schema version ({older} < "
+                        f"{PROOF_PACK_SCHEMA_VERSION})"
+                    ) in finding["message"]
                     for finding in findings
                 )
             )
@@ -1242,8 +1258,8 @@ class CoverageTests(unittest.TestCase):
             proof_path = root / ".agent/proof-pack.json"
             proof_path.parent.mkdir()
             proof = {
-                "schema_version": "0.2.0",
-                "bundle_version": "0.2.0",
+                "schema_version": PROOF_PACK_SCHEMA_VERSION,
+                "bundle_version": PROOF_PACK_SCHEMA_VERSION,
                 "meta": {},
                 "generated_from": ["../secret.txt"],
                 "files": [{"path": "../secret.txt", "sha256": "0" * 64}],
@@ -1288,8 +1304,8 @@ class CoverageTests(unittest.TestCase):
             (root / ".agent/plan.lock.json").write_text("{}", encoding="utf-8")
             proof_path = root / ".agent/proof-pack.json"
             proof = {
-                "schema_version": "0.2.0",
-                "bundle_version": "0.2.0",
+                "schema_version": PROOF_PACK_SCHEMA_VERSION,
+                "bundle_version": PROOF_PACK_SCHEMA_VERSION,
                 "meta": {},
                 "generated_from": [".agent/plan.lock.json"],
                 "files": [],
@@ -1344,7 +1360,10 @@ class CoverageTests(unittest.TestCase):
             write_proof_metadata(root, proof)
             proof_path = root / ".agent/proof-pack.json"
             data = json.loads(proof_path.read_text(encoding="utf-8"))
-            data["schema_version"] = "0.1.0"
+            # 0.4.0 is the documented historical floor (docs/compatibility.md):
+            # older than supported, but still inside the window a 1.x verifier
+            # accepts, so the core-mismatch branch stays reachable.
+            data["schema_version"] = "0.4.0"
             data["core_sha256"] = "0" * 64
             proof_path.write_text(json.dumps(data), encoding="utf-8")
 
@@ -1793,7 +1812,7 @@ class CoverageTests(unittest.TestCase):
 
             init_execution_artifacts(root)
             plan = {**PLAN_CONTRACT_FIELDS, 
-                "schema_version": "0.3.0",
+                "schema_version": PLAN_SCHEMA_VERSION,
                 "objective": "Fixture objective.",
                 "scope": ["Fixture scope."],
                 "non_goals": [],
@@ -1852,7 +1871,6 @@ class CoverageTests(unittest.TestCase):
 
             init_execution_artifacts(root)
             plan = json.loads((root / ".agent/plan.lock.json").read_text(encoding="utf-8"))
-            plan["schema_version"] = "0.3.0"
             plan["allowed_files"] = ["fixture.txt", ".agent/"]
             plan["blocked_files"] = []
             plan["validation_gates"] = ["python3 -c \"print('ok')\""]
@@ -1891,7 +1909,7 @@ class CoverageTests(unittest.TestCase):
 class LeaseProofTests(unittest.TestCase):
     def _plan(self) -> dict:
         return {**PLAN_CONTRACT_FIELDS, 
-            "schema_version": "0.3.0", "objective": "Lease proof fixture.",
+            "schema_version": PLAN_SCHEMA_VERSION, "objective": "Lease proof fixture.",
             "scope": ["s"], "non_goals": [], "invariants": ["i"],
             "allowed_files": [".agent/", "f.txt"], "blocked_files": [],
             "validation_gates": ["python3 -c \"print('ok')\""],
@@ -1998,7 +2016,7 @@ class ReviewProofTests(unittest.TestCase):
         write_json(
             root / ".agent/plan.lock.json",
             {**PLAN_CONTRACT_FIELDS, 
-                "schema_version": "0.3.0", "objective": "o", "scope": ["s"],
+                "schema_version": PLAN_SCHEMA_VERSION, "objective": "o", "scope": ["s"],
                 "non_goals": [], "invariants": ["i"],
                 "allowed_files": [".agent/**"], "blocked_files": [],
                 "validation_gates": ["python3 -m unittest"],
@@ -2172,7 +2190,7 @@ class AdaptiveReviewProofTests(unittest.TestCase):
         write_json(
             root / ".agent/plan.lock.json",
             {**PLAN_CONTRACT_FIELDS, 
-                "schema_version": "0.3.0",
+                "schema_version": PLAN_SCHEMA_VERSION,
                 "objective": "o",
                 "scope": ["s"],
                 "steps": [{**STEP_CONTRACT_FIELDS, "id": "P1", "evidence_ids": []}],
@@ -2323,7 +2341,7 @@ class VerifyReviewTests(unittest.TestCase):
         init_execution_artifacts(root)
         write_json(
             root / ".agent/plan.lock.json",
-            {**PLAN_CONTRACT_FIELDS, "schema_version": "0.3.0", "objective": "o", "scope": ["s"],
+            {**PLAN_CONTRACT_FIELDS, "schema_version": PLAN_SCHEMA_VERSION, "objective": "o", "scope": ["s"],
              "steps": [{**STEP_CONTRACT_FIELDS, "id": "P1", "evidence_ids": []}], "evidence_ids": []},
         )
         state = root / "docs/ai/state/main"
@@ -2430,7 +2448,7 @@ class VerifyReviewTests(unittest.TestCase):
             write_json(
                 root / ".agent/plan.lock.json",
                 {**PLAN_CONTRACT_FIELDS, 
-                    "schema_version": "0.3.0",
+                    "schema_version": PLAN_SCHEMA_VERSION,
                     "objective": "o",
                     "scope": ["s"],
                     "steps": [{**STEP_CONTRACT_FIELDS, "id": "P1", "evidence_ids": []}],
@@ -2455,7 +2473,7 @@ class VerifyReviewTests(unittest.TestCase):
             write_json(
                 root / ".agent/plan.lock.json",
                 {**PLAN_CONTRACT_FIELDS, 
-                    "schema_version": "0.3.0",
+                    "schema_version": PLAN_SCHEMA_VERSION,
                     "objective": "o",
                     "scope": ["s"],
                     "steps": [{**STEP_CONTRACT_FIELDS, "id": "P1", "evidence_ids": []}],
@@ -2499,7 +2517,7 @@ class VerifyReviewTests(unittest.TestCase):
 
 class HunkProofSummaryTests(unittest.TestCase):
     def _minimal_plan(self) -> dict:
-        return {**PLAN_CONTRACT_FIELDS, "schema_version": "0.3.0", "objective": "x",
+        return {**PLAN_CONTRACT_FIELDS, "schema_version": PLAN_SCHEMA_VERSION, "objective": "x",
                 "allowed_files": ["b.py"], "blocked_files": [], "risk_level": "low",
                 "drift_budget": {"unrelated_edits": 0, "new_dependencies": 0,
                                  "formatting_drift": "minimal", "architecture_drift": "requires_approval",
@@ -2515,7 +2533,7 @@ class HunkProofSummaryTests(unittest.TestCase):
             write_json(
                 root / ".agent/drift-report.json",
                 {
-                    "schema_version": "0.2.1", "status": "fail",
+                    "schema_version": DRIFT_REPORT_SCHEMA_VERSION, "status": "fail",
                     "changed_files": ["a.py", "b.py"],
                     "unmapped_hunks": [
                         {"path": "b.py", "hash": "f" * 64, "old_start": 1, "old_count": 0,
@@ -2578,7 +2596,7 @@ class StuckProofTests(unittest.TestCase):
         root = Path(tmp)
         create_initial_artifacts(root)
         plan = {**PLAN_CONTRACT_FIELDS, 
-            "schema_version": "0.2.0",
+            "schema_version": PLAN_SCHEMA_VERSION,
             "objective": "Stuck fixture.",
             "scope": ["Stuck fixture."],
             "steps": [{**STEP_CONTRACT_FIELDS, "id": "P1", "action": "Do work.", "evidence_ids": ["E1"]}],
@@ -2602,7 +2620,7 @@ class StuckProofTests(unittest.TestCase):
             append_jsonl(
                 root / ".agent/command-receipts.jsonl",
                 {
-                    "schema_version": "0.3.0",
+                    "schema_version": COMMAND_RECEIPTS_SCHEMA_VERSION,
                     "id": f"CRX{index}",
                     "step_id": "P1",
                     "attempt_id": "A1",
@@ -2646,7 +2664,7 @@ class AggregationProvenanceProofTests(unittest.TestCase):
         root = Path(tmp)
         create_initial_artifacts(root)
         plan = {**PLAN_CONTRACT_FIELDS, 
-            "schema_version": "0.2.0",
+            "schema_version": PLAN_SCHEMA_VERSION,
             "objective": "Aggregation fixture.",
             "scope": ["Aggregation fixture."],
             "steps": [{**STEP_CONTRACT_FIELDS, "id": "P1", "action": "Do work.", "evidence_ids": ["E1"]}],
@@ -2996,7 +3014,7 @@ class ProofSchemaGateTests(unittest.TestCase):
             create_initial_artifacts(root)
             complete_initial_plan(root)
             proof = build_proof(root, root / ".agent/plan.lock.json")
-            proof["schema_version"] = "0.12.0"
+            proof["schema_version"] = _next_major(PROOF_PACK_SCHEMA_VERSION)
             proof_path = write_proof_metadata(root, proof)
 
             findings = verify_proof(root, proof_path)
@@ -3012,7 +3030,7 @@ class ProofSchemaGateTests(unittest.TestCase):
             create_initial_artifacts(root)
             complete_initial_plan(root)
             proof = build_proof(root, root / ".agent/plan.lock.json")
-            proof["schema_version"] = "0.12.0"
+            proof["schema_version"] = _next_major(PROOF_PACK_SCHEMA_VERSION)
             del proof["meta"]
             proof_path = write_proof_metadata(root, proof)
 

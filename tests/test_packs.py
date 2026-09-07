@@ -6,7 +6,10 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from agentflow.contracts import WORKFLOW_PACK_SCHEMA_VERSION
+from agentflow.contracts import (
+    PLAN_SCHEMA_VERSION,
+    WORKFLOW_PACK_SCHEMA_VERSION,
+)
 from agentflow.packs import (
     Pack,
     PackError,
@@ -84,7 +87,7 @@ class ResolveManifestPathTests(unittest.TestCase):
 
 def valid_template() -> dict:
     return {
-        "schema_version": "0.3.0",
+        "schema_version": PLAN_SCHEMA_VERSION,
         "objective": "TODO: describe the objective",
         "scope": ["src/"],
         "non_goals": [],

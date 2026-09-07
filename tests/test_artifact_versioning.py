@@ -10,6 +10,7 @@ from agentflow import artifacts
 from agentflow.artifacts import read_json, read_jsonl, write_json
 from agentflow.contracts import (
     EVIDENCE_SCHEMA_VERSION,
+    EXECUTION_CONTRACT_SCHEMA_VERSION,
     PLAN_SCHEMA_VERSION,
     STEP_RUNS_SCHEMA_VERSION,
 )
@@ -23,6 +24,17 @@ def _next_major(version: str) -> str:
     """The next-major literal must track the constant: hardcoding "1.0.0"
     would invert these rejection tests on the day the schema freezes at 1.0.0."""
     return f"{int(version.split('.')[0]) + 1}.0.0"
+
+
+def _older_minor_pair(version: str) -> tuple[str, str]:
+    """``(actual, supported)`` where ``actual`` is an older minor, same major.
+
+    Derived for the same reason as ``_next_major``: at a freshly frozen major
+    there is no older minor to hardcode, so the pair has to be built around
+    whatever the constant currently is.
+    """
+    major, minor, _patch = version.split(".")
+    return version, f"{major}.{int(minor) + 1}.0"
 
 
 class ArtifactReaderVersionTests(unittest.TestCase):
@@ -59,7 +71,10 @@ class ArtifactReaderVersionTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             path = root / ".agent/execution.contract.json"
-            write_json(path, {"schema_version": "0.2.0", "command_policy": {"receipt_store": "by_attempt"}})
+            write_json(path, {
+                "schema_version": _next_major(EXECUTION_CONTRACT_SCHEMA_VERSION),
+                "command_policy": {"receipt_store": "by_attempt"},
+            })
 
             self.assertEqual(_contract_policy(root), {})
 
@@ -90,9 +105,16 @@ class ArtifactReaderVersionTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / ".agent/step-runs.jsonl"
             path.parent.mkdir(parents=True)
-            path.write_text('{"schema_version":"0.4.0"}\n', encoding="utf-8")
+            actual, supported = _older_minor_pair(STEP_RUNS_SCHEMA_VERSION)
+            path.write_text(
+                f'{{"schema_version":"{actual}"}}\n', encoding="utf-8"
+            )
 
-            self.assertEqual(read_jsonl(path), [{"schema_version": "0.4.0"}])
+            with patch.dict(
+                artifacts.EXECUTION_ARTIFACT_SCHEMA_VERSIONS,
+                {"step-runs": supported},
+            ):
+                self.assertEqual(read_jsonl(path), [{"schema_version": actual}])
 
     def test_step_ledger_reader_rejects_newer_major(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

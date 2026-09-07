@@ -6,6 +6,10 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from agentflow.contracts import (
+    EXECUTION_CONTRACT_SCHEMA_VERSION,
+    PLAN_SCHEMA_VERSION,
+)
 from agentflow.execution import (
     default_execution_contract,
     doctor,
@@ -14,6 +18,7 @@ from agentflow.execution import (
     validate_execution_contract,
 )
 from agentflow.validation import validate_plan
+from agentflow.versioning import parse_schema_version
 
 
 class ExecutionContractTests(unittest.TestCase):
@@ -120,7 +125,7 @@ class ExecutionContractTests(unittest.TestCase):
 
     def test_default_contract_is_single_writer_and_provider_neutral(self) -> None:
         contract = default_execution_contract(".")
-        self.assertEqual(contract["schema_version"], "0.3.0")
+        self.assertEqual(contract["schema_version"], EXECUTION_CONTRACT_SCHEMA_VERSION)
         self.assertEqual(contract["contract_type"], "agentflow_execution_contract")
         self.assertEqual(contract["concurrency"]["writer_model"], "single_writer")
         self.assertIn("codex_skills", contract["agent_interface"]["forbidden_assumptions"])
@@ -140,7 +145,72 @@ class ExecutionContractTests(unittest.TestCase):
             contract = json.loads(
                 (root / ".agent/execution.contract.json").read_text(encoding="utf-8")
             )
-            self.assertEqual(contract["schema_version"], "0.3.0")
+            self.assertEqual(contract["schema_version"], EXECUTION_CONTRACT_SCHEMA_VERSION)
+
+    def test_doctor_points_an_older_major_root_at_the_upgrade_ritual(self) -> None:
+        # docs/compatibility.md promises this from the 1.0 line on. It only has
+        # a subject once the supported major is above 0, so the assertion is
+        # scoped to that; before then the raw incompatibility message stands.
+        supported = parse_schema_version(EXECUTION_CONTRACT_SCHEMA_VERSION)
+        if supported.major == 0:
+            self.skipTest("no older major exists below the 0.x line")
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            init_execution_artifacts(root, force=False)
+            path = root / ".agent/execution.contract.json"
+            contract = json.loads(path.read_text(encoding="utf-8"))
+            contract["schema_version"] = f"{supported.major - 1}.0.0"
+            path.write_text(json.dumps(contract), encoding="utf-8")
+
+            report = doctor(root)
+
+            self.assertEqual(report["status"], "failed")
+            self.assertEqual(len(report["findings"]), 1)
+            message = report["findings"][0]["message"]
+            self.assertEqual(report["findings"][0]["severity"], "error")
+            # the original diagnostic survives ...
+            self.assertIn("execution.contract.json", message)
+            self.assertIn(f"{supported.major - 1}.0.0", message)
+            # ... and the remedy is appended to it
+            self.assertIn("build-proof", message)
+            self.assertIn("older Agentflow", message)
+            self.assertIn("docs/compatibility.md", message)
+
+    def test_doctor_degrades_on_a_non_string_schema_version(self) -> None:
+        # The remedy only ever appends advice, so a schema_version it cannot
+        # read must leave doctor's structured report intact rather than escape
+        # as a traceback -- the same degrade rule the contract load follows.
+        for recorded in (None, 3, ["0.3.0"], {"a": 1}, "not-a-version", ""):
+            with self.subTest(recorded=recorded):
+                with tempfile.TemporaryDirectory() as tmp:
+                    root = Path(tmp)
+                    init_execution_artifacts(root, force=False)
+                    path = root / ".agent/execution.contract.json"
+                    contract = json.loads(path.read_text(encoding="utf-8"))
+                    contract["schema_version"] = recorded
+                    path.write_text(json.dumps(contract), encoding="utf-8")
+
+                    report = doctor(root)
+
+                    self.assertEqual(report["status"], "failed")
+                    self.assertEqual(len(report["findings"]), 1)
+                    self.assertEqual(report["findings"][0]["severity"], "error")
+                    self.assertNotIn("build-proof", report["findings"][0]["message"])
+
+    def test_doctor_does_not_add_the_ritual_for_a_same_major_mismatch(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            init_execution_artifacts(root, force=False)
+            path = root / ".agent/execution.contract.json"
+            contract = json.loads(path.read_text(encoding="utf-8"))
+            supported = parse_schema_version(EXECUTION_CONTRACT_SCHEMA_VERSION)
+            contract["schema_version"] = f"{supported.major}.{supported.minor + 1}.0"
+            path.write_text(json.dumps(contract), encoding="utf-8")
+
+            report = doctor(root)
+
+            self.assertEqual(report["status"], "failed")
+            self.assertNotIn("build-proof", report["findings"][0]["message"])
 
     def test_init_execution_does_not_overwrite_without_force(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -226,7 +296,7 @@ class ExecutionContractTests(unittest.TestCase):
 
     def test_plan_validation_accepts_command_gate_timeout(self) -> None:
         plan = {
-            "schema_version": "0.3.0",
+            "schema_version": PLAN_SCHEMA_VERSION,
             "objective": "Timeout validation.",
             "scope": ["Exercise command gate timeout validation."],
             "non_goals": [],
@@ -272,7 +342,7 @@ class ExecutionContractTests(unittest.TestCase):
         for value in (0, -5, False, True, "1200", None):
             with self.subTest(value=value):
                 plan = {
-                    "schema_version": "0.3.0",
+                    "schema_version": PLAN_SCHEMA_VERSION,
                     "objective": "Timeout validation.",
                     "scope": ["Exercise command gate timeout validation."],
                     "non_goals": [],

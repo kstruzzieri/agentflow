@@ -8,6 +8,9 @@ from typing import Any
 
 import subprocess as _subprocess
 
+from agentflow.contracts import (
+    PLAN_SCHEMA_VERSION,
+)
 from agentflow.review import REVIEW_RUN_ID_PATTERN
 from agentflow import review_runner
 from agentflow import git as af_git
@@ -163,7 +166,7 @@ def _sample_config() -> dict:
 
 def _write_valid_locked_plan(root: Path) -> None:
     plan = {
-        "schema_version": "0.3.0",
+        "schema_version": PLAN_SCHEMA_VERSION,
         "objective": "Validate review ownership.",
         "scope": ["Review findings."],
         "non_goals": [],

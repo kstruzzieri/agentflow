@@ -3,12 +3,15 @@ from __future__ import annotations
 import json
 import unittest
 
+from agentflow.contracts import (
+    PLAN_SCHEMA_VERSION,
+)
 from agentflow.handoff import export_handoff, lint_handoff_text
 
 
 def plan() -> dict:
     return {
-        "schema_version": "0.3.0",
+        "schema_version": PLAN_SCHEMA_VERSION,
         "objective": "Portable work packet.",
         "scope": ["Exercise handoff."],
         "non_goals": ["No provider-specific wording."],

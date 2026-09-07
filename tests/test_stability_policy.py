@@ -8,13 +8,107 @@ from pathlib import Path
 
 from agentflow import aggregate
 from agentflow.aggregate import Source
+from agentflow.artifacts import read_json, read_jsonl
 from agentflow.cli_contract import JSON_OUTPUTS, build_cli_contract
 from agentflow.events import project_events
 from agentflow.execution import doctor
 from agentflow.porcelain import Action, next_action
+from agentflow.versioning import parse_schema_version
 
 
 ROOT = Path(__file__).resolve().parents[1]
+COMPATIBILITY = ROOT / "tests/fixtures/compatibility"
+
+# Working state that these tests read back through the live readers. Auxiliary
+# ledgers are excluded: they keep independent versions and never gate a major.
+_WORKING_STATE = (
+    ".agent/execution.contract.json",
+    ".agent/plan.lock.json",
+    ".agent/step-runs.jsonl",
+    ".agent/command-receipts.jsonl",
+    ".agent/file-receipts.jsonl",
+    ".agent/verification-runs.jsonl",
+)
+# The payload samples below need one row from each of these, plus the auxiliary
+# runtime ledger, so a thin root cannot silently qualify as "representative".
+_REQUIRED_ROWS = (
+    ".agent/step-runs.jsonl",
+    ".agent/command-receipts.jsonl",
+    ".agent/file-receipts.jsonl",
+    ".agent/verification-runs.jsonl",
+    ".agent/runtime-snapshots.jsonl",
+)
+
+
+def _perturb_rows(root: Path) -> None:
+    """Make a copied root collide with its original instead of deduplicating.
+
+    Aggregation drops byte-identical rows on purpose, so a plain copy produces
+    no overlap at all. Changing a non-identifying field on each row keeps the
+    same step id and file path -- which is what step_overlap and file_overlap
+    key on -- while leaving the rows schema-valid.
+    """
+    for rel, field, value in (
+        (".agent/step-runs.jsonl", "agent_id", "twin-agent"),
+        (".agent/file-receipts.jsonl", "after_sha256", "f" * 64),
+    ):
+        path = root / rel
+        rows = [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
+        for row in rows:
+            row[field] = value
+        path.write_text(
+            "".join(json.dumps(row, sort_keys=True) + "\n" for row in rows),
+            encoding="utf-8",
+        )
+
+
+def current_state_fixture() -> Path:
+    """The compatibility fixture whose working state the live readers accept.
+
+    The matrix deliberately keeps historical roots (legacy-0.3,
+    released-v0.4.0, and every superseded current-* snapshot) that a newer
+    major must refuse: docs/compatibility.md gives working state no
+    cross-major promise, so those are covered through verify-proof's
+    historical guarantee instead, not here.
+
+    Selection is by recorded version under the live constants, not by name,
+    because the frozen fixtures cannot be edited in place -- a major transition
+    adds a new root beside them. The newest readable root wins, and it must win
+    outright: picking the first readable directory would let these tests keep
+    passing against a staler sample after a transition, which is precisely the
+    silent coverage loss the freeze exists to prevent.
+    """
+    ranked: dict[Path, tuple] = {}
+    for root in sorted(p for p in COMPATIBILITY.iterdir() if p.is_dir()):
+        if not all((root / rel).exists() for rel in _REQUIRED_ROWS):
+            continue
+        try:
+            versions = []
+            for rel in _WORKING_STATE:
+                path = root / rel
+                rows = read_jsonl(path) if path.suffix == ".jsonl" else [read_json(path)]
+                if not rows:
+                    raise ValueError(f"{rel} is empty")
+                versions.append(parse_schema_version(rows[0]["schema_version"]))
+        except (ValueError, OSError, KeyError, TypeError):
+            # Unreadable here means "written by another major", which is the
+            # documented behaviour, not a fixture defect.
+            continue
+        ranked[root] = tuple((v.major, v.minor, v.patch) for v in versions)
+    if not ranked:
+        raise AssertionError(
+            "no compatibility fixture is readable by the live schema constants. "
+            "A major transition must add a current-major fixture beside the "
+            "historical ones (docs/compatibility.md)."
+        )
+    best = max(ranked.values())
+    winners = [root for root, key in ranked.items() if key == best]
+    if len(winners) != 1:
+        raise AssertionError(
+            "compatibility fixtures tie for newest working state: "
+            + ", ".join(sorted(p.name for p in winners))
+        )
+    return winners[0]
 
 
 class StabilityPolicyTests(unittest.TestCase):
@@ -61,7 +155,7 @@ class StabilityPolicyTests(unittest.TestCase):
         )
 
     def test_json_contract_matches_representative_runtime_payloads(self) -> None:
-        root = ROOT / "tests/fixtures/compatibility/current-full"
+        root = current_state_fixture()
 
         def rows(name: str) -> list[dict[str, object]]:
             return [
@@ -125,14 +219,10 @@ class StabilityPolicyTests(unittest.TestCase):
                 self.assertJsonContract(command, payload)
 
     def test_aggregate_json_contract_matches_runtime_payloads(self) -> None:
-        current = ROOT / "tests/fixtures/compatibility/current-full"
-        released = ROOT / "tests/fixtures/compatibility/released-v0.4.0"
+        current = current_state_fixture()
         sources = [Source(current, "current", "current")]
         dry_run = aggregate.analyze(sources, current, base_ref="HEAD")
         self.assertEqual(dry_run["status"], "ok")
-        collision_sources = [*sources, Source(released, "released", "released")]
-        dry_collision = aggregate.analyze(collision_sources, current, base_ref="HEAD")
-        self.assertEqual(dry_collision["status"], "collision")
 
         # The scratch output must live inside the repo so base_ref="HEAD"
         # resolves, and must carry fixture.txt so the file-receipt
@@ -140,6 +230,23 @@ class StabilityPolicyTests(unittest.TestCase):
         with tempfile.TemporaryDirectory(dir=ROOT) as tmp:
             output = Path(tmp)
             shutil.copyfile(current / "fixture.txt", output / "fixture.txt")
+
+            # Collide against a twin of the *current* root rather than a
+            # historical one. Pairing with an older-major fixture also reports
+            # "collision", but as malformed_ledger -- the assertion would keep
+            # passing while the step/file overlap it exists to prove went
+            # unexercised. The rows must differ: identical rows deduplicate.
+            twin = output / "twin"
+            shutil.copytree(current, twin)
+            _perturb_rows(twin)
+            collision_sources = [*sources, Source(twin, "twin", "twin")]
+            dry_collision = aggregate.analyze(collision_sources, current, base_ref="HEAD")
+            self.assertEqual(dry_collision["status"], "collision")
+            kinds = {c["kind"] for c in dry_collision["collisions"]}
+            self.assertIn("step_overlap", kinds)
+            self.assertIn("file_overlap", kinds)
+            self.assertNotIn("malformed_ledger", kinds)
+
             written = aggregate.write_canonical(sources, output, base_ref="HEAD")
             # Aim the collision write at the scratch dir, not the committed
             # fixture tree: if collision detection ever regressed to "ok",
@@ -153,6 +260,33 @@ class StabilityPolicyTests(unittest.TestCase):
         for payload in (dry_run, dry_collision, write_collision, written):
             with self.subTest(status=payload["status"], keys=sorted(payload)):
                 self.assertJsonContract("aggregate-ledgers", payload)
+
+    def test_aggregate_refuses_a_root_written_by_another_major(self) -> None:
+        # docs/compatibility.md gives aggregation no cross-major promise. This
+        # only has a subject once a historical fixture is genuinely a major
+        # behind; while every fixture shares the current major there is nothing
+        # to reject, so it activates on its own at the transition.
+        current = current_state_fixture()
+        foreign = [
+            root
+            for root in sorted(p for p in COMPATIBILITY.iterdir() if p.is_dir())
+            if root != current and (root / ".agent/step-runs.jsonl").exists()
+        ]
+        older_major = []
+        for root in foreign:
+            try:
+                read_jsonl(root / ".agent/step-runs.jsonl")
+            except (ValueError, OSError):
+                older_major.append(root)
+        if not older_major:
+            self.skipTest("no compatibility fixture is a major behind the live schemas")
+        report = aggregate.analyze(
+            [Source(current, "current", "current"), Source(older_major[0], "old", "old")],
+            current,
+            base_ref="HEAD",
+        )
+        self.assertEqual(report["status"], "collision")
+        self.assertIn("malformed_ledger", {c["kind"] for c in report["collisions"]})
 
     def test_next_action_contract_documents_resumability_shape(self) -> None:
         resumability = JSON_OUTPUTS["next-action"][0]["keys"]["resumability"]
@@ -295,7 +429,7 @@ class StabilityPolicyTests(unittest.TestCase):
         # Pin the reset rule's substance, not its phrasing: the clock is derived
         # from Git rather than a declared start date, and an earlier verbatim
         # assertion here forced the audit to quote wording it had outgrown.
-        for phrase in ("reset the candidate commit", "21-day clock"):
+        for phrase in ("reset the candidate commit", "soak clock"):
             self.assertIn(phrase, audit)
 
     def test_audit_documents_the_post_soak_version_only_carve_out(self) -> None:
@@ -304,7 +438,7 @@ class StabilityPolicyTests(unittest.TestCase):
         flowed = " ".join(audit.split())
 
         self.assertIn("version-only change", flowed)
-        self.assertIn("Once the 21 days have elapsed", flowed)
+        self.assertIn("Once the soak window has elapsed", flowed)
         self.assertIn("strict increase", flowed)
 
 

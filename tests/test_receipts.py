@@ -9,7 +9,12 @@ from pathlib import Path
 from unittest.mock import patch
 
 from agentflow.artifacts import append_jsonl, create_initial_artifacts, write_json
-from agentflow.contracts import DEFAULT_COMMAND_TIMEOUT_SECONDS
+from agentflow.contracts import (
+    COMMAND_RECEIPTS_SCHEMA_VERSION,
+    DEFAULT_COMMAND_TIMEOUT_SECONDS,
+    PLAN_SCHEMA_VERSION,
+    STEP_RUNS_SCHEMA_VERSION,
+)
 from agentflow.execution import (
     amend_step,
     claim_step,
@@ -31,7 +36,7 @@ from agentflow.receipts import (
 
 def plan() -> dict:
     return {
-        "schema_version": "0.3.0",
+        "schema_version": PLAN_SCHEMA_VERSION,
         "objective": "Receipt fixture.",
         "scope": ["Exercise receipts."],
         "non_goals": [],
@@ -553,7 +558,7 @@ class ReceiptTests(unittest.TestCase):
             outside.write_text("outside\n", encoding="utf-8")
             try:
                 receipt = {
-                    "schema_version": "0.3.0",
+                    "schema_version": COMMAND_RECEIPTS_SCHEMA_VERSION,
                     "id": "CR1",
                     "step_id": "P1",
                     "attempt_id": "A1",
@@ -644,7 +649,7 @@ class ReceiptTests(unittest.TestCase):
             append_jsonl(
                 root / ".agent/step-runs.jsonl",
                 {
-                    "schema_version": "0.3.0",
+                    "schema_version": STEP_RUNS_SCHEMA_VERSION,
                     "event": "verified",
                     "step_id": "P1",
                     "attempt_id": "A2",

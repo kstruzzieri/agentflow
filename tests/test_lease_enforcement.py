@@ -7,6 +7,9 @@ import unittest
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
+from agentflow.contracts import (
+    PLAN_SCHEMA_VERSION,
+)
 from agentflow.artifacts import create_initial_artifacts, write_json
 from agentflow.execution import (
     attempt_is_expired,
@@ -27,7 +30,7 @@ ENFORCE = {"concurrency": {"lease_policy": "enforce", "lease_ttl_minutes": 30,
 
 def plan() -> dict:
     return {
-        "schema_version": "0.3.0", "objective": "Lease enforcement fixture.",
+        "schema_version": PLAN_SCHEMA_VERSION, "objective": "Lease enforcement fixture.",
         "scope": ["s"], "non_goals": [], "invariants": ["i"],
         "allowed_files": [".agent/", "f.txt"], "blocked_files": [],
         "validation_gates": ["python3 -c \"print('ok')\""],

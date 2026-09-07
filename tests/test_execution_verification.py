@@ -7,6 +7,12 @@ import unittest
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
+from agentflow.contracts import (
+    COMMAND_RECEIPTS_SCHEMA_VERSION,
+    FILE_RECEIPTS_SCHEMA_VERSION,
+    PLAN_SCHEMA_VERSION,
+    STEP_RUNS_SCHEMA_VERSION,
+)
 from agentflow.artifacts import append_jsonl, create_initial_artifacts, read_json, write_json
 from agentflow.execution import (
     amend_step,
@@ -23,7 +29,7 @@ from agentflow.validation import audit_drift
 
 def plan() -> dict:
     return {
-        "schema_version": "0.3.0",
+        "schema_version": PLAN_SCHEMA_VERSION,
         "objective": "Verify fixture.",
         "scope": ["Exercise verification."],
         "non_goals": [],
@@ -91,7 +97,7 @@ class ExecutionVerificationTests(unittest.TestCase):
             append_jsonl(
                 root / ".agent/command-receipts.jsonl",
                 {
-                    "schema_version": "0.3.0",
+                    "schema_version": COMMAND_RECEIPTS_SCHEMA_VERSION,
                     "id": f"CRX{index}",
                     "step_id": "P1",
                     "attempt_id": "A1",
@@ -144,7 +150,7 @@ class ExecutionVerificationTests(unittest.TestCase):
         **overrides: object,
     ) -> None:
         receipt = {
-            "schema_version": "0.3.0",
+            "schema_version": COMMAND_RECEIPTS_SCHEMA_VERSION,
             "id": "CR-timeout",
             "step_id": "P1",
             "attempt_id": "A1",
@@ -240,7 +246,7 @@ class ExecutionVerificationTests(unittest.TestCase):
             append_jsonl(
                 root / ".agent/command-receipts.jsonl",
                 {
-                    "schema_version": "0.3.0",
+                    "schema_version": COMMAND_RECEIPTS_SCHEMA_VERSION,
                     "id": "CR-malformed",
                     "step_id": "P1",
                     "attempt_id": "A1",
@@ -311,7 +317,7 @@ class ExecutionVerificationTests(unittest.TestCase):
             append_jsonl(
                 root / ".agent/file-receipts.jsonl",
                 {
-                    "schema_version": "0.3.0",
+                    "schema_version": FILE_RECEIPTS_SCHEMA_VERSION,
                     "id": "FR99",
                     "step_id": "P1",
                     "attempt_id": "A1",
@@ -335,7 +341,7 @@ class ExecutionVerificationTests(unittest.TestCase):
             append_jsonl(
                 root / ".agent/step-runs.jsonl",
                 {
-                    "schema_version": "0.3.0",
+                    "schema_version": STEP_RUNS_SCHEMA_VERSION,
                     "event": "completed",
                     "step_id": "P1",
                     "attempt_id": "A1",
@@ -345,7 +351,7 @@ class ExecutionVerificationTests(unittest.TestCase):
             append_jsonl(
                 root / ".agent/file-receipts.jsonl",
                 {
-                    "schema_version": "0.3.0",
+                    "schema_version": FILE_RECEIPTS_SCHEMA_VERSION,
                     "id": "FR100",
                     "step_id": "P1",
                     "attempt_id": "A1",
@@ -371,7 +377,7 @@ class ExecutionVerificationTests(unittest.TestCase):
             append_jsonl(
                 root / ".agent/file-receipts.jsonl",
                 {
-                    "schema_version": "0.3.0",
+                    "schema_version": FILE_RECEIPTS_SCHEMA_VERSION,
                     "id": "FR42",
                     "step_id": "P1",
                     "attempt_id": "A7",

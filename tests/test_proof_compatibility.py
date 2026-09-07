@@ -10,7 +10,13 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from agentflow.contracts import PROOF_PACK_SCHEMA_VERSION
 from agentflow.proof import core_sha256
+
+
+def _next_major(version: str) -> str:
+    """A version strictly newer than ``version``, derived not restated."""
+    return f"{int(version.split('.')[0]) + 1}.0.0"
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -51,12 +57,18 @@ def mutated_current_fixture(tmp: str, schema_version: str, drop_meta: bool = Fal
 
 class ProofCompatibilityMatrixTests(unittest.TestCase):
     def test_promised_verify_proof_matrix(self) -> None:
+        # Discovered, not listed: the frozen fixtures cannot be edited in
+        # place, so a major transition adds a root beside them. A hardcoded
+        # list would leave that new root unverified by the promise it exists
+        # to demonstrate.
         roots = {
-            "preserved-legacy": FIXTURES / "legacy-0.3",
-            "released-v0.4.0": FIXTURES / "released-v0.4.0",
-            "current-full": FIXTURES / "current-full",
-            "current-aggregated": FIXTURES / "current-aggregated",
+            root.name: root
+            for root in sorted(FIXTURES.iterdir())
+            if root.is_dir() and (root / ".agent/proof-pack.json").exists()
         }
+        self.assertGreaterEqual(len(roots), 4, sorted(roots))
+        for expected in ("legacy-0.3", "released-v0.4.0"):
+            self.assertIn(expected, roots)
         for name, root in roots.items():
             with self.subTest(name=name):
                 result = verify_fixture(root)
@@ -84,7 +96,14 @@ class ProofCompatibilityMatrixTests(unittest.TestCase):
     def test_current_fixtures_are_checksum_pinned(self) -> None:
         # "current" means current as of the generating commit in PROVENANCE.md;
         # the pins turn silent fixture rot into a loud CI failure.
-        for name in ("current-full", "current-aggregated"):
+        names = sorted(
+            root.name
+            for root in FIXTURES.iterdir()
+            if root.is_dir() and (root / "MANIFEST.json").exists() and root.name.startswith("current-")
+        )
+        self.assertIn("current-full", names)
+        self.assertIn("current-aggregated", names)
+        for name in names:
             root = FIXTURES / name
             manifest = json.loads((root / "MANIFEST.json").read_text(encoding="utf-8"))
             pinned = set(manifest["artifacts"])
@@ -138,7 +157,11 @@ class ProofCompatibilityMatrixTests(unittest.TestCase):
 
     def test_newer_schema_rejection_is_upgrade_not_tamper_or_shape(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
-            result = verify_fixture(mutated_current_fixture(tmp, "0.12.0", drop_meta=True))
+            result = verify_fixture(
+                mutated_current_fixture(
+                    tmp, _next_major(PROOF_PACK_SCHEMA_VERSION), drop_meta=True
+                )
+            )
 
         output = result.stdout + result.stderr
         self.assertNotEqual(result.returncode, 0)

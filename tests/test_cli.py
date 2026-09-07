@@ -12,11 +12,31 @@ import unittest
 from pathlib import Path
 
 from agentflow.artifacts import append_jsonl
-from agentflow.contracts import AMENDMENTS_SCHEMA_VERSION, FAILURES_SCHEMA_VERSION
-from agentflow.validation import validate_plan
+from agentflow.contracts import (
+    AMENDMENTS_SCHEMA_VERSION,
+    EXECUTION_CONTRACT_SCHEMA_VERSION,
+    FAILURES_SCHEMA_VERSION,
+    PLAN_SCHEMA_VERSION,
+    PROOF_PACK_SCHEMA_VERSION,
+    STEP_RUNS_SCHEMA_VERSION,
+    WORKFLOW_PACK_SCHEMA_VERSION,
+)
+from agentflow.validation import (
+    validate_design_decision_traceability,
+    validate_plan,
+)
 
 
 ROOT = Path(__file__).resolve().parents[1]
+
+
+def _next_major(version: str) -> str:
+    """A version guaranteed incompatible with ``version``.
+
+    Derived, never restated: a hardcoded literal silently stops being
+    incompatible the day the constant reaches that major.
+    """
+    return f"{int(version.split('.')[0]) + 1}.0.0"
 
 
 def run_agentflow(
@@ -42,7 +62,7 @@ def run_agentflow(
 
 def valid_plan() -> dict:
     return {
-        "schema_version": "0.1.0",
+        "schema_version": PLAN_SCHEMA_VERSION,
         "objective": "Create a focused test fixture.",
         "scope": ["Add a fixture and prove it works."],
         "non_goals": ["No packaging changes."],
@@ -78,7 +98,6 @@ def valid_plan() -> dict:
 
 def design_reference_plan() -> dict:
     plan = valid_plan()
-    plan["schema_version"] = "0.4.0"
     plan["design_decisions"] = [
         {
             "id": "DD-1",
@@ -106,7 +125,7 @@ class AgentflowCliTests(unittest.TestCase):
             self.assertEqual(result.returncode, 0, result.stderr)
 
             plan = json.loads((cwd / ".agent/plan.lock.json").read_text(encoding="utf-8"))
-            self.assertEqual(plan["schema_version"], "0.4.0")
+            self.assertEqual(plan["schema_version"], PLAN_SCHEMA_VERSION)
             self.assertTrue((cwd / ".agent/runtime-snapshots.jsonl").exists())
             self.assertFalse((cwd / ".agent/runtime.config.json").exists())
 
@@ -130,12 +149,18 @@ class AgentflowCliTests(unittest.TestCase):
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             self.assertIn("plan valid", result.stdout)
 
-    def test_validate_plan_accepts_v01_plan_under_v02_toolchain(self) -> None:
+    def test_validate_plan_accepts_the_supported_schema_version(self) -> None:
+        # Older-minor acceptance is the reader rule, and it cannot be posed here:
+        # a freshly frozen major has no older minor to write, and a subprocess
+        # cannot have its supported version scoped. That rule is covered at
+        # library level by test_artifact_versioning's explicit (actual, supported)
+        # pair; this test keeps the CLI end of it -- the version the runtime
+        # writes is the version the CLI accepts.
         with tempfile.TemporaryDirectory() as tmp:
             cwd = Path(tmp)
             self.assertEqual(run_agentflow(cwd, "init").returncode, 0)
             plan = valid_plan()
-            plan["schema_version"] = "0.1.0"
+            plan["schema_version"] = PLAN_SCHEMA_VERSION
             (cwd / ".agent/plan.lock.json").write_text(json.dumps(plan, indent=2), encoding="utf-8")
 
             result = run_agentflow(cwd, "validate-plan")
@@ -148,7 +173,8 @@ class AgentflowCliTests(unittest.TestCase):
             cwd = Path(tmp)
             self.assertEqual(run_agentflow(cwd, "init").returncode, 0)
             plan = valid_plan()
-            plan["schema_version"] = "0.5.0"
+            incompatible = _next_major(PLAN_SCHEMA_VERSION)
+            plan["schema_version"] = incompatible
             (cwd / ".agent/plan.lock.json").write_text(json.dumps(plan, indent=2), encoding="utf-8")
 
             result = run_agentflow(cwd, "validate-plan")
@@ -156,7 +182,8 @@ class AgentflowCliTests(unittest.TestCase):
             self.assertNotEqual(result.returncode, 0)
             self.assertIn("invalid plan:", result.stderr)
             self.assertIn(
-                "plan-lock schema_version 0.5.0 is incompatible with supported 0.4.0",
+                f"plan-lock schema_version {incompatible} is incompatible with "
+                f"supported {PLAN_SCHEMA_VERSION}",
                 result.stderr,
             )
 
@@ -165,7 +192,6 @@ class AgentflowCliTests(unittest.TestCase):
             cwd = Path(tmp)
             self.assertEqual(run_agentflow(cwd, "init").returncode, 0)
             plan = valid_plan()
-            plan["schema_version"] = "0.2.0"
             plan["steps"][0]["execution_mode"] = "automatic"
             plan["steps"][0]["authority"] = "admin"
             (cwd / ".agent/plan.lock.json").write_text(json.dumps(plan, indent=2), encoding="utf-8")
@@ -181,7 +207,6 @@ class AgentflowCliTests(unittest.TestCase):
             cwd = Path(tmp)
             self.assertEqual(run_agentflow(cwd, "init").returncode, 0)
             plan = valid_plan()
-            plan["schema_version"] = "0.3.0"
             plan["steps"].append(
                 {
                     "id": "P2",
@@ -232,18 +257,22 @@ class AgentflowCliTests(unittest.TestCase):
 
     def test_validate_plan_accepts_v03_without_design_references(self) -> None:
         plan = valid_plan()
-        plan["schema_version"] = "0.3.0"
 
         self.assertEqual(validate_plan(plan), [])
 
     def test_validate_plan_requires_v04_for_design_reference_fields(self) -> None:
+        # Exercises the traceability validator directly. Routing through
+        # validate_plan would also run the compatibility check, and no version
+        # is both below the historical (0, 4) design-field floor and compatible
+        # with a supported major above 0 -- the legacy branch would be
+        # unreachable from the moment the schemas leave 0.x.
         plan = design_reference_plan()
         plan["schema_version"] = "0.3.0"
         plan["design_decisions"] = []
         plan["steps"][0]["design_decision_ids"] = []
 
         self.assertEqual(
-            validate_plan(plan),
+            validate_design_decision_traceability(plan),
             [
                 "design decision fields require plan-lock schema_version "
                 "0.4.0 or newer"
@@ -382,7 +411,6 @@ class AgentflowCliTests(unittest.TestCase):
             cwd = Path(tmp)
             self.assertEqual(run_agentflow(cwd, "init").returncode, 0)
             plan = valid_plan()
-            plan["schema_version"] = "0.3.0"
             plan["steps"][0]["depends_on"] = ["P2"]
             plan["steps"].append(
                 {
@@ -1056,7 +1084,7 @@ class AgentflowCliTests(unittest.TestCase):
                 append_jsonl(
                     cwd / ".agent/step-runs.jsonl",
                     {
-                        "schema_version": "0.5.0",
+                        "schema_version": STEP_RUNS_SCHEMA_VERSION,
                         "event": "completed",
                         "step_id": step_id,
                         "attempt_id": attempt_id,
@@ -1089,14 +1117,13 @@ class AgentflowCliTests(unittest.TestCase):
             cwd = Path(tmp)
             self.assertEqual(run_agentflow(cwd, "init").returncode, 0)
             plan = valid_plan()
-            plan["schema_version"] = "0.2.0"
             (cwd / ".agent/plan.lock.json").write_text(json.dumps(plan, indent=2), encoding="utf-8")
 
             result = run_agentflow(cwd, "build-proof")
 
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             proof = json.loads((cwd / ".agent/proof-pack.json").read_text(encoding="utf-8"))
-            self.assertEqual(proof["bundle_version"], "0.11.0")
+            self.assertEqual(proof["bundle_version"], PROOF_PACK_SCHEMA_VERSION)
             self.assertIn(".agent/plan.lock.json", proof["generated_from"])
             self.assertEqual(proof["coverage"]["missing_plan_evidence_ids"], ["E1"])
             check_ids = [check["id"] for check in proof["checks"]]
@@ -1133,7 +1160,6 @@ class AgentflowCliTests(unittest.TestCase):
             cwd = Path(tmp)
             self.assertEqual(run_agentflow(cwd, "init").returncode, 0)
             plan = valid_plan()
-            plan["schema_version"] = "0.4.0"
             plan["design_decisions"] = []
             plan["steps"][0]["design_decision_ids"] = ["DD-MISSING"]
             (cwd / ".agent/plan.lock.json").write_text(
@@ -1153,7 +1179,6 @@ class AgentflowCliTests(unittest.TestCase):
             cwd = Path(tmp)
             self.assertEqual(run_agentflow(cwd, "init").returncode, 0)
             plan = valid_plan()
-            plan["schema_version"] = "0.2.0"
             (cwd / ".agent/plan.lock.json").write_text(json.dumps(plan, indent=2), encoding="utf-8")
             (cwd / ".agent/runtime.config.json").write_text("{ broken", encoding="utf-8")
 
@@ -1172,7 +1197,6 @@ class AgentflowCliTests(unittest.TestCase):
             cwd = Path(tmp)
             self.assertEqual(run_agentflow(cwd, "init").returncode, 0)
             plan = valid_plan()
-            plan["schema_version"] = "0.2.0"
             (cwd / ".agent/plan.lock.json").write_text(json.dumps(plan, indent=2), encoding="utf-8")
             (cwd / ".agent/evidence.jsonl").write_text("{ broken\n", encoding="utf-8")
 
@@ -1188,7 +1212,6 @@ class AgentflowCliTests(unittest.TestCase):
             cwd = Path(tmp)
             self.assertEqual(run_agentflow(cwd, "init").returncode, 0)
             plan = valid_plan()
-            plan["schema_version"] = "0.2.0"
             (cwd / ".agent/plan.lock.json").write_text(json.dumps(plan, indent=2), encoding="utf-8")
 
             result = run_agentflow(cwd, "build-proof", "--strict")
@@ -1201,7 +1224,6 @@ class AgentflowCliTests(unittest.TestCase):
             cwd = Path(tmp)
             self.assertEqual(run_agentflow(cwd, "init").returncode, 0)
             plan = valid_plan()
-            plan["schema_version"] = "0.2.0"
             plan["context_budget"] = {"max_total_bytes": 1}
             (cwd / ".agent/plan.lock.json").write_text(json.dumps(plan, indent=2), encoding="utf-8")
             context = {
@@ -1312,7 +1334,6 @@ class AgentflowCliTests(unittest.TestCase):
             cwd = Path(tmp)
             self.assertEqual(run_agentflow(cwd, "init").returncode, 0)
             plan = valid_plan()
-            plan["schema_version"] = "0.2.0"
             (cwd / ".agent/plan.lock.json").write_text(json.dumps(plan, indent=2), encoding="utf-8")
             self.assertEqual(run_agentflow(cwd, "build-proof").returncode, 0)
 
@@ -1331,7 +1352,6 @@ class AgentflowCliTests(unittest.TestCase):
             cwd = Path(tmp)
             self.assertEqual(run_agentflow(cwd, "init").returncode, 0)
             plan = valid_plan()
-            plan["schema_version"] = "0.3.0"
             (cwd / ".agent/plan.lock.json").write_text(json.dumps(plan, indent=2), encoding="utf-8")
             self.assertEqual(run_agentflow(cwd, "build-proof").returncode, 0)
 
@@ -1345,7 +1365,6 @@ class AgentflowCliTests(unittest.TestCase):
 
         self.assertEqual(run_agentflow(cwd, "init").returncode, 0)
         plan = valid_plan()
-        plan["schema_version"] = "0.3.0"
         (cwd / ".agent/plan.lock.json").write_text(json.dumps(plan, indent=2), encoding="utf-8")
         state = cwd / "docs/ai/state/main"
         state.mkdir(parents=True)
@@ -1405,7 +1424,6 @@ class AgentflowCliTests(unittest.TestCase):
             cwd = Path(tmp)
             self.assertEqual(run_agentflow(cwd, "init").returncode, 0)
             plan = valid_plan()
-            plan["schema_version"] = "0.2.0"
             (cwd / ".agent/plan.lock.json").write_text(json.dumps(plan, indent=2), encoding="utf-8")
             self.assertEqual(run_agentflow(cwd, "build-proof").returncode, 0)
 
@@ -1446,7 +1464,6 @@ class AgentflowCliTests(unittest.TestCase):
             self.assertEqual(run_agentflow(cwd, "init").returncode, 0)
             self.assertEqual(run_agentflow(cwd, "init-execution").returncode, 0)
             plan = valid_plan()
-            plan["schema_version"] = "0.3.0"
             plan["allowed_files"] = ["fixture.txt", ".agent/"]
             plan["validation_gates"] = ["python3 -c \"print('ok')\""]
             plan["steps"][0]["validation"] = ["python3 -c \"print('ok')\""]
@@ -1503,7 +1520,6 @@ class AgentflowCliTests(unittest.TestCase):
             self.assertEqual(run_agentflow(cwd, "init").returncode, 0)
             self.assertEqual(run_agentflow(cwd, "init-execution").returncode, 0)
             plan = valid_plan()
-            plan["schema_version"] = "0.3.0"
             plan["allowed_files"] = ["fixture.txt", ".agent/"]
             plan["validation_gates"] = ["python3 -c \"print('ok')\""]
             plan["steps"][0]["validation"] = ["python3 -c \"print('ok')\""]
@@ -1556,7 +1572,6 @@ class AgentflowCliTests(unittest.TestCase):
             self.assertEqual(run_agentflow(cwd, "init").returncode, 0)
             self.assertEqual(run_agentflow(cwd, "init-execution").returncode, 0)
             plan = valid_plan()
-            plan["schema_version"] = "0.3.0"
             plan["allowed_files"] = ["fixture.txt", ".agent/"]
             plan["validation_gates"] = ["python3 -c \"print('ok')\""]
             plan["steps"][0]["validation"] = ["python3 -c \"print('ok')\""]
@@ -1655,7 +1670,7 @@ class AgentflowCliTests(unittest.TestCase):
             self.assertEqual(run_agentflow(cwd, "init-execution").returncode, 0)
             contract_path = cwd / ".agent/execution.contract.json"
             contract = json.loads(contract_path.read_text(encoding="utf-8"))
-            contract["schema_version"] = "0.2.0"
+            contract["schema_version"] = _next_major(EXECUTION_CONTRACT_SCHEMA_VERSION)
             contract_path.write_text(json.dumps(contract), encoding="utf-8")
 
             result = run_agentflow(cwd, "doctor")
@@ -1771,7 +1786,7 @@ class AgentflowCliTests(unittest.TestCase):
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             payload = json.loads(result.stdout)
             self.assertEqual(payload["status"], "passed")
-            self.assertEqual(payload["contract"]["schema_version"], "0.3.0")
+            self.assertEqual(payload["contract"]["schema_version"], EXECUTION_CONTRACT_SCHEMA_VERSION)
 
     def test_next_step_and_claim_step_cli(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -1808,7 +1823,6 @@ class AgentflowCliTests(unittest.TestCase):
             self.assertEqual(run_agentflow(cwd, "init").returncode, 0)
             self.assertEqual(run_agentflow(cwd, "init-execution").returncode, 0)
             plan = valid_plan()
-            plan["schema_version"] = "0.3.0"
             plan["locked"] = True
             (cwd / ".agent/plan.lock.json").write_text(
                 json.dumps(plan, indent=2),
@@ -1826,7 +1840,6 @@ class AgentflowCliTests(unittest.TestCase):
             self.assertEqual(run_agentflow(cwd, "init").returncode, 0)
             self.assertEqual(run_agentflow(cwd, "init-execution").returncode, 0)
             plan = valid_plan()
-            plan["schema_version"] = "0.3.0"
             plan["locked"] = True
             (cwd / ".agent/plan.lock.json").write_text(
                 json.dumps(plan, indent=2),
@@ -1859,7 +1872,6 @@ class AgentflowCliTests(unittest.TestCase):
             self.assertEqual(run_agentflow(cwd, "init").returncode, 0)
             self.assertEqual(run_agentflow(cwd, "init-execution").returncode, 0)
             plan = valid_plan()
-            plan["schema_version"] = "0.3.0"
             plan["validation_gates"] = ["python3 -c \"print('ok')\""]
             plan["steps"][0]["validation"] = ["python3 -c \"print('ok')\""]
             plan["locked"] = True
@@ -1912,7 +1924,6 @@ class AgentflowCliTests(unittest.TestCase):
         self.assertEqual(run_agentflow(cwd, "init").returncode, 0)
         self.assertEqual(run_agentflow(cwd, "init-execution").returncode, 0)
         plan = valid_plan()
-        plan["schema_version"] = "0.3.0"
         plan["allowed_files"] = ["fixture.txt", ".agent/"]
         plan["blocked_files"] = ["blocked.txt"]
         plan["validation_gates"] = ["python3 -c \"print('ok')\""]
@@ -2024,7 +2035,6 @@ class AgentflowCliTests(unittest.TestCase):
             self.assertEqual(run_agentflow(cwd, "init").returncode, 0)
             self.assertEqual(run_agentflow(cwd, "init-execution").returncode, 0)
             plan = valid_plan()
-            plan["schema_version"] = "0.3.0"
             plan["locked"] = True
             (cwd / ".agent/plan.lock.json").write_text(
                 json.dumps(plan, indent=2),
@@ -2047,7 +2057,6 @@ class AgentflowCliTests(unittest.TestCase):
             self.assertEqual(run_agentflow(cwd, "init").returncode, 0)
             self.assertEqual(run_agentflow(cwd, "init-execution").returncode, 0)
             plan = valid_plan()
-            plan["schema_version"] = "0.3.0"
             plan["locked"] = True
             (cwd / ".agent/plan.lock.json").write_text(
                 json.dumps(plan, indent=2),
@@ -2071,7 +2080,6 @@ class AgentflowCliTests(unittest.TestCase):
             self.assertEqual(run_agentflow(cwd, "init").returncode, 0)
             self.assertEqual(run_agentflow(cwd, "init-execution").returncode, 0)
             plan = valid_plan()
-            plan["schema_version"] = "0.3.0"
             plan["locked"] = True
             (cwd / ".agent/plan.lock.json").write_text(
                 json.dumps(plan, indent=2),
@@ -2092,7 +2100,6 @@ class AgentflowCliTests(unittest.TestCase):
             cwd = Path(tmp)
             self.assertEqual(run_agentflow(cwd, "init").returncode, 0)
             plan = valid_plan()
-            plan["schema_version"] = "0.3.0"
             plan["locked"] = True
             (cwd / ".agent/plan.lock.json").write_text(
                 json.dumps(plan, indent=2),
@@ -2128,7 +2135,6 @@ class AgentflowCliTests(unittest.TestCase):
             self.assertEqual(run_agentflow(cwd, "init").returncode, 0)
             self.assertEqual(run_agentflow(cwd, "init-execution").returncode, 0)
             plan = valid_plan()
-            plan["schema_version"] = "0.3.0"
             plan["locked"] = True
             (cwd / ".agent/plan.lock.json").write_text(
                 json.dumps(plan, indent=2),
@@ -2165,7 +2171,6 @@ class AgentflowCliTests(unittest.TestCase):
 class PorcelainCommandTests(unittest.TestCase):
     def _driven_plan(self) -> dict:
         plan = valid_plan()
-        plan["schema_version"] = "0.3.0"
         plan["allowed_files"] = ["fixture.txt", ".agent/"]
         plan["validation_gates"] = ["python3 -c \"print('ok')\""]
         plan["steps"][0]["files"] = ["fixture.txt"]
@@ -2337,7 +2342,7 @@ class EventsCommandTests(unittest.TestCase):
         (cwd / ".agent" / "step-runs.jsonl").write_text(
             json.dumps(
                 {
-                    "schema_version": "0.5.0",
+                    "schema_version": STEP_RUNS_SCHEMA_VERSION,
                     "event": "claimed",
                     "step_id": "P1",
                     "attempt_id": "A1",
@@ -2629,7 +2634,7 @@ class ReviewManifestCommandTest(unittest.TestCase):
 
 class AuditDriftHunkCliTests(unittest.TestCase):
     def _locked_plan(self) -> dict:
-        return {"schema_version": "0.3.0", "objective": "x", "scope": [], "non_goals": [],
+        return {"schema_version": PLAN_SCHEMA_VERSION, "objective": "x", "scope": [], "non_goals": [],
                 "invariants": [], "allowed_files": ["fixture.txt"], "blocked_files": [],
                 "validation_gates": [], "rollback_plan": "", "risk_level": "low",
                 "drift_budget": {"unrelated_edits": 0, "new_dependencies": 0,
@@ -2674,13 +2679,13 @@ class AuditDriftHunkCliTests(unittest.TestCase):
 
 def _pack_manifest():
     return {
-        "schema_version": "0.1.0",
+        "schema_version": WORKFLOW_PACK_SCHEMA_VERSION,
         "id": "python-library-proof-gate",
         "name": "Python Library Proof Gate",
         "description": "Stdlib-only Python library workflow.",
         "plan_templates": {
             "python-library": {
-                "schema_version": "0.3.0",
+                "schema_version": PLAN_SCHEMA_VERSION,
                 "objective": "TODO: describe the objective",
                 "scope": ["src/"],
                 "non_goals": [],
@@ -2830,7 +2835,10 @@ class InitPackCliTests(unittest.TestCase):
         import tempfile
         from pathlib import Path
 
-        from agentflow.validation import validate_plan
+        from agentflow.validation import (
+    validate_design_decision_traceability,
+    validate_plan,
+)
         from agentflow.workflow_contract import validate_workflow_contract
 
         with tempfile.TemporaryDirectory() as tmp:
@@ -3078,7 +3086,7 @@ BRIEFS = EXAMPLES / "briefs"
 
 def _draft_template(steps, gates):
     return {
-        "schema_version": "0.3.0",
+        "schema_version": PLAN_SCHEMA_VERSION,
         "objective": "TODO",
         "scope": ["src/"],
         "non_goals": [],
@@ -3523,7 +3531,6 @@ class LeaseCliTests(unittest.TestCase):
         self.assertEqual(run_agentflow(cwd, "init").returncode, 0)
         self.assertEqual(run_agentflow(cwd, "init-execution").returncode, 0)
         plan = valid_plan()
-        plan["schema_version"] = "0.3.0"
         plan["allowed_files"] = ["fixture.txt", ".agent/"]
         plan["validation_gates"] = ["python3 -c \"print('ok')\""]
         plan["steps"][0]["validation"] = ["python3 -c \"print('ok')\""]

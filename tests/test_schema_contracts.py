@@ -414,8 +414,13 @@ class SchemaContractTests(unittest.TestCase):
             ]
         )
 
+        # Two separate claims, kept separate on purpose. The published pattern
+        # only has to accept what the runtime writes today; folding the historical
+        # samples into it would force them to be deleted the moment the pattern
+        # stops accepting 0.x, silently taking the legacy coverage below with them.
+        self.assertRegex(PLAN_SCHEMA_VERSION, plan_version_pattern)
+
         for version in ("0.0.0", "0.1.9", "0.3.0", "0.3.11", "0.4.0", "0.4.7"):
-            self.assertRegex(version, plan_version_pattern, version)
             plan = {"schema_version": version, "design_decisions": [{"id": "D1"}]}
             self.assertEqual(
                 bool(legacy_pattern.fullmatch(version)),
