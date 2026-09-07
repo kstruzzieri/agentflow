@@ -32,7 +32,7 @@
     "Dependency-related files changed; verify dependency budget manually."
   ],
   "out_of_scope_files": [],
-  "schema_version": "0.1.0",
+  "schema_version": "1.0.0",
   "status": "pass",
   "test_weakening": [],
   "unmapped_hunks": []

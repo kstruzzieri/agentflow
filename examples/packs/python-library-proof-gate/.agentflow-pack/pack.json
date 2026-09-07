@@ -5,7 +5,7 @@
   "description": "Stdlib-only Python library workflow with an enforced proof gate and a unit-test validation gate.",
   "plan_templates": {
     "python-library": {
-      "schema_version": "0.3.0",
+      "schema_version": "1.0.0",
       "objective": "TODO: describe the change for this Python library task",
       "scope": ["src/", "tests/"],
       "non_goals": ["No new runtime dependencies"],

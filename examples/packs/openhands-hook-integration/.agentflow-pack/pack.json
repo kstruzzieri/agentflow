@@ -5,7 +5,7 @@
   "description": "Workflow pack that declares a hook template and README for OpenHands integration. Agentflow validates the declared paths but never reads or executes them.",
   "plan_templates": {
     "hook-integration": {
-      "schema_version": "0.3.0",
+      "schema_version": "1.0.0",
       "objective": "TODO: describe the OpenHands hook integration change",
       "scope": ["src/", ".openhands/"],
       "non_goals": ["Agentflow does not execute hook scripts"],

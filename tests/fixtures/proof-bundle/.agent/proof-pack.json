@@ -1,6 +1,6 @@
 {
   "bundle_type": "agentflow_proof_pack",
-  "bundle_version": "0.4.0",
+  "bundle_version": "1.0.0",
   "capabilities": {
     "missing": [],
     "recorded": [],
@@ -47,6 +47,7 @@
       "id": "required_review_satisfied",
       "message": "no required review run (review_depth=None)",
       "required_review_depth": null,
+      "satisfied_by_depth": null,
       "status": "passed"
     },
     {
@@ -60,12 +61,15 @@
       "status": "passed"
     }
   ],
-  "core_sha256": "93d81d3fbbcd470a033afe45ba5476312ce9b8b1f5a9fe352e9a3174c9fe4aad",
+  "core_sha256": "16cd85037fb3941221877f0b50151f7447a4a82820a892bddbd9c3b99006ba91",
   "coverage": {
+    "abandoned_attempts": [],
     "dangling_route_runtimes": [],
     "dangling_supports": [],
     "dangling_used_for": [],
+    "expired_leases": [],
     "missing_plan_evidence_ids": [],
+    "no_deadline_open_attempts": [],
     "steps_without_support": [],
     "unused_evidence_ids": []
   },
@@ -84,7 +88,7 @@
     "command_timeout_seconds": {},
     "failed_attempts": [],
     "file_receipts": 3,
-    "normalized_execution_sha256": "6b490a8997ef746d38b9a8bd3f1ad321cd0c4f61224383b71ad1c2b9dce3a44f",
+    "normalized_execution_sha256": "8036a428692b08fe0a28a2388ac4a2d93bea7dd8f5b1816b1add861ec866a60e",
     "steps_completed": 1,
     "steps_total": 1,
     "unmapped_changed_files": [],
@@ -101,7 +105,7 @@
     },
     {
       "path": ".agent/command-receipts.jsonl",
-      "sha256": "c7516456ab8ffa6de763e2d2ac33811e19551c4a155db9d6b1ae125af360a7d2"
+      "sha256": "bc43b1552a7e503ac3971c45518f54223fd962dbe92cda7eb6bcd3df324d686d"
     },
     {
       "path": ".agent/context-receipts.jsonl",
@@ -109,7 +113,7 @@
     },
     {
       "path": ".agent/drift-report.json",
-      "sha256": "cec94373599be989569ee2ec70e4e4d479bf87bab8bfcd0136c977565529b43d"
+      "sha256": "dfdd9b1c4e08262eece393f576ca9002724e75ef163caa730c66e7ed3c010ffc"
     },
     {
       "path": ".agent/evidence.jsonl",
@@ -117,7 +121,7 @@
     },
     {
       "path": ".agent/execution.contract.json",
-      "sha256": "c34f92aef420a7b600bed72c7722eb9771712f311a8718b4a61d54feef23ba57"
+      "sha256": "7d6b800a2cfeab71cf7e3e01e2923b46a7d4e9224a94e9eee6a8d4ccb8d79a7d"
     },
     {
       "path": ".agent/failures.jsonl",
@@ -125,19 +129,19 @@
     },
     {
       "path": ".agent/file-receipts.jsonl",
-      "sha256": "9090c97d265138817c7de0533c512898e372e36f7a7d719a3dbd96c15e97fe2c"
+      "sha256": "de9fed937d6a21b465a89a7e1317dd4f51daa18f0886362a80f72e3b350ea1e7"
     },
     {
       "path": ".agent/plan.lock.json",
-      "sha256": "8af470cbd46da3d98169783f36620383a495a4f312bc2e5206eb73fb7b078831"
+      "sha256": "5ecfa02787f954481ac98fa3b61741d23c2658435f1879077f29e2f7acb2da75"
     },
     {
       "path": ".agent/step-runs.jsonl",
-      "sha256": "bf7bb33a1a604dc4246158f6fa4bf7a2395308f79f28c22a622dde43d9ba764c"
+      "sha256": "8b394357cd672fb21d02a3d6249100419d588a6d2c6ba45c2eb6d5a3ee35d3fd"
     },
     {
       "path": ".agent/verification-runs.jsonl",
-      "sha256": "9e0309d192c2e4b39b43e8b5931c6abbb8b451ab517b2ee82132f4579f70581d"
+      "sha256": "0493f41844d63785d4b7a30e2c93e0ba043639f6618cea430f0adf8fddd09433"
     }
   ],
   "generated_from": [
@@ -155,8 +159,8 @@
     ".agent/verification-runs.jsonl"
   ],
   "meta": {
-    "created_at": "2026-06-30T21:07:22+00:00",
-    "tool_version": "0.3.0"
+    "created_at": "2026-09-07T15:14:08+00:00",
+    "tool_version": "0.4.0"
   },
   "review": {
     "correlations": [],
@@ -171,7 +175,7 @@
     "review_runs": [],
     "unresolved_finding_refs": []
   },
-  "schema_version": "0.4.0",
+  "schema_version": "1.0.0",
   "stuck": {
     "findings": [],
     "rules_evaluated": 3
