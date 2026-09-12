@@ -5,7 +5,7 @@
   "type": "object",
   "required": ["schema_version", "id", "step_id", "attempt_id", "provenance", "command", "cwd", "started_at", "finished_at", "exit_code", "truncated"],
   "properties": {
-    "schema_version": { "type": "string", "pattern": "^0\\.[0-4]\\.[0-9]+$" },
+    "schema_version": { "type": "string", "pattern": "^1\\.0\\.(?:0|[1-9][0-9]*)$" },
     "id": { "type": "string", "pattern": "^(WT[a-z0-9]{1,16}-)?CR[0-9]+$" },
     "step_id": { "type": "string", "minLength": 1 },
     "attempt_id": { "type": "string", "pattern": "^(WT[a-z0-9]{1,16}-)?A[0-9]+$" },

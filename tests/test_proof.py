@@ -1430,7 +1430,7 @@ class CoverageTests(unittest.TestCase):
                 "workflow_contract",
             ],
         )
-        self.assertEqual(PROOF_PACK_SCHEMA_VERSION, "0.11.0")
+        self.assertEqual(PROOF_PACK_SCHEMA_VERSION, "1.0.0")
 
     def _write_snapshot_ledger(self, root: Path) -> None:
         snapshot = {
@@ -2656,7 +2656,7 @@ class StuckProofTests(unittest.TestCase):
             self.assertIn("stuck", canonical_core(proof))
 
     def test_proof_schema_version_is_bumped(self) -> None:
-        self.assertEqual(PROOF_PACK_SCHEMA_VERSION, "0.11.0")
+        self.assertEqual(PROOF_PACK_SCHEMA_VERSION, "1.0.0")
 
 
 class AggregationProvenanceProofTests(unittest.TestCase):

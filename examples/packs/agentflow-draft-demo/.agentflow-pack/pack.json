@@ -5,7 +5,7 @@
   "description": "A demo pack with one profile per recommend archetype so `draft-plan` can compile a brief in each posture (docs-only, small-bugfix, medium-feature, large-feature, high-risk).",
   "plan_templates": {
     "docs": {
-      "schema_version": "0.3.0",
+      "schema_version": "1.0.0",
       "objective": "TODO: describe the documentation change",
       "scope": ["docs/"],
       "non_goals": ["No code or behavior changes"],
@@ -38,7 +38,7 @@
       "locked_at": null
     },
     "bugfix": {
-      "schema_version": "0.3.0",
+      "schema_version": "1.0.0",
       "objective": "TODO: describe the bug fix",
       "scope": ["src/", "tests/"],
       "non_goals": ["No unrelated refactors"],
@@ -71,7 +71,7 @@
       "locked_at": null
     },
     "feature": {
-      "schema_version": "0.3.0",
+      "schema_version": "1.0.0",
       "objective": "TODO: describe the feature",
       "scope": ["src/", "tests/"],
       "non_goals": ["No new runtime dependencies"],
@@ -117,7 +117,7 @@
       "locked_at": null
     },
     "secure": {
-      "schema_version": "0.3.0",
+      "schema_version": "1.0.0",
       "objective": "TODO: describe the security-sensitive change",
       "scope": ["src/", "tests/"],
       "non_goals": ["No new runtime dependencies"],

@@ -16,7 +16,7 @@
     "generated_at"
   ],
   "properties": {
-    "schema_version": { "type": "string", "pattern": "^0\\.[0-2]\\.[0-9]+$" },
+    "schema_version": { "type": "string", "pattern": "^1\\.0\\.(?:0|[1-9][0-9]*)$" },
     "status": { "enum": ["pass", "fail", "warning"] },
     "changed_files": { "type": "array", "items": { "type": "string" } },
     "unmapped_hunks": {

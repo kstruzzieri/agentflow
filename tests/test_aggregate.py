@@ -813,10 +813,10 @@ class HardeningTests(unittest.TestCase):
 class SchemaBumpTests(unittest.TestCase):
     def test_execution_ledger_versions_bumped_for_namespacing(self):
         from agentflow import contracts
-        self.assertEqual(contracts.STEP_RUNS_SCHEMA_VERSION, "0.5.0")
-        self.assertEqual(contracts.COMMAND_RECEIPTS_SCHEMA_VERSION, "0.4.0")
-        self.assertEqual(contracts.FILE_RECEIPTS_SCHEMA_VERSION, "0.4.0")
-        self.assertEqual(contracts.VERIFICATION_RUNS_SCHEMA_VERSION, "0.4.0")
+        self.assertEqual(contracts.STEP_RUNS_SCHEMA_VERSION, "1.0.0")
+        self.assertEqual(contracts.COMMAND_RECEIPTS_SCHEMA_VERSION, "1.0.0")
+        self.assertEqual(contracts.FILE_RECEIPTS_SCHEMA_VERSION, "1.0.0")
+        self.assertEqual(contracts.VERIFICATION_RUNS_SCHEMA_VERSION, "1.0.0")
 
     def test_pre_bump_rows_still_validate_backward_compat(self):
         # The #30 namespacing bump had to keep rows written before it readable.

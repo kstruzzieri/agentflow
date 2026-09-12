@@ -36,7 +36,7 @@
   "objective": "Create prioritized GitHub tickets from the OpenHands feature analysis and update the Agentflow roadmap.",
   "risk_level": "low",
   "rollback_plan": "Close or retitle the created GitHub issues if necessary and revert docs/roadmap.md to the previous roadmap ordering.",
-  "schema_version": "0.3.0",
+  "schema_version": "1.0.0",
   "scope": [
     "Create specialized Agentflow GitHub issues for the best OpenHands-derived opportunities.",
     "Prioritize the new work in docs/roadmap.md.",

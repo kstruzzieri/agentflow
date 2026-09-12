@@ -467,7 +467,7 @@ class SchemaContractTests(unittest.TestCase):
     def test_design_reference_plan_schema_version_is_bumped(self) -> None:
         schema = load_schema("plan-lock.schema.json")
 
-        self.assertEqual(PLAN_SCHEMA_VERSION, "0.4.0")
+        self.assertEqual(PLAN_SCHEMA_VERSION, "1.0.0")
         self.assertRegex(
             PLAN_SCHEMA_VERSION,
             schema["properties"]["schema_version"]["pattern"],
@@ -654,7 +654,7 @@ class ReviewSchemaTests(unittest.TestCase):
         # #124: proof coverage grows requirements/criterion_status_counts and
         # review-runs rows grow plan_sha256, so both artifacts bump per the
         # #82 growth convention.
-        self.assertEqual(PROOF_PACK_SCHEMA_VERSION, "0.11.0")
+        self.assertEqual(PROOF_PACK_SCHEMA_VERSION, "1.0.0")
         self.assertEqual(REVIEW_RUNS_SCHEMA_VERSION, "0.6.0")
 
     def test_bumped_versions_still_match_schema_patterns(self) -> None:
@@ -685,7 +685,7 @@ class ReviewSchemaTests(unittest.TestCase):
 
         self.assertEqual(REVIEW_MANIFEST_SCHEMA_VERSION, "1.0.0")
         self.assertEqual(REVIEW_RUNS_SCHEMA_VERSION, "0.6.0")
-        self.assertEqual(PROOF_PACK_SCHEMA_VERSION, "0.11.0")
+        self.assertEqual(PROOF_PACK_SCHEMA_VERSION, "1.0.0")
         manifest = load_schema("review-manifest.schema.json")
         ledger = load_schema("review-runs.schema.json")
         proof = load_schema("proof-pack.schema.json")
@@ -766,9 +766,9 @@ class ReviewSchemaTests(unittest.TestCase):
 
 class LeaseSchemaContractTests(unittest.TestCase):
     def test_lease_schema_versions_bumped(self) -> None:
-        self.assertEqual(PROOF_PACK_SCHEMA_VERSION, "0.11.0")
-        self.assertEqual(DRIFT_REPORT_SCHEMA_VERSION, "0.2.2")
-        self.assertEqual(STEP_RUNS_SCHEMA_VERSION, "0.5.0")
+        self.assertEqual(PROOF_PACK_SCHEMA_VERSION, "1.0.0")
+        self.assertEqual(DRIFT_REPORT_SCHEMA_VERSION, "1.0.0")
+        self.assertEqual(STEP_RUNS_SCHEMA_VERSION, "1.0.0")
 
     def test_proof_pattern_accepts_lease_version(self) -> None:
         schema = load_schema("proof-pack.schema.json")
@@ -795,8 +795,8 @@ class LeaseSchemaContractTests(unittest.TestCase):
 
 class HunkContractTests(unittest.TestCase):
     def test_versions_bumped(self) -> None:
-        self.assertEqual(FILE_RECEIPTS_SCHEMA_VERSION, "0.4.0")
-        self.assertEqual(DRIFT_REPORT_SCHEMA_VERSION, "0.2.2")
+        self.assertEqual(FILE_RECEIPTS_SCHEMA_VERSION, "1.0.0")
+        self.assertEqual(DRIFT_REPORT_SCHEMA_VERSION, "1.0.0")
 
     def test_hunk_enums_defined(self) -> None:
         self.assertEqual(HUNK_ATTRIBUTION_POLICIES, ("enforce", "observe", "off"))

@@ -19,7 +19,7 @@
     "evidence_ids"
   ],
   "properties": {
-    "schema_version": { "type": "string", "pattern": "^0\\.[0-4]\\.[0-9]+$" },
+    "schema_version": { "type": "string", "pattern": "^1\\.0\\.(?:0|[1-9][0-9]*)$" },
     "objective": { "type": "string", "minLength": 1 },
     "scope": { "type": "array", "items": { "type": "string", "minLength": 1 }, "minItems": 1 },
     "non_goals": { "type": "array", "items": { "type": "string" } },

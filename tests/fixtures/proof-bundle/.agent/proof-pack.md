@@ -39,6 +39,9 @@ None.
 - dangling_supports: 0
 - dangling_used_for: 0
 - dangling_route_runtimes: 0
+- expired_leases: 0
+- no_deadline_open_attempts: 0
+- abandoned_attempts: 0
 
 ## Validation
 
