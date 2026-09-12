@@ -80,7 +80,7 @@
     "STEP_RUNS_SCHEMA_VERSION": "0.5.0",
     "VERIFICATION_RUNS_SCHEMA_VERSION": "0.4.0"
   },
-  "transition_commit": null,
+  "transition_commit": "cee0de066e6b63ccc3eadd25ea9b52815eb1334f",
   "workflow_run_id": 34170776404,
   "workloads": [
     {
