@@ -65,7 +65,9 @@ changes.
 
 ## First-publication checklist
 
-Before a maintainer performs any external action:
+Before a maintainer performs any remaining publication action (owner contact
+and the PEP 541 request are already performed and recorded above; they were
+never gated on Issue #5 and do not gate a release):
 
 1. Confirm Issue #5 is closed; keep `if: false` in place while completing the
    remaining prerequisites.
