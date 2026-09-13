@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.0] - 2026-09-12
+
+Agentflow 1.0.0 is the stability release. The eight artifact schemas (plan
+lock, drift report, proof pack, execution contract, step runs, command
+receipts, file receipts, and verification runs) are frozen at `1.0.0` after
+the issue #5 soak; the Python distribution is named `agentflow-proof` while
+the `agentflow` import package and the `agentflow` and `agentflow-mcp`
+commands keep their names; and the promises in `docs/stability.md` and
+`docs/compatibility.md` are now in force.
+
 ### Added
 
 - `tests/fixtures/compatibility/legacy-0.3/`: a byte-exact snapshot of the
@@ -21,10 +31,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- The eight artifact schemas are stamped `1.0.0` from the single soaked
+  candidate recorded in `docs/schema-freeze-soak.json`; proofs built by
+  Agentflow 0.4.0 or later stay verifiable under the surface documented in
+  `docs/compatibility.md` (#5).
 - Legacy review manifests remain recordable and verifiable but are explicitly
-  marked non-amendment-ready; proof-pack schema is now 0.10.0 and review-run
-  rows are 0.6.0. The manifest schema uses a new major because amendment-ready
-  rows add required repair context.
+  marked non-amendment-ready. The proof-pack schema and review-run rows moved
+  to 0.10.0 and 0.6.0 for this change ahead of the 1.0.0 freeze; the manifest
+  schema uses a new major because amendment-ready rows add required repair
+  context.
 
 ### Fixed
 
@@ -35,7 +50,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   outside the soak guard's pattern exception), and the guard's transition
   window now lets the recorded transition regenerate the live CI proof bundle,
   since `verify-run` carries no cross-major promise. Both changes reset the
-  soak candidate; the 21-day clock restarts on the corrected shape.
+  soak candidate; the soak clock restarted on the corrected shape (the window
+  is 72 hours; see `docs/schema-freeze-audit.md`).
 - `scripts/check_schema_soak.py` now reports an unresolvable
   `candidate_commit` or `transition_commit` with the field, the recorded SHA,
   and the squash-merge cause instead of `fatal: Needed a single revision`
@@ -78,5 +94,6 @@ repository, so this heading is intentionally unlinked._
 
 - Existing v0.2 proof artifacts remain valid when no execution contract exists.
 
-[Unreleased]: https://github.com/kstruzzieri/agentflow/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/kstruzzieri/agentflow/compare/v1.0.0...HEAD
+[1.0.0]: https://github.com/kstruzzieri/agentflow/releases/tag/v1.0.0
 [0.4.0]: https://github.com/kstruzzieri/agentflow/releases/tag/v0.4.0
