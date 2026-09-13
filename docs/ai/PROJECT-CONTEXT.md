@@ -43,23 +43,27 @@ exist to protect that one sentence.
    not established. This applies to the tool's own output as much as to the
    agent's.
 
-## Current state: the v1 schema freeze
+## Current state: the v1 schema freeze is complete
 
-The load-bearing schemas are being frozen at 1.0 under
-[issue #5](https://github.com/kstruzzieri/agentflow/issues/5). A 72-hour soak
-proves the shape stopped moving before the version number promises it did.
-`SOAK_DURATION` in `scripts/check_schema_soak.py` is the only authority on the
-window; see the audit for why it is 72 hours and not the original 21 days.
+The load-bearing schemas are frozen at 1.0.0 under
+[issue #5](https://github.com/kstruzzieri/agentflow/issues/5), now closed. The
+72-hour soak ran to completion with all five workloads recorded, and the
+mechanical transition that stamped `1.0.0` is pinned as `transition_commit` in
+the manifest. `scripts/check_schema_soak.py` now reports
+`schema transition complete` and fails if any frozen path differs from that
+commit.
 
 - [`docs/schema-freeze-audit.md`](../schema-freeze-audit.md) — the audit, the
-  freeze set, and the rules of the soak.
+  freeze set, and the rules the soak followed.
 - [`docs/schema-freeze-soak.json`](../schema-freeze-soak.json) — the recorded
-  candidate.
+  candidate and transition.
 - `scripts/check_schema_soak.py` — the guard CI runs on every build.
 
-While the soak is active, **any shape or semantic change to a frozen path resets
-the candidate**. If a change touches one, say so explicitly in review; it is a
-schedule cost, not a style question.
+A shape or semantic change to a frozen path is no longer a soak reset; it is a
+compatibility question governed by [`docs/stability.md`](../stability.md) and
+[`docs/compatibility.md`](../compatibility.md), and the guard fails on it. If a
+change touches one, say so explicitly in review; it is a contract cost, not a
+style question.
 
 ## What review should weigh here
 
@@ -77,7 +81,7 @@ Beyond the generic passes, the findings that matter most in this codebase are:
 - A published schema and its runtime validator disagreeing.
 - A guard, check, or proof field that reports something it did not verify.
 - An ingestion point that accepts malformed input instead of failing closed.
-- A change to a frozen path during an active soak.
+- A change to a frozen path, which the 1.0 stability contract now governs.
 - A new dependency, in `src/` or `tests/`.
 
 Prefer a claim you reproduced over one you inferred. A finding that names the
