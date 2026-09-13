@@ -10,7 +10,7 @@ Machine-readable index: [`ai-kit.yaml`](ai-kit.yaml).
 ## What Agentflow is
 
 The standard-library-only `agentflow` Python CLI (from the `agentflow-proof`
-distribution, version `0.4.0`, Python 3.11-3.13) supports plan-locked, auditable
+distribution, version `1.0.0`, Python 3.11-3.13) supports plan-locked, auditable
 agent work. An agent locks a plan, claims a step, runs validation through the
 tool so the command becomes a receipt, records every file it changes, and builds
 a proof pack that a third party can verify later without trusting the agent.

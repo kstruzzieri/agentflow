@@ -8,9 +8,13 @@ enable publication from contributor work.
 ## Current gate
 
 `.github/workflows/release.yml` contains `if: false # Issue #5 compatibility
-freeze` on `publish-pypi`. Issue #5 remains open, so the compatibility freeze is
-incomplete and the job must stay disabled until a separate maintainer approval.
-It uses trusted publishing with no token; do not create or store a PyPI token.
+freeze` on `publish-pypi`. Issue #5 is closed: the eight schemas are frozen at
+`1.0.0` on `main` and `scripts/check_schema_soak.py` reports the transition
+complete, so step 1 of the first-publication checklist is satisfied. The job
+stays disabled until the maintainer completes steps 2-4 (the protected `pypi`
+environment and the trusted publisher) and separately authorizes removing
+`if: false`. It uses trusted publishing with no token; do not create or store
+a PyPI token.
 
 ## Prepared trusted-publisher values
 
