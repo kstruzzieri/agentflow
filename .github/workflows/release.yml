@@ -191,7 +191,6 @@ jobs:
       - clean-install-wheel
       - clean-install-sdist
       - github-release
-    if: false # Issue #5 compatibility freeze
     environment: pypi
     permissions:
       id-token: write

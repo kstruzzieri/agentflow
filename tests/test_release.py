@@ -475,7 +475,7 @@ class RepositoryReleaseDisciplineTests(unittest.TestCase):
         self.assertNotIn("agentflow_proof-", release)
 
         self.assertEqual(text.count("id-token: write"), 1)
-        self.assertIn("if: false # Issue #5 compatibility freeze", publish)
+        self.assertNotIn("if: false", publish)
         self.assertIn("environment: pypi", publish)
         self.assertIn("id-token: write", publish)
         for dependency in (

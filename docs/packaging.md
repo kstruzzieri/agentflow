@@ -46,9 +46,10 @@ python3.11 -m venv /tmp/agentflow-sdist
 /tmp/agentflow-sdist/bin/agentflow --version
 ```
 
-`publish-pypi` in `.github/workflows/release.yml` remains `if: false` while
-Issue #5's compatibility freeze is incomplete. It stages only the wheel and
-sdist; the zipapps remain release assets.
+`publish-pypi` in `.github/workflows/release.yml` runs on every `v*` tag once
+a required reviewer approves the protected `pypi` environment; the Issue #5
+`if: false` gate was removed after the 1.0.0 schema freeze completed. It stages
+only the wheel and sdist; the zipapps remain release assets.
 
 ## Single-file builds (zipapp)
 

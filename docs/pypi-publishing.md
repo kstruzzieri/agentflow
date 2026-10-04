@@ -1,28 +1,29 @@
 # PyPI publication packet (prepared, not executed)
 
-This packet is a maintainer-only preparation record. Publisher and environment
-configuration, uploads, releases, tags, and enabling publication remain
-unperformed and must not be done from contributor work. The two owner-facing
-actions, direct owner contact and the PEP 541 request, have been performed by
-the maintainer and are recorded under "Ownership and PEP 541 evidence" below;
-do not repeat them.
+This packet is a maintainer-only record. Uploads, releases, and tags are never
+performed from contributor work; each PyPI upload runs only from a `v*` tag
+and only after a required reviewer approves the protected `pypi` environment.
+The maintainer has performed the one-time setup (the `pypi` environment, the
+pending trusted publisher, and removal of the `if: false` gate) and the two
+owner-facing actions, direct owner contact and the PEP 541 request; all are
+recorded below. Any step listed as unperformed stays maintainer-only.
 
 ## Current gate
 
-`.github/workflows/release.yml` contains `if: false # Issue #5 compatibility
-freeze` on `publish-pypi`. Issue #5 is closed: the eight schemas are frozen at
-`1.0.0` on `main` and `scripts/check_schema_soak.py` reports the transition
-complete, so step 1 of the first-publication checklist is satisfied. The job
-stays disabled until the maintainer completes steps 2-4 (the protected `pypi`
-environment and the trusted publisher) and separately authorizes removing
-`if: false`. It uses trusted publishing with no token; do not create or store
-a PyPI token.
+`publish-pypi` in `.github/workflows/release.yml` is enabled. The
+`if: false # Issue #5 compatibility freeze` line was removed on 2026-10-04,
+after Issue #5 closed with the eight schemas frozen at `1.0.0` on `main` and
+`scripts/check_schema_soak.py` reporting the transition complete, and after the
+maintainer created the protected `pypi` environment and the pending trusted
+publisher. The runtime gate is now the environment's required-reviewer
+approval on each `v*` tag run. It uses trusted publishing with no token; do not
+create or store a PyPI token.
 
 ## Prepared trusted-publisher values
 
-The following values are prepared only; a maintainer must verify them in PyPI
-before configuring anything. Both pending trusted-publisher rows are
-maintainer-only and unperformed.
+The `agentflow-proof` row is configured in PyPI as a pending trusted publisher
+with exactly these values. The `agentflow-mcp` row is prepared only and
+remains maintainer-only and unperformed.
 
 | Pending project / trusted publisher | GitHub owner | Repository | Workflow filename | Environment |
 | --- | --- | --- | --- | --- |
@@ -35,9 +36,11 @@ maintainer-only and unperformed.
 | Credentials | no token; trusted-publisher OIDC only after authorization |
 
 Before removing `if: false`, a maintainer must create the `pypi` environment in
-repository Settings and configure its required reviewers. The workflow's
-`environment: pypi` reference does not create protection rules; if the named
-environment is absent, GitHub can create it without those protections.
+repository Settings and configure its required reviewers; that order was
+followed for 1.0.0. The workflow's `environment: pypi` reference
+does not create protection rules; if the named environment is ever deleted,
+GitHub can recreate it without those protections, so keep the environment and
+its required reviewers in place.
 
 Only `agentflow-proof` produces the wheel and sdist. `agentflow-mcp` remains a
 console command, not a second Python distribution. It may be configured or
@@ -73,8 +76,8 @@ Before a maintainer performs any remaining publication action (owner contact
 and the PEP 541 request are already performed and recorded above; they were
 never gated on Issue #5 and do not gate a release):
 
-1. Confirm Issue #5 is closed; keep `if: false` in place while completing the
-   remaining prerequisites.
+1. Confirm Issue #5 is closed (done 2026-09-12); the `if: false` gate was
+   kept in place until steps 2-4 were complete.
 2. Confirm the distribution name, the repository `kstruzzieri/agentflow`, the
    workflow `release.yml`, environment `pypi`, and required reviewers.
 3. Keep the ownership/PEP 541 evidence table current. Owner contact
@@ -84,7 +87,8 @@ never gated on Issue #5 and do not gate a release):
    Settings and configure required reviewers; then configure the trusted
    publisher with no token and review the exact wheel and sdist already built
    by the workflow.
-5. Only after steps 1-4, separately authorize removing `if: false`.
+5. Only after steps 1-4, separately authorize removing `if: false` (done
+   2026-10-04 for the 1.0.0 release).
 6. Confirm the PyPI stage contains exactly one wheel and one sdist, never a
    zipapp or placeholder upload; retain the `agentflow` and `agentflow-mcp`
    commands and imports.
