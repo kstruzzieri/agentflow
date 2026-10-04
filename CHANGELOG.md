@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [1.0.0] - 2026-09-12
+## [1.0.0] - 2026-10-04
 
 Agentflow 1.0.0 is the stability release. The eight artifact schemas (plan
 lock, drift report, proof pack, execution contract, step runs, command
