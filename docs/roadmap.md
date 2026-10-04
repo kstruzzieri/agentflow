@@ -1,10 +1,11 @@
 # Agentflow Roadmap
 
-Last updated: 2026-07-11
+Last updated: 2026-10-04
 
-Agentflow `0.4.0` is a standard-library-only Python CLI for plan-locked,
-auditable agent work. It supports Python 3.11–3.13 and ships source plus
-single-file CLI and MCP zipapps through GitHub Releases.
+Agentflow `1.0.0` is a standard-library-only Python CLI for plan-locked,
+auditable agent work. It supports Python 3.11–3.13 and ships as the
+`agentflow-proof` distribution on PyPI, as source, and as single-file CLI and
+MCP zipapps through GitHub Releases.
 
 ## Available Today
 
@@ -24,55 +25,46 @@ single-file CLI and MCP zipapps through GitHub Releases.
 - Single-writer leases, one-worker-per-worktree execution, and cross-worktree
   ledger aggregation.
 - Static HTML proof reports and release zipapps for the CLI and MCP server.
+- The eight artifact schemas frozen at `1.0.0` under the compatibility policy
+  in [`docs/stability.md`](stability.md) and
+  [`docs/compatibility.md`](compatibility.md).
 
-## Next Milestone: v1.0.0
+## v1.0.0 (shipped 2026-10-04)
 
-Agentflow is feature-complete as of `0.4.0`. The v1.0.0 milestone is a
-stability milestone, not a feature milestone: it turns the proof and execution
-formats into promises. Progress is tracked in the
+The v1.0.0 milestone was a stability milestone, not a feature milestone: it
+turned the proof and execution formats into promises. The record lives in the
 [v1.0.0 milestone](https://github.com/kstruzzieri/agentflow/milestone/1) and
 the [tracking issue #11](https://github.com/kstruzzieri/agentflow/issues/11).
 
-### Phase 1 — write down the promises
+- Promises written down: `CHANGELOG.md` and release discipline
+  ([#3](https://github.com/kstruzzieri/agentflow/issues/3)), the public API
+  surface and semver policy
+  ([#4](https://github.com/kstruzzieri/agentflow/issues/4)), platform support
+  tiers ([#7](https://github.com/kstruzzieri/agentflow/issues/7)), the
+  security posture ([#8](https://github.com/kstruzzieri/agentflow/issues/8)),
+  and the public-project templates
+  ([#10](https://github.com/kstruzzieri/agentflow/issues/10)).
+- Freeze: the load-bearing schemas soaked and were stamped `1.0.0`
+  ([#5](https://github.com/kstruzzieri/agentflow/issues/5)); `verify-proof`
+  1.x verifies every proof built by any 1.y, and the 0.4.0-built fixture stays
+  in the compatibility matrix.
+- Distribution: PyPI release through trusted publishing with the wheel and
+  sdist alongside the zipapps
+  ([#6](https://github.com/kstruzzieri/agentflow/issues/6)) and runnable
+  end-to-end examples
+  ([#9](https://github.com/kstruzzieri/agentflow/issues/9)). The bare
+  `agentflow` PyPI name is pursued separately under PEP 541; if it transfers,
+  only `project.name` changes.
 
-- [#3](https://github.com/kstruzzieri/agentflow/issues/3) `CHANGELOG.md` and
-  release discipline (tag builds fail without a changelog entry).
-- [#4](https://github.com/kstruzzieri/agentflow/issues/4) Public API surface
-  and semver policy: which of the CLI, exit codes, JSON outputs, `.agent/`
-  layout, MCP tools, and environment variables are covered by the guarantee.
-- [#7](https://github.com/kstruzzieri/agentflow/issues/7) Platform support
-  decision: extend the CI matrix or document support tiers.
-- [#8](https://github.com/kstruzzieri/agentflow/issues/8) Security posture
-  document covering the command-execution, artifact-publication, and loopback
-  HTTP trust boundaries, including the checksum-not-signature limitation.
-- [#10](https://github.com/kstruzzieri/agentflow/issues/10) Issue templates
-  and code of conduct.
+## After 1.0
 
-### Phase 2 — freeze
-
-- [#5](https://github.com/kstruzzieri/agentflow/issues/5) Freeze the
-  load-bearing schemas at 1.0 with a written compatibility policy:
-  additive-only minors, and `verify-proof` 1.x verifies every proof built by
-  any 1.y. The freeze follows a soak period with no schema bumps under real
-  use.
-
-### Phase 3 — distribution
-
-- [#6](https://github.com/kstruzzieri/agentflow/issues/6) PyPI release with
-  trusted publishing, sdist and wheel alongside the zipapps, and a
-  cross-version verification test (0.4.0-built proof verified by 1.0).
-- [#9](https://github.com/kstruzzieri/agentflow/issues/9) Runnable end-to-end
-  examples for CI, MCP clients, workflow packs, and cross-worktree
-  aggregation.
-
-### Out of scope for v1.0
+No next milestone is committed. Candidates, each starting as an issue with a
+concrete use case and compatibility impact:
 
 - PyInstaller single-binary packaging (deferred until a consumer needs
   Python-free machines; see `docs/packaging.md`).
-- Cryptographic proof signing (candidate for 1.1; proof integrity remains
-  checksum-based tamper evidence, stated plainly in the security posture doc).
-- New workflow features.
+- Cryptographic proof signing (proof integrity remains checksum-based tamper
+  evidence, stated plainly in the security posture doc).
+- New workflow features, within the additive-only minor policy.
 
-Larger changes should begin as a GitHub issue with a concrete use case and
-compatibility impact. This roadmap communicates direction, not a release
-commitment.
+This roadmap communicates direction, not a release commitment.

@@ -536,7 +536,8 @@ class RepositoryReleaseDisciplineTests(unittest.TestCase):
             encoding="utf-8"
         )
 
-        self.assertIn("agentflow-proof is not yet published", readme)
+        self.assertIn("python3 -m pip install agentflow-proof", readme)
+        self.assertNotIn("not yet published", readme)
         for text in (readme, contributing):
             self.assertIn("agentflow", text)
             self.assertIn("agentflow-mcp", text)

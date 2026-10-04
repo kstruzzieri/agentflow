@@ -39,8 +39,10 @@ conventions:
   test_framework: unittest
   test_command: PYTHONPATH=src python3 -m unittest discover -s tests -v
 
-# The v1 schema freeze. While a soak is active, any shape or semantic change to
-# a path in the declared freeze set resets the candidate and the soak clock.
+# The v1 schema freeze, complete since 2026-09-12: the declared freeze set is
+# stamped 1.0.0. A shape or semantic change to a path in it is a stability
+# contract question (docs/stability.md, docs/compatibility.md) that the guard
+# fails on, not a soak reset.
 schema_freeze:
   issue: 5
   audit: docs/schema-freeze-audit.md

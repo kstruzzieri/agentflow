@@ -155,7 +155,8 @@ field and no requirements ledger.
 Golem may author optional plan-level `design_decisions` and per-step
 `design_decision_ids` as documented in
 [Agentflow Workflow](agent-workflow.md#optional-design-decision-references).
-It emits schema `0.4.0` whenever it authors either field and treats
+It emits the current plan schema, `1.0.0`, whenever it authors either field
+(design-decision references were introduced in plan schema `0.4.0`) and treats
 `lock-plan --json` diagnostics as compiler feedback for regenerating the plan.
 
 For each raw step from `next-step --json` or MCP `next_step`, select decisions
