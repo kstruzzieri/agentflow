@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "agentflow-proof"
-version = "0.4.0"
+version = "1.0.0"
 description = "A model-agnostic workflow runner for drift-resistant agentic development."
 readme = "README.md"
 requires-python = ">=3.11"
