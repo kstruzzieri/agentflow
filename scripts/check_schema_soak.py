@@ -805,15 +805,31 @@ def _require_released_baseline(root: Path, transition: str) -> None:
     After the release, implementation, tests, workflows and this guard evolve
     under docs/stability.md like any other code. What stays pinned to
     ``transition_commit``: the load-bearing schemas (compared as JSON), the
-    schema-version constant values, and the preserved compatibility fixtures
-    (byte-exact; additions allowed).
+    schema-version constant values. Compatibility fixtures stay byte-exact,
+    including additions pinned to their first committed version after release.
     """
     paths = [*sorted(SCHEMA_FILE_CONSTANTS), RELEASED_FIXTURE_ROOT]
     released_tree, read_released = _commit_subject(root, transition, paths)
+    released_blobs = {
+        path: read_released(path, mode) for path, mode in released_tree.items()
+    }
+    # Walk parents before children, including merged branches. Keep the first
+    # committed version of each new path even if it is later deleted/re-added.
+    # Compare the working tree with those originals so restoring a fixture is
+    # allowed; merely checking HEAD would bless already-committed mutations.
+    commits = _git(
+        root, "log", "--format=%H", "--reverse", "--topo-order",
+        "--full-history", f"{transition}..HEAD", "--", RELEASED_FIXTURE_ROOT,
+    ).stdout.split()
+    for commit in commits:
+        tree = _candidate_tree(root, commit, [RELEASED_FIXTURE_ROOT])
+        added = sorted(set(tree) - set(released_tree))
+        released_blobs.update(_candidate_blobs(root, commit, added))
+        released_tree.update((path, tree[path]) for path in added)
     current_tree = _current_tree(root, paths)
     changed = sorted(set(released_tree) - set(current_tree))
     for path in sorted(set(released_tree) & set(current_tree)):
-        released = read_released(path, released_tree[path])
+        released = released_blobs[path]
         current = _current_bytes(root, path, current_tree[path])
         if path in SCHEMA_FILE_CONSTANTS:
             same = _semantic_value(path, released) == _semantic_value(path, current)

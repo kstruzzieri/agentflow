@@ -261,7 +261,10 @@ contract, compared with `transition_commit` (#64):
 - the values of the eight schema-version constants in `contracts.py` (other
   edits to that file are ordinary code changes);
 - the existing files under `tests/fixtures/compatibility/`, byte for byte and
-  mode for mode, while new fixtures may be added.
+  mode for mode, while new fixtures may be added. Each post-transition fixture
+  is pinned to its first committed content and mode, including additions on
+  merged branches. Later edits, deletions, renames, or replacement content at
+  the same path fail; restoring the original content and mode passes.
 
 Source, tests, workflows and the guard itself then change under
 [`docs/stability.md`](stability.md) like any other code. A deliberate change

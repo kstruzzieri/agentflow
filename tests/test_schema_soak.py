@@ -1132,6 +1132,93 @@ class OneZeroTransitionTests(SoakHarness, unittest.TestCase):
 
         self._assert_released_ok()
 
+    def _commit_new_compatibility_fixture(self) -> Path:
+        self._released()
+        fixture = self.root / "tests/fixtures/compatibility/one-one/proof.json"
+        fixture.parent.mkdir()
+        fixture.write_text('{"schema_version": "1.1.0"}\n', encoding="utf-8")
+        self._commit("add future historical proof", self.now)
+        self._assert_released_ok()
+        return fixture
+
+    def test_rejects_edits_to_a_post_transition_fixture(self) -> None:
+        fixture = self._commit_new_compatibility_fixture()
+        fixture.write_text("rewritten\n", encoding="utf-8")
+
+        self._assert_baseline_rejects(fixture.relative_to(self.root).as_posix())
+        self._commit("modify future historical proof", self.now)
+        self._assert_baseline_rejects(fixture.relative_to(self.root).as_posix())
+
+    def test_rejects_deletion_of_a_post_transition_fixture(self) -> None:
+        fixture = self._commit_new_compatibility_fixture()
+        fixture.unlink()
+
+        self._assert_baseline_rejects(fixture.relative_to(self.root).as_posix())
+        self._commit("delete future historical proof", self.now)
+        self._assert_baseline_rejects(fixture.relative_to(self.root).as_posix())
+
+    def test_rejects_mode_changes_to_a_post_transition_fixture(self) -> None:
+        fixture = self._commit_new_compatibility_fixture()
+        fixture.chmod(0o755)
+
+        self._assert_baseline_rejects(fixture.relative_to(self.root).as_posix())
+        self._commit("change future historical proof mode", self.now)
+        self._assert_baseline_rejects(fixture.relative_to(self.root).as_posix())
+
+    def test_rejects_renaming_a_post_transition_fixture(self) -> None:
+        fixture = self._commit_new_compatibility_fixture()
+        fixture.rename(fixture.with_name("renamed.json"))
+
+        self._assert_baseline_rejects(fixture.relative_to(self.root).as_posix())
+        self._commit("rename future historical proof", self.now)
+        self._assert_baseline_rejects(fixture.relative_to(self.root).as_posix())
+
+    def test_readding_a_post_transition_fixture_does_not_reset_its_baseline(self) -> None:
+        fixture = self._commit_new_compatibility_fixture()
+        fixture.unlink()
+        self._commit("delete future historical proof", self.now)
+        fixture.write_text("replacement\n", encoding="utf-8")
+        self._commit("recreate future historical proof", self.now)
+
+        self._assert_baseline_rejects(fixture.relative_to(self.root).as_posix())
+
+    def test_restoring_a_post_transition_fixture_passes(self) -> None:
+        fixture = self._commit_new_compatibility_fixture()
+        original = fixture.read_bytes()
+        fixture.write_text("mistake\n", encoding="utf-8")
+        self._commit("accidentally edit future historical proof", self.now)
+        fixture.write_bytes(original)
+        self._commit("restore original historical proof", self.now)
+
+        self._assert_released_ok()
+
+    def test_merge_does_not_hide_edits_to_a_post_transition_fixture(self) -> None:
+        fixture = self._commit_new_compatibility_fixture()
+        branch_point = self._git("rev-parse", "HEAD")
+        self._git("checkout", "-qb", "fixture-edit")
+        fixture.write_text("rewritten on branch\n", encoding="utf-8")
+        self._commit("modify future historical proof on branch", self.now)
+        self._git("checkout", "-qb", "fixture-merge", branch_point)
+        self._commit("unrelated work", self.now)
+        self._git("merge", "--no-ff", "fixture-edit", "-m", "merge fixture edit")
+
+        self._assert_baseline_rejects(fixture.relative_to(self.root).as_posix())
+
+    def test_fixture_first_added_on_a_merged_branch_is_protected(self) -> None:
+        self._released()
+        branch_point = self._git("rev-parse", "HEAD")
+        self._git("checkout", "-qb", "fixture-add")
+        fixture = self.root / "tests/fixtures/compatibility/branch-proof.json"
+        fixture.write_text("original\n", encoding="utf-8")
+        self._commit("add historical proof on branch", self.now)
+        fixture.write_text("rewritten\n", encoding="utf-8")
+        self._commit("edit historical proof on branch", self.now)
+        self._git("checkout", "-qb", "fixture-merge", branch_point)
+        self._commit("unrelated work", self.now)
+        self._git("merge", "--no-ff", "fixture-add", "-m", "merge fixture addition")
+
+        self._assert_baseline_rejects(fixture.relative_to(self.root).as_posix())
+
     def test_rejects_a_load_bearing_schema_edit_after_the_transition(self) -> None:
         self._released()
         path = self.root / "schemas/plan-lock.schema.json"
