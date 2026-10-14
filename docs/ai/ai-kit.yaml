@@ -39,10 +39,12 @@ conventions:
   test_framework: unittest
   test_command: PYTHONPATH=src python3 -m unittest discover -s tests -v
 
-# The v1 schema freeze, complete since 2026-09-12: the declared freeze set is
-# stamped 1.0.0. A shape or semantic change to a path in it is a stability
-# contract question (docs/stability.md, docs/compatibility.md) that the guard
-# fails on, not a soak reset.
+# The v1 schema freeze, complete since 2026-09-12: the load-bearing schemas are
+# stamped 1.0.0. After the release the guard holds only the released contract
+# (the eight load-bearing schemas, their version constants, and the existing
+# compatibility fixtures; #64). A shape or semantic change to one of those is a
+# stability contract question (docs/stability.md, docs/compatibility.md) that
+# the guard fails on, not a soak reset.
 schema_freeze:
   issue: 5
   audit: docs/schema-freeze-audit.md

@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- `scripts/check_schema_soak.py` no longer freezes source, tests and workflows
+  after the recorded 1.0 transition. It audits the transition commit itself and
+  holds the working tree only to the released contract: the eight load-bearing
+  schemas, their schema-version constant values, and the existing compatibility
+  fixtures (including later additions, pinned when first committed). Previously
+  any change to a file from the original freeze set failed
+  CI. (#64)
+
 ## [1.0.0] - 2026-10-04
 
 Agentflow 1.0.0 is the stability release. The eight artifact schemas (plan
