@@ -11,7 +11,13 @@ from agentflow.contracts import (
     PLAN_SCHEMA_VERSION,
 )
 from agentflow.artifacts import create_initial_artifacts, write_json
-from agentflow.execution import claim_step, init_execution_artifacts, read_step_state
+from agentflow.execution import (
+    block_step,
+    claim_step,
+    init_execution_artifacts,
+    read_step_events,
+    read_step_state,
+)
 
 WORKERS = 8
 
@@ -52,6 +58,16 @@ def _claim_worker(args) -> str | None:
         return None  # advisory allows all; this path is for the enforce test in Task 2
 
 
+def _block_worker(args) -> bool:
+    root_str, index, barrier = args
+    barrier.wait(timeout=30)
+    try:
+        block_step(Path(root_str), "P1", "A1", f"worker {index}")
+        return True
+    except ValueError:
+        return False
+
+
 class LedgerSafetyTests(unittest.TestCase):
     def _root(self, tmp: str) -> Path:
         root = Path(tmp)
@@ -61,6 +77,19 @@ class LedgerSafetyTests(unittest.TestCase):
         init_execution_artifacts(root)
         write_json(root / ".agent/plan.lock.json", _plan())
         return root
+
+    def test_concurrent_closes_of_one_attempt_land_exactly_one_terminal_event(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = self._root(tmp)
+            claim_step(root, _plan(), "P1", "agent-a")
+            with multiprocessing.Manager() as manager:
+                barrier = manager.Barrier(WORKERS)
+                args = [(str(root), i, barrier) for i in range(WORKERS)]
+                with ProcessPoolExecutor(max_workers=WORKERS) as pool:
+                    results = list(pool.map(_block_worker, args))
+            self.assertEqual(results.count(True), 1, results)
+            blocked = [e for e in read_step_events(root) if e["event"] == "blocked"]
+            self.assertEqual(len(blocked), 1, blocked)
 
     def test_concurrent_advisory_claims_never_share_an_attempt_id(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

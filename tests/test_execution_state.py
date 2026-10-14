@@ -10,6 +10,7 @@ from agentflow.contracts import (
 )
 from agentflow.artifacts import append_jsonl, create_initial_artifacts, write_json
 from agentflow.execution import (
+    _close_step,
     amend_step,
     attempt_for_step,
     attempt_is_terminal,
@@ -23,6 +24,8 @@ from agentflow.execution import (
     mark_step_verified,
     next_step,
     read_step_state,
+    renew_lease,
+    require_lifecycle_owner,
     resolve_attempt,
 )
 
@@ -121,6 +124,78 @@ class ExecutionStateTests(unittest.TestCase):
             second = claim_step(root, plan(), "P2", "agent-a")
             fail_step(root, "P2", second["attempt_id"], "validation failed")
             self.assertIsNone(current_step_attempt(root, "P2"))
+
+    def test_writes_to_a_terminal_attempt_are_refused_and_append_nothing(self) -> None:
+        def abandon(root: Path, attempt: str) -> None:
+            append_jsonl(root / ".agent/step-runs.jsonl", {
+                "schema_version": STEP_RUNS_SCHEMA_VERSION, "event": "abandoned",
+                "step_id": "P1", "attempt_id": attempt,
+                "recorded_at": "2026-10-13T00:00:00+00:00", "reason": "test",
+            })
+
+        closers = {
+            "completed": lambda root, a: (
+                mark_step_verified(root, "P1", a, []), complete_step(root, "P1", a)),
+            "blocked": lambda root, a: block_step(root, "P1", a, "first close"),
+            "failed": lambda root, a: fail_step(root, "P1", a, "first close"),
+            "abandoned": abandon,
+        }
+        writers = {
+            "block": lambda root, a: block_step(root, "P1", a, "second close"),
+            "fail": lambda root, a: fail_step(root, "P1", a, "second close"),
+            # complete_step's unlocked pre-check fires first; this is the in-lock race path.
+            "complete": lambda root, a: _close_step(root, "P1", a, "completed"),
+            "verify": lambda root, a: mark_step_verified(root, "P1", a, []),
+            "renew": lambda root, a: renew_lease(root, "P1", a, "agent-a", 5),
+        }
+        for terminal, close in closers.items():
+            for name, write in writers.items():
+                with self.subTest(terminal=terminal, write=name), \
+                        tempfile.TemporaryDirectory() as tmp:
+                    root = self._root(tmp)
+                    attempt = claim_step(root, plan(), "P1", "agent-a")["attempt_id"]
+                    close(root, attempt)
+                    ledger = root / ".agent/step-runs.jsonl"
+                    before = ledger.read_bytes()
+
+                    with self.assertRaises(ValueError) as ctx:
+                        write(root, attempt)
+
+                    self.assertIn(f"is already {terminal}", str(ctx.exception))
+                    self.assertEqual(ledger.read_bytes(), before)
+
+    def test_claim_after_standalone_fail_gets_a_fresh_attempt_id(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = self._root(tmp)
+            fail_step(root, "P1", "A1", "failed before any claim")
+
+            claimed = claim_step(root, plan(), "P1", "agent-a")
+
+            self.assertEqual(claimed["attempt_id"], "A2")
+            self.assertEqual(read_step_state(root)["steps"]["P1"]["open_attempts"], ["A2"])
+
+    def test_stale_close_does_not_clear_the_new_attempt_pointer(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = self._root(tmp)
+            first = claim_step(root, plan(), "P1", "agent-a")["attempt_id"]
+            block_step(root, "P1", first, "retry")
+            second = claim_step(root, plan(), "P1", "agent-a")["attempt_id"]
+
+            with self.assertRaises(ValueError):
+                block_step(root, "P1", first, "stale")
+
+            self.assertEqual(current_step_attempt(root, "P1"), second)
+
+    def test_verify_on_terminal_attempt_is_refused_before_any_ledger_write(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = self._root(tmp)
+            attempt = claim_step(root, plan(), "P1", "agent-a")["attempt_id"]
+            block_step(root, "P1", attempt, "blocked")
+
+            with self.assertRaises(ValueError) as ctx:
+                require_lifecycle_owner(root, "P1", attempt, None, action="verify")
+
+            self.assertIn("is already blocked", str(ctx.exception))
 
     def test_next_step_honors_depends_on(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

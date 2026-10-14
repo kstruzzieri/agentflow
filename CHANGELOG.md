@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- `block-step`, `complete-step`, `fail-step`, `verify-step` and `renew-lease`
+  refuse an attempt whose latest event is already terminal (`completed`,
+  `blocked`, `failed` or `abandoned`) and write nothing. Previously the write
+  left `.agent/step-runs.jsonl` unreadable (`execution_state_invalid`). The
+  check runs under the step-ledger lock, so concurrent writers cannot race it.
+  (#61)
+- `claim-step`, `amend-step` and `reclaim-step` no longer reuse an attempt id
+  that a standalone `fail-step` already used, which used to leave the ledger
+  unreadable. (#61)
+
 ## [1.0.0] - 2026-10-04
 
 Agentflow 1.0.0 is the stability release. The eight artifact schemas (plan
