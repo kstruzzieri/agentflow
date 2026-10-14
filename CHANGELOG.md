@@ -17,6 +17,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   any change to a file from the original freeze set failed
   CI. (#64)
 
+### Fixed
+
+- `block-step`, `complete-step`, `fail-step`, `verify-step`, `finish-step`,
+  `renew-lease` and `run`'s automatic lease renewal refuse an attempt whose
+  latest event is already terminal (`completed`, `blocked`, `failed` or
+  `abandoned`) and append nothing to `.agent/step-runs.jsonl`. Previously the
+  append left the ledger unreadable (`execution_state_invalid`). The check runs
+  under the step-ledger lock, so concurrent writers cannot race it. The refusal
+  exits 2. `complete-step` on an attempt that was already closed when it started
+  keeps its existing exit 1 and now names the closed state instead of asking for
+  `verify-step`. (#61)
+- `claim-step`, `amend-step` and `reclaim-step` no longer reuse an attempt id
+  that a standalone `fail-step` already used, which used to leave the ledger
+  unreadable. (#61)
+
 ## [1.0.0] - 2026-10-04
 
 Agentflow 1.0.0 is the stability release. The eight artifact schemas (plan

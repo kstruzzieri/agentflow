@@ -451,15 +451,25 @@ def _attempt_pointer(root: Path, step_id: str) -> Path:
 
 
 def _next_attempt_id(events: List[Dict[str, Any]]) -> str:
-    opens = [
-        event
-        for event in events
-        if event.get("event") in ATTEMPT_OPENING_EVENTS
-    ]
-    return f"A{len(opens) + 1}"
+    used = {event["attempt_id"] for event in events if isinstance(event.get("attempt_id"), str)}
+    number = sum(1 for event in events if event.get("event") in ATTEMPT_OPENING_EVENTS) + 1
+    while f"A{number}" in used:  # a standalone fail-step can occupy an id with no opener
+        number += 1
+    return f"A{number}"
+
+
+def _refuse_terminal_attempt(root: Path, step_id: str, attempt_id: str) -> None:
+    latest = latest_attempt_event(root, step_id, attempt_id)
+    if latest is not None and latest.get("event") in TERMINAL_EVENTS:
+        raise ValueError(
+            f"attempt {attempt_id} for step {step_id} is already "
+            f"{latest['event']}; nothing was recorded"
+        )
 
 
 def _append_step_event(root: Path, event: Dict[str, Any]) -> Dict[str, Any]:
+    # Every caller holds _step_runs_lock_path(root), so this check cannot race an append.
+    _refuse_terminal_attempt(root, event["step_id"], event["attempt_id"])
     event = {"schema_version": STEP_RUNS_SCHEMA_VERSION, "recorded_at": utc_now(), **event}
     append_jsonl(_step_runs_path(root), event)
     return event
@@ -778,6 +788,10 @@ def complete_step(
 ) -> Dict[str, Any]:
     resolved_attempt = resolve_attempt(root, step_id, attempt_id)
     _require_opened_attempt(root, step_id, resolved_attempt)
+    try:
+        _refuse_terminal_attempt(root, step_id, resolved_attempt)
+    except ValueError as exc:
+        raise RuntimeError(str(exc)) from None  # keeps complete-step's exit 1 for a closed attempt
     if not attempt_is_verified(root, step_id, resolved_attempt):
         raise RuntimeError("verify-step must pass before complete-step")
     _require_owner(root, step_id, resolved_attempt, agent_id, now, action="complete")
@@ -794,6 +808,7 @@ def block_step(
 ) -> Dict[str, Any]:
     resolved_attempt = resolve_attempt(root, step_id, attempt_id)
     _require_opened_attempt(root, step_id, resolved_attempt)
+    _refuse_terminal_attempt(root, step_id, resolved_attempt)
     _require_owner(root, step_id, resolved_attempt, agent_id, now, action="block")
     return _close_step(root, step_id, resolved_attempt, "blocked", reason)
 
@@ -949,6 +964,7 @@ def require_lifecycle_owner(
     with file_lock(_step_runs_lock_path(root)):
         resolved = resolve_attempt(root, step_id, attempt_id)
         _require_opened_attempt(root, step_id, resolved)
+        _refuse_terminal_attempt(root, step_id, resolved)
         _require_owner(root, step_id, resolved, agent_id, now, action=action)
         return resolved
 

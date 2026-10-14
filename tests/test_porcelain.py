@@ -1,3 +1,5 @@
+import contextlib
+import io
 import json
 import subprocess
 import unittest
@@ -351,6 +353,47 @@ class TestResumabilityProjection(unittest.TestCase):
             self.assertFalse(_recovery(projection, "continue")["allowed"])
             self.assertFalse(_recovery(projection, "renew")["allowed"])
             self.assertFalse(_recovery(projection, "reclaim")["allowed"])
+
+    def test_closing_a_terminal_attempt_is_refused_and_workspace_stays_valid(self):
+        with TemporaryDirectory() as d:
+            root = Path(d)
+            _ready_repo(root)
+            cli.main(["claim-step", "P1", "--agent", "agent-a", "--root", str(root)])
+            cli.main([
+                "fail-step", "P1", "--attempt", "A1", "--reason", "failed",
+                "--root", str(root),
+            ])
+            stderr = io.StringIO()
+            with contextlib.redirect_stderr(stderr):
+                code = cli.main([
+                    "block-step", "P1", "--attempt", "A1", "--reason", "late block",
+                    "--root", str(root),
+                ])
+
+            self.assertEqual(code, 2)
+            self.assertIn("is already failed", stderr.getvalue())
+            action = porcelain.next_action(root, agent_id="agent-b")
+            self.assertNotEqual(action.state, "state_invalid")
+            self.assertTrue(_recovery(action.resumability, "claim")["allowed"])
+
+    def test_verify_step_on_a_blocked_attempt_writes_nothing(self):
+        with TemporaryDirectory() as d:
+            root = Path(d)
+            _validated(root)
+            cli.main([
+                "block-step", "P1", "--attempt", "A1", "--reason", "blocked",
+                "--root", str(root),
+            ])
+            step_runs = root / ".agent/step-runs.jsonl"
+            verification_runs = root / ".agent/verification-runs.jsonl"
+            before = (step_runs.read_bytes(), verification_runs.read_bytes())
+            stderr = io.StringIO()
+            with contextlib.redirect_stderr(stderr):
+                code = cli.main(["verify-step", "P1", "--attempt", "A1", "--root", str(root)])
+
+            self.assertEqual(code, 2)
+            self.assertIn("is already blocked", stderr.getvalue())
+            self.assertEqual((step_runs.read_bytes(), verification_runs.read_bytes()), before)
 
     def test_multiple_open_attempts_are_ambiguous_and_offer_no_allowed_action(self):
         with TemporaryDirectory() as d:
