@@ -100,7 +100,10 @@ always goes through `reclaim-step`.
 
 `fail-step` is the escape hatch. It performs no owner or expiry check and closes
 the attempt as `failed`; pass `--agent` only to record `failed_by`. Use it when
-an attempt must be forced closed and neither renew nor reclaim applies.
+an attempt must be forced closed and neither renew nor reclaim applies. It
+refuses (exit 2) an attempt that is already closed (`completed`, `blocked`,
+`failed` or `abandoned`), as every lifecycle command does, so a repeated or
+late close cannot corrupt the step ledger.
 
 ```bash
 agentflow fail-step P1 --reason "unrecoverable" --agent operator

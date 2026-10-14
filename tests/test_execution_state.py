@@ -2,13 +2,14 @@ from __future__ import annotations
 
 import tempfile
 import unittest
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from agentflow.contracts import (
     PLAN_SCHEMA_VERSION,
     STEP_RUNS_SCHEMA_VERSION,
 )
-from agentflow.artifacts import append_jsonl, create_initial_artifacts, write_json
+from agentflow.artifacts import append_jsonl, create_initial_artifacts, read_json, write_json
 from agentflow.execution import (
     _close_step,
     amend_step,
@@ -195,7 +196,64 @@ class ExecutionStateTests(unittest.TestCase):
             with self.assertRaises(ValueError) as ctx:
                 require_lifecycle_owner(root, "P1", attempt, None, action="verify")
 
-            self.assertIn("is already blocked", str(ctx.exception))
+            self.assertIn("is already blocked; nothing was recorded", str(ctx.exception))
+
+    def test_second_standalone_fail_on_a_never_opened_attempt_is_refused(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = self._root(tmp)
+            fail_step(root, "P1", "A1", "failed before any claim")
+            ledger = root / ".agent/step-runs.jsonl"
+            before = ledger.read_bytes()
+
+            with self.assertRaises(ValueError) as ctx:
+                fail_step(root, "P1", "A1", "again")
+
+            self.assertIn("is already failed", str(ctx.exception))
+            self.assertEqual(ledger.read_bytes(), before)
+
+    def test_complete_on_a_completed_attempt_names_the_closed_state(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = self._root(tmp)
+            attempt = claim_step(root, plan(), "P1", "agent-a")["attempt_id"]
+            mark_step_verified(root, "P1", attempt, [])
+            complete_step(root, "P1", attempt)
+
+            # RuntimeError keeps complete-step's existing exit code 1 for this case.
+            with self.assertRaises(RuntimeError) as ctx:
+                complete_step(root, "P1", attempt)
+
+            self.assertIn("is already completed", str(ctx.exception))
+
+    def test_block_on_a_closed_attempt_names_the_closed_state_before_lease_expiry(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = self._root(tmp)
+            contract_path = root / ".agent/execution.contract.json"
+            contract = read_json(contract_path)
+            contract["concurrency"]["lease_policy"] = "enforce"
+            write_json(contract_path, contract)
+            an_hour_ago = datetime.now(timezone.utc) - timedelta(hours=1)
+            attempt = claim_step(
+                root, plan(), "P1", "agent-a", lease_minutes=1, now=an_hour_ago
+            )["attempt_id"]
+            fail_step(root, "P1", attempt, "forced closed")
+
+            with self.assertRaises(ValueError) as ctx:
+                block_step(root, "P1", attempt, "late block", agent_id="agent-a")
+
+            self.assertIn("is already failed", str(ctx.exception))
+
+    def test_claim_skips_rows_with_a_malformed_attempt_id(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = self._root(tmp)
+            append_jsonl(root / ".agent/step-runs.jsonl", {
+                "schema_version": STEP_RUNS_SCHEMA_VERSION, "event": "failed",
+                "step_id": "P1", "attempt_id": [],
+                "recorded_at": "2026-10-13T00:00:00+00:00",
+            })
+
+            claimed = claim_step(root, plan(), "P1", "agent-a")
+
+            self.assertEqual(claimed["attempt_id"], "A1")
 
     def test_next_step_honors_depends_on(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
