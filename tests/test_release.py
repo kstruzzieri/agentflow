@@ -20,6 +20,17 @@ def _workflow_job(text: str, name: str) -> str:
     return text[start:end]
 
 
+def _action_pins(text: str, action: str) -> list[str]:
+    """Return the commit SHAs ``action`` is pinned to, in order.
+
+    Only a full 40-hex SHA followed by a ``# v<version>`` comment counts, so a
+    tag or branch reference yields no pin. The exact SHA is left to dependabot.
+    """
+    return re.findall(
+        rf"uses: {re.escape(action)}@([0-9a-f]{{40}}) # v\d+(?:\.\d+)*\b", text
+    )
+
+
 @unittest.skipIf(
     sys.version_info < (3, 11), "release guard requires Python 3.11+"
 )
@@ -367,6 +378,16 @@ class RepositoryReleaseDisciplineTests(unittest.TestCase):
         self.assertNotIn("|| true", text)
         self.assertNotIn("--generate-notes", text)
 
+    def test_action_pins_accept_only_a_full_sha_with_a_version_comment(self) -> None:
+        sha = "0123456789abcdef0123456789abcdef01234567"
+
+        self.assertEqual(
+            _action_pins(f"uses: actions/x@{sha} # v1.2.3\n", "actions/x"), [sha]
+        )
+        self.assertEqual(_action_pins("uses: actions/x@v1 # v1\n", "actions/x"), [])
+        self.assertEqual(_action_pins(f"uses: actions/x@{sha}\n", "actions/x"), [])
+        self.assertEqual(_action_pins(f"uses: actions/xy@{sha} # v1\n", "actions/x"), [])
+
     def test_release_workflow_builds_and_uploads_one_artifact_bundle(self) -> None:
         text = (
             REPO_ROOT / ".github" / "workflows" / "release.yml"
@@ -389,12 +410,9 @@ class RepositoryReleaseDisciplineTests(unittest.TestCase):
         self.assertIn("python -m twine check dist/*.whl dist/*.tar.gz", build)
         self.assertIn("python dist/agentflow.pyz --version", build)
         self.assertIn("python dist/agentflow-mcp.pyz", build)
-        upload = (
-            "actions/upload-artifact@"
-            "043fb46d1a93c77aae656e7c1c64a875d1fc6a0a"
-        )
-        self.assertEqual(text.count(upload), 1)
-        self.assertIn(upload, build)
+        upload = "actions/upload-artifact"
+        self.assertEqual(text.count(f"{upload}@"), 1)
+        self.assertEqual(len(_action_pins(build, upload)), 1)
         self.assertIn("name: release-distributions", build)
         for path in (
             "dist/agentflow.pyz",
@@ -411,14 +429,11 @@ class RepositoryReleaseDisciplineTests(unittest.TestCase):
         ).read_text(encoding="utf-8")
         wheel = _workflow_job(text, "clean-install-wheel")
         sdist = _workflow_job(text, "clean-install-sdist")
-        download = (
-            "actions/download-artifact@"
-            "3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c"
-        )
+        download = "actions/download-artifact"
 
         self.assertIn('python-version: ["3.11", "3.12", "3.13"]', wheel)
         self.assertIn("needs: build", wheel)
-        self.assertIn(download, wheel)
+        self.assertEqual(len(_action_pins(wheel, download)), 1)
         self.assertIn("name: release-distributions", wheel)
         self.assertIn("python -m venv", wheel)
         self.assertIn("wheels=(dist/*.whl)", wheel)
@@ -434,7 +449,7 @@ class RepositoryReleaseDisciplineTests(unittest.TestCase):
         )
 
         self.assertIn("needs: build", sdist)
-        self.assertIn(download, sdist)
+        self.assertEqual(len(_action_pins(sdist, download)), 1)
         self.assertIn("python -m venv", sdist)
         self.assertIn("setuptools==83.0.0", sdist)
         self.assertIn("sdists=(dist/*.tar.gz)", sdist)
@@ -451,16 +466,16 @@ class RepositoryReleaseDisciplineTests(unittest.TestCase):
         ).read_text(encoding="utf-8")
         release = _workflow_job(text, "github-release")
         publish = _workflow_job(text, "publish-pypi")
-        download = (
-            "actions/download-artifact@"
-            "3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c"
-        )
+        download = "actions/download-artifact"
 
+        # Every artifact consumer downloads with the same pinned release.
+        self.assertEqual(text.count(f"{download}@"), 4)
+        self.assertEqual(len(set(_action_pins(text, download))), 1)
         self.assertEqual(text.count("contents: write"), 1)
         self.assertIn("contents: write", release)
         for dependency in ("guard", "clean-install-wheel", "clean-install-sdist"):
             self.assertIn(f"- {dependency}", release)
-        self.assertIn(download, release)
+        self.assertEqual(len(_action_pins(release, download)), 1)
         self.assertIn('--notes-file "$RUNNER_TEMP/release-notes.md"', release)
         for artifact in (
             "agentflow.pyz",
@@ -485,18 +500,14 @@ class RepositoryReleaseDisciplineTests(unittest.TestCase):
             "github-release",
         ):
             self.assertIn(f"- {dependency}", publish)
-        self.assertIn(download, publish)
+        self.assertEqual(len(_action_pins(publish, download)), 1)
         stage_start = publish.index("- name: Stage PyPI distributions")
         action_start = publish.index("- uses: pypa/gh-action-pypi-publish@")
         stage = publish[stage_start:action_start]
         self.assertIn("dist/*.whl", stage)
         self.assertIn("dist/*.tar.gz", stage)
         self.assertNotIn(".pyz", stage)
-        self.assertIn(
-            "pypa/gh-action-pypi-publish@"
-            "dc37677b2e1c63e2034f94d8a5b11f265b73ba33",
-            publish,
-        )
+        self.assertEqual(len(_action_pins(publish, "pypa/gh-action-pypi-publish")), 1)
         self.assertIn("packages-dir: pypi-dist/", publish)
         self.assertIn("attestations: false", publish)
         self.assertNotRegex(publish, r"(?m)^\s+(?:password|token):")
