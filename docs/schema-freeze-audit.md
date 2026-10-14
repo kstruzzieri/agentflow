@@ -224,8 +224,8 @@ exactly these changes, each verified mechanically:
   byte-exact as `tests/fixtures/compatibility/legacy-0.3/`, which the
   compatibility matrix keeps verifying through `verify-proof`. The regenerated
   bundle is not exempt from scrutiny: CI's `verify-run` and `verify-proof`
-  steps validate it, and the recorded transition commit pins it byte for byte
-  immediately afterwards.
+  steps validate it, and the guard audits it as part of the recorded
+  transition commit.
 
 Independently of which files changed, the guard requires the execution-contract
 schema to use the canonical exact pattern `^1\.0\.0$`, the six ordinary
@@ -250,9 +250,27 @@ The transition is recorded in two commits. The first commit contains only the
 mechanical freeze-set transition above. The following manifest-only commit sets
 `transition_commit` to that first commit. The guard verifies that it descends
 from the candidate, that the soak and all workloads are complete, and that the
-current freeze-set paths still match the recorded transition commit byte for
-byte and mode for mode. This closes the exception immediately instead of
-leaving a reusable post-soak window.
+recorded transition commit itself contains only the mechanical transition
+above. That audit reads the transition commit, not the working tree, so later
+commits can neither reopen the exception nor rewrite what it allowed.
+
+After the release, the working tree is held only to the released 1.0
+contract, compared with `transition_commit` (#64):
+
+- the eight load-bearing schemas, compared as JSON;
+- the values of the eight schema-version constants in `contracts.py` (other
+  edits to that file are ordinary code changes);
+- the existing files under `tests/fixtures/compatibility/`, byte for byte and
+  mode for mode, while new fixtures may be added. Each post-transition fixture
+  is pinned to its first committed content and mode, including additions on
+  merged branches. Later edits, deletions, renames, or replacement content at
+  the same path fail; restoring the original content and mode passes.
+
+Source, tests, workflows and the guard itself then change under
+[`docs/stability.md`](stability.md) like any other code. A deliberate change
+to a load-bearing schema or its version constant fails the guard until the
+released baseline is moved forward on purpose, which needs its own reviewed
+change to this guard.
 
 Anything else still fails, inside that window as much as outside it. Before the
 clock elapses the same edits are rejected, and the guard refuses any candidate
