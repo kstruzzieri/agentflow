@@ -50,8 +50,10 @@ The load-bearing schemas are frozen at 1.0.0 under
 72-hour soak ran to completion with all five workloads recorded, and the
 mechanical transition that stamped `1.0.0` is pinned as `transition_commit` in
 the manifest. `scripts/check_schema_soak.py` now reports
-`schema transition complete` and fails if any frozen path differs from that
-commit.
+`schema transition complete`. It audits the recorded transition commit and
+holds the working tree only to the released contract: the eight load-bearing
+schemas, the schema-version constant values, and the existing compatibility
+fixtures (#64).
 
 - [`docs/schema-freeze-audit.md`](../schema-freeze-audit.md) — the audit, the
   freeze set, and the rules the soak followed.
@@ -59,11 +61,12 @@ commit.
   candidate and transition.
 - `scripts/check_schema_soak.py` — the guard CI runs on every build.
 
-A shape or semantic change to a frozen path is no longer a soak reset; it is a
+A shape or semantic change to a load-bearing schema, a schema-version
+constant, or a compatibility fixture is no longer a soak reset; it is a
 compatibility question governed by [`docs/stability.md`](../stability.md) and
 [`docs/compatibility.md`](../compatibility.md), and the guard fails on it. If a
 change touches one, say so explicitly in review; it is a contract cost, not a
-style question.
+style question. Other files from the original freeze set are ordinary code.
 
 ## What review should weigh here
 
