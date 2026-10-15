@@ -41,7 +41,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   never completed. When an execution contract exists, `build-proof` also refuses
   to build a proof over such a run (`invalid working state: execution ledger:`,
   exit 1, nothing written, an existing proof kept); without one, the
-  evidence-only flow is unchanged. Previously non-strict `finish-run` passed and
+  evidence-only flow is unchanged. A step-ledger change during proof construction
+  also refuses the build and asks the caller to retry, so a concurrent amendment
+  cannot bypass the completeness check. Previously non-strict `finish-run` passed and
   wrote a proof that `verify-proof` accepted with `execution.steps_completed`
   below `steps_total`. Strict mode still also requires each step's latest attempt
   to be completed; a completed step whose later amendment was blocked still

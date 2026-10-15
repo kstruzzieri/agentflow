@@ -2070,6 +2070,74 @@ class IncompleteRunProofTests(unittest.TestCase):
                     ctx.exception.errors, ["P2 has open attempt A2", "P2 is not completed"]
                 )
 
+    def test_refuses_step_ledger_changes_during_proof_construction(self) -> None:
+        from agentflow import proof as proof_module
+        from agentflow.execution import amend_step
+
+        # Exercise writes before hashing, before the execution summary, and
+        # after both. A final completeness check alone also misses a concurrent
+        # amendment that completes before the build finishes.
+        for strict in (False, True):
+            for phase in ("build_coverage", "execution_summary", "stuck_block"):
+                for finish_amendment in (False, True):
+                    with self.subTest(
+                        strict=strict, phase=phase, finish_amendment=finish_amendment,
+                    ), tempfile.TemporaryDirectory() as tmp:
+                        root = self._root(tmp, ["P1"])
+                        _complete_step(root)
+                        plan_path = root / ".agent/plan.lock.json"
+                        plan = json.loads(plan_path.read_text(encoding="utf-8"))
+                        original = getattr(proof_module, phase)
+
+                        def amend_during_build(*args, **kwargs):
+                            amend_step(root, plan, "P1", "agent-b", "concurrent review fix")
+                            if finish_amendment:
+                                _complete_step(root)
+                            return original(*args, **kwargs)
+
+                        with patch.object(proof_module, phase, side_effect=amend_during_build):
+                            with self.assertRaises(InvalidWorkingState) as ctx:
+                                build_proof(root, plan_path, strict=strict)
+
+                        self.assertEqual(ctx.exception.subject, "execution ledger")
+                        self.assertTrue(any("changed" in error for error in ctx.exception.errors))
+                        self.assertFalse((root / ".agent/proof-pack.json").exists())
+
+    def test_cli_keeps_existing_proof_when_step_ledger_changes(self) -> None:
+        import io
+        from contextlib import redirect_stderr, redirect_stdout
+        from agentflow import proof as proof_module
+        from agentflow.cli import main
+        from agentflow.execution import amend_step
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = self._root(tmp, ["P1"])
+            _complete_step(root)
+            plan_path = root / ".agent/plan.lock.json"
+            plan = json.loads(plan_path.read_text(encoding="utf-8"))
+            write_proof_metadata(root, build_proof(root, plan_path))
+            markdown = root / ".agent/proof-pack.md"
+            markdown.write_text("Retained proof report.\n", encoding="utf-8")
+            before = {
+                path.name: path.read_bytes()
+                for path in (root / ".agent/proof-pack.json", markdown)
+            }
+            original = proof_module.build_coverage
+
+            def amend_during_build(*args, **kwargs):
+                amend_step(root, plan, "P1", "agent-b", "concurrent review fix")
+                return original(*args, **kwargs)
+
+            stderr = io.StringIO()
+            with patch.object(proof_module, "build_coverage", side_effect=amend_during_build):
+                with redirect_stdout(io.StringIO()), redirect_stderr(stderr):
+                    status = main(["build-proof", "--root", str(root)])
+
+            self.assertEqual(status, 1)
+            self.assertIn("invalid working state: execution ledger:", stderr.getvalue())
+            for name, contents in before.items():
+                self.assertEqual((root / ".agent" / name).read_bytes(), contents)
+
     def test_plan_with_no_steps_builds(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = self._root(tmp, [])
