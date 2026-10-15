@@ -37,6 +37,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (`execution_state_invalid`). The check runs under the step-ledger lock for
   every step-ledger writer; the refusal exits 2. `fail-step` on an attempt id
   that no step has used stays allowed. (#62)
+- `verify-run` fails in both modes while a plan step has an open attempt or has
+  never completed. When an execution contract exists, `build-proof` also refuses
+  to build a proof over such a run (`invalid working state: execution ledger:`,
+  exit 1, nothing written, an existing proof kept); without one, the
+  evidence-only flow is unchanged. A step-ledger change during proof construction
+  also refuses the build and asks the caller to retry, so a concurrent amendment
+  cannot bypass the completeness check. Previously non-strict `finish-run` passed and
+  wrote a proof that `verify-proof` accepted with `execution.steps_completed`
+  below `steps_total`. Strict mode still also requires each step's latest attempt
+  to be completed; a completed step whose later amendment was blocked still
+  passes non-strict. Proofs issued by earlier releases still verify. A blocker
+  recorded on a step that never completed no longer satisfies the Stop hook
+  (`docs/stop-hook.md`), and new proofs always carry empty
+  `coverage.expired_leases` and `coverage.no_deadline_open_attempts`. (#58)
 
 ## [1.0.0] - 2026-10-04
 

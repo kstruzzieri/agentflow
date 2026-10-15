@@ -36,7 +36,7 @@ from .execution import (
     read_step_state,
     validate_execution_contract,
 )
-from .execution_coverage import build_execution_coverage
+from .execution_coverage import build_execution_coverage, incomplete_execution_errors
 from .receipts import command_receipts, file_receipts, replay_gates, verify_receipt_outputs
 from .review import (
     build_time_review_policy,
@@ -627,9 +627,22 @@ def build_proof(root: Path, plan_path: Path, strict: bool = False) -> Dict[str, 
         raise ValueError(
             "invalid design decision traceability: " + "; ".join(design_errors)
         )
+    # Bind every step-ledger read below to the same snapshot. A concurrent
+    # amendment must not slip between validation and the proof's source hashes.
+    step_ledger = root / EXECUTION_ARTIFACT_PATHS["step-runs"]
+    step_ledger_hash = sha256_file(step_ledger) if step_ledger.exists() else None
     # After the two traceability gates, whose narrower messages `validate_plan`
     # would otherwise subsume, and still before any proof work is done.
     _reject_invalid_working_state(root, plan)
+    # #58: a proof that carries an execution block never shows steps_completed
+    # below steps_total. Same condition as execution_summary; the evidence-only
+    # flow (no execution contract) is unchanged.
+    if (root / EXECUTION_ARTIFACT_PATHS["execution-contract"]).exists():
+        incomplete = incomplete_execution_errors(root, plan)
+        if incomplete:
+            raise InvalidWorkingState(
+                "execution ledger", [error["message"] for error in incomplete]
+            )
     evidence = read_jsonl(root / ".agent/evidence.jsonl")
     context_receipts = read_jsonl(root / ".agent/context-receipts.jsonl")
     failures = read_jsonl(root / ".agent/failures.jsonl")
@@ -806,6 +819,11 @@ def build_proof(root: Path, plan_path: Path, strict: bool = False) -> Dict[str, 
 
     proof["stuck"] = stuck_block(root, plan)
     proof["core_sha256"] = core_sha256(proof)
+    current_step_ledger_hash = sha256_file(step_ledger) if step_ledger.exists() else None
+    if current_step_ledger_hash != step_ledger_hash:
+        raise InvalidWorkingState(
+            "execution ledger", ["step ledger changed during proof construction; retry build-proof"]
+        )
     return proof
 
 

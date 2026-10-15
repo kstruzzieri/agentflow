@@ -994,6 +994,22 @@ class TestFinishRun(unittest.TestCase):
             self.assertTrue(result["diagnostics"])
             self.assertTrue(any("rogue.txt" in line for line in result["diagnostics"]))
 
+    def test_finish_run_stops_at_verify_run_on_open_attempt(self):
+        # #58: non-strict finish-run used to pass here and write a proof.
+        with TemporaryDirectory() as d:
+            root = Path(d)
+            _validated(root)  # P1/A1 claimed, file recorded, gate passed, never completed
+            proof = root / ".agent/proof-pack.json"
+            before = proof.read_bytes() if proof.exists() else None
+
+            result = porcelain.finish_run(root, root / ".agent/plan.lock.json")
+
+            self.assertFalse(result["ok"])
+            self.assertEqual(result["stopped_at"], "verify-run")
+            self.assertTrue(any("P1 has open attempt A1" in line for line in result["diagnostics"]))
+            self.assertTrue(any("P1 is not completed" in line for line in result["diagnostics"]))
+            self.assertEqual(proof.read_bytes() if proof.exists() else None, before)
+
     def test_finish_run_passes_plan_to_verify_run(self):
         calls = []
 

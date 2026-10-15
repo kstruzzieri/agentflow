@@ -1056,6 +1056,28 @@ class AgentflowCliTests(unittest.TestCase):
             self.assertIn("missing required field: rollback_plan", result.stderr)
             self.assertFalse((cwd / ".agent/proof-pack.json").exists())
 
+    def test_build_proof_refuses_incomplete_run_and_keeps_existing_proof(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            cwd = Path(tmp)
+            plan = self._reject_fixture(cwd)
+            plan["locked"] = True
+            plan["locked_at"] = "2026-06-23T00:00:00+00:00"
+            self._write_plan(cwd, plan)
+            self.assertEqual(run_agentflow(cwd, "init-execution").returncode, 0)
+            self.assertEqual(
+                run_agentflow(cwd, "claim-step", "P1", "--agent", "agent-a").returncode, 0
+            )
+            proof_path = cwd / ".agent/proof-pack.json"
+            proof_path.write_text('{"sentinel": true}\n', encoding="utf-8")
+
+            result = run_agentflow(cwd, "build-proof")
+
+            self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+            self.assertIn("invalid working state: execution ledger:", result.stderr)
+            self.assertIn("- P1 has open attempt A1", result.stderr)
+            self.assertIn("- P1 is not completed", result.stderr)
+            self.assertEqual(proof_path.read_text(encoding="utf-8"), '{"sentinel": true}\n')
+
     def test_build_proof_rejects_invalid_execution_contract(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             cwd = Path(tmp)

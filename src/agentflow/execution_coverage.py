@@ -578,6 +578,28 @@ def _unresolved_finding_refs(root: Path) -> List[Dict[str, str]]:
     return findings
 
 
+def incomplete_execution_errors(root: Path, plan: Dict[str, Any]) -> List[Dict[str, str]]:
+    """#58: an open attempt or a never-completed step leaves the run unfinished.
+
+    verify_run (both modes) and build_proof share this, so the two can never
+    disagree about whether a run is finished.
+    """
+    steps = read_step_state(root)["steps"]
+    errors: List[Dict[str, str]] = []
+    for step in plan.get("steps", []):
+        if not isinstance(step, dict) or not isinstance(step.get("id"), str):
+            continue
+        state = steps.get(step["id"], {})
+        if state.get("open_attempts"):
+            errors.append({
+                "severity": "error",
+                "message": f"{step['id']} has open attempt {', '.join(state['open_attempts'])}",
+            })
+        if not state.get("completed"):
+            errors.append({"severity": "error", "message": f"{step['id']} is not completed"})
+    return errors
+
+
 def verify_run(
     root: Path,
     plan: Dict[str, Any],
@@ -607,16 +629,25 @@ def verify_run(
             )
     result["errors"].extend(_reconcile_changed_files(root, plan, require_file_receipts))
     coverage = build_execution_coverage(root, plan, effective_strict, now=now)
+    result["errors"].extend(incomplete_execution_errors(root, plan))
     for step_id, step in coverage["steps"].items():
         for warning in step.get("warnings", []):
-            result["warnings"].append(warning)
+            # #58: an open attempt is reported once, as the error above.
+            if warning.get("message") != f"{step_id} has open attempt":
+                result["warnings"].append(warning)
         # #20: an unrecovered expired lease under enforce is a coverage error and
         # must gate the run (advisory downgrades it to a warning above).
         for error in step.get("errors", []):
             result["errors"].append(error)
         if step["status"] == "failed":
             result["errors"].append({"severity": "error", "message": f"{step_id} has failed attempt"})
-        if effective_strict and step["status"] != "completed":
+        # Strict also needs the latest attempt completed. A never-completed step
+        # already has its "is not completed" error from the helper.
+        if (
+            effective_strict
+            and step["status"] != "completed"
+            and step_id in coverage["completed_steps"]
+        ):
             result["errors"].append({"severity": "error", "message": f"{step_id} is not completed"})
     result["errors"].extend(_terminal_attempt_violations(root))
     result["errors"].extend(_timeout_receipt_violations(root))

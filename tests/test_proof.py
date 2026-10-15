@@ -93,6 +93,23 @@ def complete_initial_plan(root: Path) -> Path:
     return path
 
 
+def _complete_step(root: Path, step_id: str = "P1") -> None:
+    """#58: build_proof refuses a run with an open or never-completed step.
+
+    Fixtures that exercise other proof features close their step first.
+    """
+    from agentflow.execution import (
+        claim_step, complete_step, current_step_attempt, mark_step_verified,
+    )
+
+    plan = json.loads((root / ".agent/plan.lock.json").read_text(encoding="utf-8"))
+    attempt = current_step_attempt(root, step_id) or claim_step(
+        root, plan, step_id, "agent-a"
+    )["attempt_id"]
+    mark_step_verified(root, step_id, attempt, [])
+    complete_step(root, step_id, attempt)
+
+
 def plan_with_two_steps() -> dict:
     return {
         "steps": [
@@ -1854,6 +1871,7 @@ class CoverageTests(unittest.TestCase):
                 0,
                 gate="python3 -c \"print('ok')\"",
             )
+            _complete_step(root)
 
             proof = build_proof(root, root / ".agent/plan.lock.json")
 
@@ -1895,6 +1913,7 @@ class CoverageTests(unittest.TestCase):
                 ["python3", "-c", "print('ok')"],
                 gate="python3 -c \"print('ok')\"",
             )
+            _complete_step(root)
             proof = build_proof(root, root / ".agent/plan.lock.json")
             write_proof_metadata(root, proof)
             (root / receipt["stdout_path"]).write_text("tampered\n", encoding="utf-8")
@@ -1941,8 +1960,10 @@ class LeaseProofTests(unittest.TestCase):
         write_json(root / ".agent/execution.contract.json", contract)
         return root
 
-    def test_proof_coverage_reports_abandoned_and_expired(self) -> None:
-        from agentflow.execution import claim_step, reclaim_step
+    def test_proof_coverage_reports_abandoned_attempts(self) -> None:
+        from agentflow.execution import (
+            claim_step, complete_step, mark_step_verified, reclaim_step,
+        )
         from datetime import datetime, timedelta, timezone
 
         with tempfile.TemporaryDirectory() as tmp:
@@ -1950,14 +1971,32 @@ class LeaseProofTests(unittest.TestCase):
             claim_step(root, self._plan(), "P1", "agent-a", lease_minutes=30)
             future = datetime.now(timezone.utc) + timedelta(hours=2)
             reclaim_step(root, self._plan(), "P1", "agent-b", reason="crash", now=future)
+            # #58: the reclaimed attempt must finish before a proof can be built.
+            mark_step_verified(root, "P1", "A2", [], agent_id="agent-b", now=future)
+            complete_step(root, "P1", "A2", agent_id="agent-b", now=future)
 
             proof = build_proof(root, root / ".agent/plan.lock.json")
-            self.assertIn("abandoned_attempts", proof["coverage"])
-            self.assertIn("expired_leases", proof["coverage"])
-            self.assertIn("no_deadline_open_attempts", proof["coverage"])
             self.assertTrue(proof["coverage"]["abandoned_attempts"])
+            # #58: no attempt can be open in a buildable proof, so these stay empty.
+            self.assertEqual(proof["coverage"]["expired_leases"], [])
+            self.assertEqual(proof["coverage"]["no_deadline_open_attempts"], [])
             # Lease diagnostics must be inside the tamper-protected canonical core.
             self.assertIn("abandoned_attempts", canonical_core(proof)["coverage"])
+
+    def test_build_proof_refuses_open_attempt_with_expired_lease(self) -> None:
+        from agentflow.execution import claim_step
+        from agentflow.proof import InvalidWorkingState
+        from datetime import datetime, timedelta, timezone
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = self._enforce_root(tmp)
+            past = datetime.now(timezone.utc) - timedelta(hours=2)
+            claim_step(root, self._plan(), "P1", "agent-a", lease_minutes=30, now=past)
+
+            with self.assertRaises(InvalidWorkingState) as ctx:
+                build_proof(root, root / ".agent/plan.lock.json")
+
+            self.assertIn("P1 has open attempt A1", ctx.exception.errors)
 
     def test_normalized_hash_unaffected_by_lease_and_abandon_timestamps(self) -> None:
         from agentflow.execution import claim_step, reclaim_step
@@ -1994,6 +2033,128 @@ class LeaseProofTests(unittest.TestCase):
                 hash_b,
                 "lease/abandon timestamps must not churn normalized_execution_sha256",
             )
+
+
+class IncompleteRunProofTests(unittest.TestCase):
+    """#58: build_proof refuses a run with an open or never-completed step."""
+
+    def _root(self, tmp: str, steps) -> Path:
+        root = Path(tmp)
+        create_initial_artifacts(root)
+        init_execution_artifacts(root)
+        write_json(
+            root / ".agent/plan.lock.json",
+            {**PLAN_CONTRACT_FIELDS,
+             "schema_version": PLAN_SCHEMA_VERSION, "objective": "o", "scope": ["s"],
+             "steps": [{**STEP_CONTRACT_FIELDS, "id": s, "evidence_ids": []} for s in steps],
+             "evidence_ids": []},
+        )
+        return root
+
+    def test_refuses_open_attempt_and_never_completed_step_in_both_modes(self) -> None:
+        from agentflow.execution import claim_step
+        from agentflow.proof import InvalidWorkingState
+
+        for strict in (False, True):
+            with self.subTest(strict=strict), tempfile.TemporaryDirectory() as tmp:
+                root = self._root(tmp, ["P1", "P2"])
+                _complete_step(root, "P1")
+                plan = json.loads((root / ".agent/plan.lock.json").read_text(encoding="utf-8"))
+                claim_step(root, plan, "P2", "agent-a")
+
+                with self.assertRaises(InvalidWorkingState) as ctx:
+                    build_proof(root, root / ".agent/plan.lock.json", strict=strict)
+
+                self.assertEqual(ctx.exception.subject, "execution ledger")
+                self.assertEqual(
+                    ctx.exception.errors, ["P2 has open attempt A2", "P2 is not completed"]
+                )
+
+    def test_refuses_step_ledger_changes_during_proof_construction(self) -> None:
+        from agentflow import proof as proof_module
+        from agentflow.execution import amend_step
+
+        # Exercise writes before hashing, before the execution summary, and
+        # after both. A final completeness check alone also misses a concurrent
+        # amendment that completes before the build finishes.
+        for strict in (False, True):
+            for phase in ("build_coverage", "execution_summary", "stuck_block"):
+                for finish_amendment in (False, True):
+                    with self.subTest(
+                        strict=strict, phase=phase, finish_amendment=finish_amendment,
+                    ), tempfile.TemporaryDirectory() as tmp:
+                        root = self._root(tmp, ["P1"])
+                        _complete_step(root)
+                        plan_path = root / ".agent/plan.lock.json"
+                        plan = json.loads(plan_path.read_text(encoding="utf-8"))
+                        original = getattr(proof_module, phase)
+
+                        def amend_during_build(*args, **kwargs):
+                            amend_step(root, plan, "P1", "agent-b", "concurrent review fix")
+                            if finish_amendment:
+                                _complete_step(root)
+                            return original(*args, **kwargs)
+
+                        with patch.object(proof_module, phase, side_effect=amend_during_build):
+                            with self.assertRaises(InvalidWorkingState) as ctx:
+                                build_proof(root, plan_path, strict=strict)
+
+                        self.assertEqual(ctx.exception.subject, "execution ledger")
+                        self.assertTrue(any("changed" in error for error in ctx.exception.errors))
+                        self.assertFalse((root / ".agent/proof-pack.json").exists())
+
+    def test_cli_keeps_existing_proof_when_step_ledger_changes(self) -> None:
+        import io
+        from contextlib import redirect_stderr, redirect_stdout
+        from agentflow import proof as proof_module
+        from agentflow.cli import main
+        from agentflow.execution import amend_step
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = self._root(tmp, ["P1"])
+            _complete_step(root)
+            plan_path = root / ".agent/plan.lock.json"
+            plan = json.loads(plan_path.read_text(encoding="utf-8"))
+            write_proof_metadata(root, build_proof(root, plan_path))
+            markdown = root / ".agent/proof-pack.md"
+            markdown.write_text("Retained proof report.\n", encoding="utf-8")
+            before = {
+                path.name: path.read_bytes()
+                for path in (root / ".agent/proof-pack.json", markdown)
+            }
+            original = proof_module.build_coverage
+
+            def amend_during_build(*args, **kwargs):
+                amend_step(root, plan, "P1", "agent-b", "concurrent review fix")
+                return original(*args, **kwargs)
+
+            stderr = io.StringIO()
+            with patch.object(proof_module, "build_coverage", side_effect=amend_during_build):
+                with redirect_stdout(io.StringIO()), redirect_stderr(stderr):
+                    status = main(["build-proof", "--root", str(root)])
+
+            self.assertEqual(status, 1)
+            self.assertIn("invalid working state: execution ledger:", stderr.getvalue())
+            for name, contents in before.items():
+                self.assertEqual((root / ".agent" / name).read_bytes(), contents)
+
+    def test_plan_with_no_steps_builds(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = self._root(tmp, [])
+
+            proof = build_proof(root, root / ".agent/plan.lock.json")
+
+            self.assertEqual(proof["execution"]["steps_total"], 0)
+
+    def test_evidence_only_root_without_execution_contract_still_builds(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            create_initial_artifacts(root)
+            plan_path = complete_initial_plan(root)
+
+            proof = build_proof(root, plan_path)
+
+            self.assertNotIn("execution", proof)
 
 
 class ReviewEvidenceExemptionTests(unittest.TestCase):
@@ -2036,6 +2197,7 @@ class ReviewProofTests(unittest.TestCase):
                 "locked_at": "2026-06-01T00:00:00+00:00",
             },
         )
+        _complete_step(root)
         append_jsonl(
             root / ".agent/review-runs.jsonl",
             {
@@ -2197,6 +2359,7 @@ class AdaptiveReviewProofTests(unittest.TestCase):
                 "evidence_ids": [],
             },
         )
+        _complete_step(root)
         if review_depth is not None:
             contract = valid_workflow_contract()
             contract["review_depth"] = review_depth
@@ -2344,6 +2507,7 @@ class VerifyReviewTests(unittest.TestCase):
             {**PLAN_CONTRACT_FIELDS, "schema_version": PLAN_SCHEMA_VERSION, "objective": "o", "scope": ["s"],
              "steps": [{**STEP_CONTRACT_FIELDS, "id": "P1", "evidence_ids": []}], "evidence_ids": []},
         )
+        _complete_step(root)
         state = root / "docs/ai/state/main"
         state.mkdir(parents=True)
         manifest_path = state / "review-manifest.json"
@@ -2455,6 +2619,7 @@ class VerifyReviewTests(unittest.TestCase):
                     "evidence_ids": ["E-missing"],
                 },
             )
+            _complete_step(root)
             proof = build_proof(root, root / ".agent/plan.lock.json")
             missing = [c for c in proof["checks"] if c["id"] == "missing_plan_evidence_ids"][0]
             self.assertEqual(missing["status"], "warning")
@@ -2480,6 +2645,7 @@ class VerifyReviewTests(unittest.TestCase):
                     "evidence_ids": ["E-missing"],
                 },
             )
+            _complete_step(root)
             proof = build_proof(root, root / ".agent/plan.lock.json", strict=True)
             missing = [c for c in proof["checks"] if c["id"] == "missing_plan_evidence_ids"][0]
             self.assertEqual(missing["status"], "warning")
@@ -2584,6 +2750,7 @@ class HunkProofSummaryTests(unittest.TestCase):
             lines[18] = "STRAY"
             (root / "fixture.txt").write_text("\n".join(lines) + "\n", encoding="utf-8")
             write_json(root / ".agent/drift-report.json", audit_drift(root, plan))
+            _complete_step(root)
             proof = build_proof(root, root / ".agent/plan.lock.json", strict=True)
             findings = verify_proof_checks(proof, strict=True)
             self.assertFalse(
