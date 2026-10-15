@@ -87,11 +87,19 @@ maps to exit 2. Add to `.claude/settings.json`:
 - `$CLAUDE_PROJECT_DIR` is exported for hooks and also read by the script itself
   to locate the repo root.
 - When the gate fails, the agent receives the script's stderr (which names the
-  failing gate) and continues. Claude Code has no `stop_hook_active` payload
-  flag, so a contract the agent genuinely cannot satisfy will re-prompt it; the
-  agent should then record an explicit blocker (`agentflow block-step` /
-  `fail-step`) rather than loop. The self-healing `build-proof` step keeps the
-  common case from blocking at all.
+  failing gate) and continues. Claude Code also sends `stop_hook_active: true`
+  on stdin when it is already continuing because of a stop hook, but this
+  script parses no stdin, and that flag alone must not bypass the gate: a
+  repeated stop attempt is not evidence that the work is blocked. So a contract
+  the agent genuinely cannot satisfy re-prompts it on every stop attempt.
+- Recording a blocker on a step that has never completed
+  (`agentflow block-step` / `fail-step`) does not satisfy the gate: `verify-run`
+  fails while any step is open or has never completed, or when its latest
+  attempt failed. A genuinely blocked agent should record the blocker, so the
+  ledger says why, and name it in its reply. The operator then interrupts the
+  session (Esc in Claude Code) and either completes or re-plans the step, or
+  disables the hook.
+- The self-healing `build-proof` step keeps the common case from blocking at all.
 
 ### OpenHands
 

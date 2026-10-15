@@ -127,11 +127,14 @@ leases so they are easy to find before flipping the policy.
 
 ## Representation in coverage, proof, and drift
 
-- `verify-run` (under `enforce`) errors on an unrecovered expired lease and warns
-  on a no-deadline open attempt.
+- `verify-run` fails while any attempt is open (#58). Under `enforce` it also
+  names an unrecovered expired lease as an error and a no-deadline open attempt
+  as a warning.
 - The proof pack's `coverage` block carries `expired_leases`,
   `no_deadline_open_attempts`, and `abandoned_attempts` inside the hash-bound
-  `canonical_core`.
+  `canonical_core`. `build-proof` refuses while any attempt is open (#58), so
+  the first two are always empty in proofs built since then; they stay for
+  schema compatibility.
 - `audit-drift` emits an advisory `stale_attempts` note for expired open leases.
   It is informational only and never changes the drift verdict.
 

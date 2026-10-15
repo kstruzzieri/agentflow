@@ -36,7 +36,7 @@ from .execution import (
     read_step_state,
     validate_execution_contract,
 )
-from .execution_coverage import build_execution_coverage
+from .execution_coverage import build_execution_coverage, incomplete_execution_errors
 from .receipts import command_receipts, file_receipts, replay_gates, verify_receipt_outputs
 from .review import (
     build_time_review_policy,
@@ -630,6 +630,15 @@ def build_proof(root: Path, plan_path: Path, strict: bool = False) -> Dict[str, 
     # After the two traceability gates, whose narrower messages `validate_plan`
     # would otherwise subsume, and still before any proof work is done.
     _reject_invalid_working_state(root, plan)
+    # #58: a proof that carries an execution block never shows steps_completed
+    # below steps_total. Same condition as execution_summary; the evidence-only
+    # flow (no execution contract) is unchanged.
+    if (root / EXECUTION_ARTIFACT_PATHS["execution-contract"]).exists():
+        incomplete = incomplete_execution_errors(root, plan)
+        if incomplete:
+            raise InvalidWorkingState(
+                "execution ledger", [error["message"] for error in incomplete]
+            )
     evidence = read_jsonl(root / ".agent/evidence.jsonl")
     context_receipts = read_jsonl(root / ".agent/context-receipts.jsonl")
     failures = read_jsonl(root / ".agent/failures.jsonl")

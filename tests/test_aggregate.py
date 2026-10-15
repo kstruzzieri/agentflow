@@ -61,7 +61,7 @@ class ParseSourcesTests(unittest.TestCase):
         self.assertEqual([s.label for s in sources], ["alpha", "beta"])
 
 
-def build_tree(root: Path, *, steps, files=None, contract=None):
+def build_tree(root: Path, *, steps, files=None, contract=None, plan_steps=("P0", "P1", "P2", "P3")):
     """Write a stub input worktree at `root`. The #110 dry-run analysis reads
     bytes/rows, not schemas, so the ledger rows stay minimal.
 
@@ -76,6 +76,7 @@ def build_tree(root: Path, *, steps, files=None, contract=None):
     these two must be structurally complete rather than stubs.
 
     steps: list of step_ids that reach a `completed` event with attempt A1.
+    plan_steps: step ids the stub plan declares (default P0-P3).
     files: list of (path, sha256) file-receipt rows (relative to root).
     contract: optional execution-contract dict (defaults to the runtime default).
     """
@@ -109,7 +110,7 @@ def build_tree(root: Path, *, steps, files=None, contract=None):
                 "validation": ["stub gate"],
                 "evidence_ids": [],
             }
-            for step_id in ("P0", "P1", "P2", "P3")
+            for step_id in plan_steps
         ],
     })
     write_json(agent / "execution.contract.json", contract or default_execution_contract())
@@ -1373,8 +1374,10 @@ class EndToEndAggregateTests(unittest.TestCase):
             self._git(out, "worktree", "add", "-q", "-b", "wa", str(a), "HEAD")
             self._git(out, "worktree", "add", "-q", "-b", "wb", str(b), "HEAD")
             fx = out / "src/x.py"; fx.write_text("x", encoding="utf-8"); fy = out / "src/y.py"; fy.write_text("y", encoding="utf-8")
-            build_tree(a, steps=["P1"], files=[("src/x.py", sha256_path(fx))])
-            build_tree(b, steps=["P2"], files=[("src/y.py", sha256_path(fy))])
+            # #58 refuses a proof over never-completed plan steps, so the plan
+            # declares only the two steps the trees complete.
+            build_tree(a, steps=["P1"], files=[("src/x.py", sha256_path(fx))], plan_steps=("P1", "P2"))
+            build_tree(b, steps=["P2"], files=[("src/y.py", sha256_path(fy))], plan_steps=("P1", "P2"))
             rdir = a / ".agent/receipts/A1"; rdir.mkdir(parents=True, exist_ok=True)
             f = rdir / "CR1.stdout.txt"; f.write_text("run output", encoding="utf-8")
             append_jsonl(a / ".agent/command-receipts.jsonl", {

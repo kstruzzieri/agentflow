@@ -16,6 +16,7 @@ from agentflow.contracts import (
 from agentflow.artifacts import append_jsonl, create_initial_artifacts, read_json, write_json
 from agentflow.execution import (
     amend_step,
+    block_step,
     claim_step,
     complete_step,
     init_execution_artifacts,
@@ -72,7 +73,7 @@ def plan() -> dict:
 
 
 class ExecutionVerificationTests(unittest.TestCase):
-    def _root(self, tmp: str) -> Path:
+    def _root(self, tmp: str, claim: bool = True) -> Path:
         root = Path(tmp)
         subprocess.run(["git", "init"], cwd=str(root), check=True, stdout=subprocess.PIPE)
         create_initial_artifacts(root)
@@ -89,7 +90,8 @@ class ExecutionVerificationTests(unittest.TestCase):
                 "last_verified": "2026-06-01T00:00:00+00:00",
             },
         )
-        claim_step(root, plan(), "P1", "agent-a")
+        if claim:
+            claim_step(root, plan(), "P1", "agent-a")
         return root
 
     def _append_failed_commands(self, root: Path, count: int) -> None:
@@ -296,7 +298,7 @@ class ExecutionVerificationTests(unittest.TestCase):
             self.assertEqual(result["status"], "passed")
             self.assertEqual(result["errors"], [])
 
-    def test_verify_run_surfaces_open_amendment_warning(self) -> None:
+    def test_verify_run_fails_open_amendment_on_completed_step(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = self._root(tmp)  # P1/A1 open
             mark_step_verified(root, "P1", "A1", [])
@@ -304,8 +306,97 @@ class ExecutionVerificationTests(unittest.TestCase):
             amend_step(root, plan(), "P1", "agent-a", "review fix")
 
             result = verify_run(root, plan(), record=False)
-            messages = [w["message"] for w in result["warnings"]]
-            self.assertTrue(any("has open attempt" in m for m in messages))
+
+            # #58: an open attempt fails the run in both modes (it used to be a warning).
+            self.assertEqual(result["status"], "failed")
+            self.assertIn("P1 has open attempt A2", [e["message"] for e in result["errors"]])
+            self.assertFalse(any("has open attempt" in w["message"] for w in result["warnings"]))
+
+    def test_verify_run_fails_open_attempt_in_both_modes(self) -> None:
+        for strict in (False, True):
+            with self.subTest(strict=strict), tempfile.TemporaryDirectory() as tmp:
+                root = self._root(tmp)  # P1/A1 open
+
+                result = verify_run(root, plan(), strict=strict, record=False)
+
+                self.assertEqual(result["status"], "failed")
+                errors = [f["message"] for f in result["errors"]]
+                self.assertIn("P1 has open attempt A1", errors)
+                # Strict's latest-status rule must not duplicate the helper's error.
+                self.assertEqual(errors.count("P1 is not completed"), 1)
+                every = errors + [f["message"] for f in result["warnings"]]
+                self.assertEqual(
+                    [m for m in every if "has open attempt" in m], ["P1 has open attempt A1"]
+                )
+
+    def test_verify_run_names_every_open_attempt_in_ledger_order(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = self._root(tmp)  # P1/A1 open; advisory leases allow a second claim
+            claim_step(root, plan(), "P1", "agent-b")
+
+            result = verify_run(root, plan(), strict=False, record=False)
+
+            self.assertIn("P1 has open attempt A1, A2", [e["message"] for e in result["errors"]])
+
+    def test_verify_run_fails_never_claimed_step_without_strict(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = self._root(tmp, claim=False)
+
+            result = verify_run(root, plan(), strict=False, record=False)
+
+            self.assertEqual(result["status"], "failed")
+            self.assertIn("P1 is not completed", [e["message"] for e in result["errors"]])
+
+    def test_verify_run_fails_blocked_only_step_without_strict(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = self._root(tmp)
+            block_step(root, "P1", "A1", "waiting on input")
+
+            result = verify_run(root, plan(), strict=False, record=False)
+
+            errors = [e["message"] for e in result["errors"]]
+            self.assertIn("P1 is not completed", errors)
+            self.assertFalse(any("has open attempt" in m for m in errors))
+
+    def test_verify_run_without_execution_contract_fails_incomplete_steps(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            subprocess.run(["git", "init"], cwd=str(root), check=True, stdout=subprocess.PIPE)
+            create_initial_artifacts(root)
+            write_json(root / ".agent/plan.lock.json", plan())
+
+            result = verify_run(root, plan(), strict=False, record=False)
+
+            self.assertIn("P1 is not completed", [e["message"] for e in result["errors"]])
+
+    def test_blocked_amendment_passes_lax_and_fails_strict(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = self._root(tmp)
+            mark_step_verified(root, "P1", "A1", [])
+            complete_step(root, "P1", "A1")
+            amend_step(root, plan(), "P1", "agent-a", "review fix")
+            block_step(root, "P1", "A2", "deferred")
+
+            lax = verify_run(root, plan(), strict=False, record=False)
+            strict = verify_run(root, plan(), strict=True, record=False)
+
+            self.assertNotIn("P1 is not completed", [e["message"] for e in lax["errors"]])
+            self.assertIn("P1 is not completed", [e["message"] for e in strict["errors"]])
+
+    def test_verify_run_completed_step_has_no_incomplete_findings(self) -> None:
+        for strict in (False, True):
+            with self.subTest(strict=strict), tempfile.TemporaryDirectory() as tmp:
+                root = self._root(tmp)
+                mark_step_verified(root, "P1", "A1", [])
+                complete_step(root, "P1", "A1")
+
+                result = verify_run(root, plan(), strict=strict, record=False)
+
+                messages = [f["message"] for f in result["errors"] + result["warnings"]]
+                self.assertFalse(
+                    any("has open attempt" in m or "is not completed" in m for m in messages),
+                    messages,
+                )
 
     def test_verify_run_flags_terminal_attempt_receipt_violation(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -660,10 +751,9 @@ class ExecutionVerificationTests(unittest.TestCase):
 
             result = verify_run(root, plan(), strict=False, record=False)
 
-            # P1 is claimed-but-open in this fixture, so verify-run now surfaces
-            # the open-attempt warning at the top level; the point of this test is
-            # that record=False leaves the ledger untouched.
-            self.assertEqual(result["status"], "warning")
+            # P1 is claimed-but-open in this fixture, so verify-run fails (#58);
+            # the point of this test is that record=False leaves the ledger untouched.
+            self.assertEqual(result["status"], "failed")
             self.assertEqual(ledger.read_text(encoding="utf-8"), before)
 
     def _seed_commit(self, root, name, content):
