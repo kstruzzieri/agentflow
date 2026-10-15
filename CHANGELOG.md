@@ -31,6 +31,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `claim-step`, `amend-step` and `reclaim-step` no longer reuse an attempt id
   that a standalone `fail-step` already used, which used to leave the ledger
   unreadable. (#61)
+- `fail-step` refuses an `--attempt` that already belongs to another step and
+  appends nothing to `.agent/step-runs.jsonl`. Previously one mistyped step id
+  recorded the attempt under two steps and left the ledger unreadable
+  (`execution_state_invalid`). The check runs under the step-ledger lock for
+  every step-ledger writer; the refusal exits 2. `fail-step` on an attempt id
+  that no step has used stays allowed. (#62)
 
 ## [1.0.0] - 2026-10-04
 
