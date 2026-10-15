@@ -211,6 +211,33 @@ class ExecutionStateTests(unittest.TestCase):
             self.assertIn("is already failed", str(ctx.exception))
             self.assertEqual(ledger.read_bytes(), before)
 
+    def test_writes_with_another_steps_attempt_are_refused_and_append_nothing(self) -> None:
+        writers = {
+            "fail": lambda root, a: fail_step(root, "P2", a, "typo"),
+            "close": lambda root, a: _close_step(root, "P2", a, "blocked", "typo"),
+        }
+        for p1_state in ("open", "failed"):
+            for name, write in writers.items():
+                with self.subTest(p1_state=p1_state, write=name), \
+                        tempfile.TemporaryDirectory() as tmp:
+                    root = self._root(tmp)
+                    attempt = claim_step(root, plan(), "P1", "agent-a")["attempt_id"]
+                    if p1_state == "failed":
+                        fail_step(root, "P1", attempt, "gate failed")
+                    ledger = root / ".agent/step-runs.jsonl"
+                    before = ledger.read_bytes()
+                    pointer = current_step_attempt(root, "P1")
+
+                    with self.assertRaises(ValueError) as ctx:
+                        write(root, attempt)
+
+                    self.assertIn(
+                        f"attempt {attempt} belongs to step P1, not P2", str(ctx.exception)
+                    )
+                    self.assertEqual(ledger.read_bytes(), before)
+                    self.assertEqual(current_step_attempt(root, "P1"), pointer)
+                    self.assertEqual(read_step_state(root)["attempts"][attempt]["step_id"], "P1")
+
     def test_complete_on_a_completed_attempt_names_the_closed_state(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = self._root(tmp)

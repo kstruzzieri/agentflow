@@ -467,8 +467,21 @@ def _refuse_terminal_attempt(root: Path, step_id: str, attempt_id: str) -> None:
         )
 
 
+def _refuse_foreign_attempt(root: Path, step_id: str, attempt_id: str) -> None:
+    # An attempt id spanning two steps makes the ledger unreadable (read_step_state
+    # keys attempts by id alone), so the first step to use an id owns it.
+    for event in read_step_events(root):
+        owner = event.get("step_id")
+        if event.get("attempt_id") == attempt_id and isinstance(owner, str) and owner != step_id:
+            raise ValueError(
+                f"attempt {attempt_id} belongs to step {owner}, not {step_id}; "
+                "nothing was recorded"
+            )
+
+
 def _append_step_event(root: Path, event: Dict[str, Any]) -> Dict[str, Any]:
-    # Every caller holds _step_runs_lock_path(root), so this check cannot race an append.
+    # Every caller holds _step_runs_lock_path(root), so these checks cannot race an append.
+    _refuse_foreign_attempt(root, event["step_id"], event["attempt_id"])
     _refuse_terminal_attempt(root, event["step_id"], event["attempt_id"])
     event = {"schema_version": STEP_RUNS_SCHEMA_VERSION, "recorded_at": utc_now(), **event}
     append_jsonl(_step_runs_path(root), event)
