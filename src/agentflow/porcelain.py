@@ -72,10 +72,13 @@ class Action:
 
 
 _IGNORED_PREFIXES = (".agent/", ".git/")
-_STUCK_ADVISORY_RULES = {
+_ADVISORY_RULES = {
+    # detect-stuck heuristics
     "repeated_command_failure",
     "repeated_verify_failure",
     "alternating_no_op",
+    # #60: a timed-out receipt that a later completed attempt superseded
+    "superseded_timeout",
 }
 
 
@@ -858,7 +861,7 @@ def next_action(
         run_record = _latest_run_verification(root)
         run_warnings = [
             finding for finding in run_result.get("warnings", [])
-            if finding.get("rule") not in _STUCK_ADVISORY_RULES
+            if finding.get("rule") not in _ADVISORY_RULES
         ]
         run_findings = [*run_result.get("errors", []), *run_warnings]
         run_failed = run_result.get("status") == "failed" or (

@@ -290,9 +290,13 @@ agentflow verify-proof
 - `claim-step` records which agent owns the step attempt.
 - `run` executes a command with the configured timeout and records the observed
   command receipt. A timed-out command records `decision: "timeout"`,
-  `timed_out: true`, `timeout_seconds`, and `exit_code: null`. Use `--gate` with
-  the matching legacy `step.validation` entry unless the step uses structured
-  command gates.
+  `timed_out: true`, `timeout_seconds`, and `exit_code: null`. A timed-out
+  receipt fails `verify-run` until its attempt is closed (`block-step`,
+  `fail-step` or `reclaim-step`) and a later attempt of the step opens and
+  completes; see [Timeout outcomes](command-risk.md#timeout-outcomes). Do not
+  complete the timed-out attempt itself: no later attempt can then supersede
+  its timeout. Use `--gate` with the matching legacy `step.validation` entry
+  unless the step uses structured command gates.
 - `record-file-change` maps each edited path back to the claimed step and
   captures per-hunk fingerprints (sha256 of changed lines, span-independent).
   Out-of-band edits inside an allowed file that are not re-recorded fail drift

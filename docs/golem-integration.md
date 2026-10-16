@@ -261,7 +261,7 @@ inventing its own locking on top of `.agent/`.
 | `agentflow --version` fails | Report "Agentflow unavailable" with install hint; do not fall back to an unproofed run silently |
 | `lock-plan` returns `status: "invalid"` | Surface the structured `errors` to the planning layer; regenerate the plan |
 | `.agent/` state unclear (crash, resume) | Run `next-action --json --agent <worker-id>`; follow only an allowed non-break-glass recovery action, or surface diagnostics |
-| Gate command times out | The receipt records `decision: "timeout"`; the step will not verify — fix the gate or the timeout in `execution.contract.json` |
+| Gate command times out | The receipt records `decision: "timeout"` and the attempt will not verify. Close it (`block-step`, `fail-step`, or `reclaim-step` once its lease expires), fix the gate or the timeout in `execution.contract.json`, then claim and complete a new attempt; `verify-run` then reports the old receipt as a `superseded_timeout` warning. Rerunning the gate inside the same attempt does not clear the timeout; if that attempt then completes, no later attempt can supersede it and the run cannot be proven |
 | `finish-run` stops at a gate | `--json` reports `stopped_at`; resolve that gate before re-running |
 
 ## Related Issues

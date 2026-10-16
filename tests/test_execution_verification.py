@@ -19,6 +19,7 @@ from agentflow.execution import (
     block_step,
     claim_step,
     complete_step,
+    fail_step,
     init_execution_artifacts,
     mark_step_verified,
     reclaim_step,
@@ -241,6 +242,186 @@ class ExecutionVerificationTests(unittest.TestCase):
                 ),
                 result["errors"],
             )
+
+    def _timeout_findings(self, result: dict) -> tuple:
+        errors = [f for f in result["errors"] if "timed out" in f["message"]]
+        warnings = [f for f in result["warnings"] if f.get("rule") == "superseded_timeout"]
+        return errors, warnings
+
+    def _abandon(self, root: Path, attempt: str) -> None:
+        append_jsonl(root / ".agent/step-runs.jsonl", {
+            "schema_version": STEP_RUNS_SCHEMA_VERSION, "event": "abandoned",
+            "step_id": "P1", "attempt_id": attempt,
+            "recorded_at": "2026-10-14T00:00:00+00:00", "reason": "lease expired",
+        })
+
+    def _complete(self, root: Path, attempt: str) -> None:
+        mark_step_verified(root, "P1", attempt, [])
+        complete_step(root, "P1", attempt)
+
+    def _retried(self, root: Path) -> None:
+        fail_step(root, "P1", "A1", "gate timed out")
+        self._complete(root, claim_step(root, plan(), "P1", "agent-a")["attempt_id"])
+
+    def test_superseded_timeout_is_a_warning_in_both_modes(self) -> None:
+        closers = {
+            "failed": lambda root: fail_step(root, "P1", "A1", "gate timed out"),
+            "blocked": lambda root: block_step(root, "P1", "A1", "gate timed out"),
+            "abandoned": lambda root: self._abandon(root, "A1"),
+        }
+        for closed, close in closers.items():
+            for strict in (False, True):
+                with self.subTest(closed=closed, strict=strict), \
+                        tempfile.TemporaryDirectory() as tmp:
+                    root = self._root(tmp)  # P1/A1 open
+                    self._append_timeout_receipt(root)
+                    close(root)
+                    self._complete(root, claim_step(root, plan(), "P1", "agent-a")["attempt_id"])
+
+                    result = verify_run(root, plan(), strict=strict, record=False)
+                    errors, warnings = self._timeout_findings(result)
+
+                    self.assertEqual(result["status"], "warning", result["errors"])
+                    self.assertEqual(errors, [])
+                    self.assertEqual(warnings, [{
+                        "severity": "warning",
+                        "rule": "superseded_timeout",
+                        "message": "command receipt CR-timeout for P1 timed out after 1 seconds "
+                                   "in attempt A1; superseded by completed attempt A2",
+                        "step_id": "P1",
+                        "attempt_id": "A1",
+                        "receipt_id": "CR-timeout",
+                        "superseded_by": "A2",
+                    }])
+
+    def test_timeout_stays_an_error_unless_superseded(self) -> None:
+        def later_attempt_open(root: Path) -> None:
+            fail_step(root, "P1", "A1", "gate timed out")
+            claim_step(root, plan(), "P1", "agent-a")
+
+        def later_attempt_failed(root: Path) -> None:
+            fail_step(root, "P1", "A1", "gate timed out")
+            fail_step(root, "P1", claim_step(root, plan(), "P1", "agent-a")["attempt_id"], "again")
+
+        def completed_before_close(root: Path) -> None:
+            # Advisory leases let A2 open, and complete, while A1 is still open.
+            self._complete(root, claim_step(root, plan(), "P1", "agent-b")["attempt_id"])
+            fail_step(root, "P1", "A1", "gate timed out")
+
+        def opened_before_close(root: Path) -> None:
+            # A2 opens while A1 is open and completes after A1 closes: its opening,
+            # not its completion, must come after the close.
+            later = claim_step(root, plan(), "P1", "agent-b")["attempt_id"]
+            fail_step(root, "P1", "A1", "gate timed out")
+            self._complete(root, later)
+
+        def receipt_step_completed(root: Path) -> None:
+            # The receipt claims P2, but A1 belongs to P1; a completed P2 attempt
+            # must not supersede it.
+            fail_step(root, "P1", "A1", "gate timed out")
+            for event in ("claimed", "completed"):
+                append_jsonl(root / ".agent/step-runs.jsonl", {
+                    "schema_version": STEP_RUNS_SCHEMA_VERSION, "event": event,
+                    "step_id": "P2", "attempt_id": "A2",
+                    "recorded_at": "2026-10-14T00:00:00+00:00",
+                })
+
+        def other_step_completed(root: Path) -> None:
+            fail_step(root, "P1", "A1", "gate timed out")
+            for event in ("claimed", "completed"):
+                append_jsonl(root / ".agent/step-runs.jsonl", {
+                    "schema_version": STEP_RUNS_SCHEMA_VERSION, "event": event,
+                    "step_id": "P9", "attempt_id": "A2",
+                    "recorded_at": "2026-10-14T00:00:00+00:00",
+                })
+
+        cases = {
+            "still_open": (lambda root: None, {}, ()),
+            # A passing rerun inside A1 does not clear A1's own timeout.
+            "completed_same_attempt": (lambda root: self._complete(root, "A1"), {}, ()),
+            "later_attempt_open": (later_attempt_open, {}, ()),
+            "later_attempt_failed": (later_attempt_failed, {}, ()),
+            "completed_before_close": (completed_before_close, {}, ()),
+            "opened_before_close": (opened_before_close, {}, ()),
+            "other_step_completed": (other_step_completed, {}, ()),
+            "step_mismatch_with_completed_receipt_step": (
+                receipt_step_completed, {"step_id": "P2"}, ()),
+            "unknown_attempt": (self._retried, {"attempt_id": "A9"}, ()),
+            "missing_attempt": (self._retried, {}, ("attempt_id",)),
+            "missing_step": (self._retried, {}, ("step_id",)),
+            "step_mismatch": (self._retried, {"step_id": "P2"}, ()),
+        }
+        for name, (setup, overrides, removed) in cases.items():
+            with self.subTest(case=name), tempfile.TemporaryDirectory() as tmp:
+                root = self._root(tmp)  # P1/A1 open
+                self._append_timeout_receipt(root, remove_fields=removed, **overrides)
+                setup(root)
+
+                errors, warnings = self._timeout_findings(
+                    verify_run(root, plan(), strict=False, record=False)
+                )
+
+                self.assertEqual(warnings, [])
+                self.assertEqual(len(errors), 1, errors)
+                self.assertIn("timed out after 1 seconds", errors[0]["message"])
+
+    def test_amendment_chain_supersedes_failed_amendment_timeout(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = self._root(tmp)
+            self._complete(root, "A1")
+            amend_step(root, plan(), "P1", "agent-a", "review fix")  # A2
+            self._append_timeout_receipt(root, attempt_id="A2")
+            fail_step(root, "P1", "A2", "gate timed out")
+            amend_step(root, plan(), "P1", "agent-a", "retry review fix")  # A3
+            self._complete(root, "A3")
+
+            errors, warnings = self._timeout_findings(verify_run(root, plan(), record=False))
+
+            self.assertEqual(errors, [])
+            self.assertEqual([w["superseded_by"] for w in warnings], ["A3"])
+
+    def test_failed_amendment_timeout_without_later_completion_still_fails(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = self._root(tmp)
+            self._complete(root, "A1")
+            amend_step(root, plan(), "P1", "agent-a", "review fix")  # A2
+            self._append_timeout_receipt(root, attempt_id="A2")
+            fail_step(root, "P1", "A2", "gate timed out")
+
+            errors, warnings = self._timeout_findings(verify_run(root, plan(), record=False))
+
+            self.assertEqual(warnings, [])
+            self.assertEqual(len(errors), 1, errors)
+
+    def test_superseded_by_names_the_first_completed_attempt(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = self._root(tmp)
+            self._append_timeout_receipt(root)
+            self._retried(root)  # A1 failed, A2 completed
+            amend_step(root, plan(), "P1", "agent-a", "review fix")  # A3
+            self._complete(root, "A3")
+
+            _, warnings = self._timeout_findings(verify_run(root, plan(), record=False))
+
+            self.assertEqual([w["superseded_by"] for w in warnings], ["A2"])
+
+    def test_aggregated_ids_supersede_by_ledger_order_not_id_order(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = self._root(tmp)
+            # The completing attempt's id sorts first but comes later in the ledger.
+            for event, attempt in (("claimed", "WTw2-A1"), ("failed", "WTw2-A1"),
+                                   ("claimed", "WTw1-A1"), ("completed", "WTw1-A1")):
+                append_jsonl(root / ".agent/step-runs.jsonl", {
+                    "schema_version": STEP_RUNS_SCHEMA_VERSION, "event": event,
+                    "step_id": "P1", "attempt_id": attempt,
+                    "recorded_at": "2026-10-14T00:00:00+00:00",
+                })
+            self._append_timeout_receipt(root, id="WTw2-CR1", attempt_id="WTw2-A1")
+
+            errors, warnings = self._timeout_findings(verify_run(root, plan(), record=False))
+
+            self.assertEqual(errors, [])
+            self.assertEqual([w["superseded_by"] for w in warnings], ["WTw1-A1"])
 
     def test_verify_step_rejects_non_timeout_null_exit_code_generically(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

@@ -103,6 +103,31 @@ def _completed_step(root: Path):
     cli.main(["complete-step", "P1", "--root", str(root)])
 
 
+def _timed_out_gate(root: Path, retry_in_new_attempt: bool):
+    """#60: P1/A1's gate times out. Then either fail A1 and complete P1 in A2,
+    or rerun the gate inside A1 and complete A1 (the timeout stays unsuperseded)."""
+    _claimed(root)  # A1
+    path = root / ".agent/execution.contract.json"
+    contract = json.loads(path.read_text())
+    contract["command_policy"]["command_timeout_seconds"] = 1
+    path.write_text(json.dumps(contract))
+    (root / "src").mkdir(parents=True, exist_ok=True)
+    (root / "src/feature.py").write_text("x = 1\n")
+    gate = "python3 -c \"print(1)\""
+    record = ["record-file-change", "--step", "P1", "--path", "src/feature.py", "--root", str(root)]
+    cli.main(record)
+    cli.main(["run", "--step", "P1", "--gate", gate, "--root", str(root),
+              "--", "python3", "-c", "import time; time.sleep(5)"])
+    if retry_in_new_attempt:
+        cli.main(["fail-step", "P1", "--reason", "gate timed out", "--root", str(root)])
+        cli.main(["claim-step", "P1", "--agent", "tester", "--root", str(root)])  # A2
+        cli.main(record)
+    cli.main(["run", "--step", "P1", "--gate", gate, "--root", str(root),
+              "--", "python3", "-c", "print(1)"])
+    cli.main(["verify-step", "P1", "--root", str(root)])
+    cli.main(["complete-step", "P1", "--root", str(root)])
+
+
 def _build_verified_proof(root: Path):
     cli.main(["audit-drift", "--root", str(root)])
     cli.main(["verify-run", "--root", str(root)])
@@ -1041,6 +1066,53 @@ class TestFinishRun(unittest.TestCase):
             self.assertFalse(result["ok"])
             self.assertEqual(result["stopped_at"], failing)
             self.assertEqual([g["name"] for g in result["gates"]], gate_order[:idx + 1])
+
+
+class TestSupersededTimeout(unittest.TestCase):
+    """#60: a timeout that a later completed attempt superseded stops blocking the run."""
+
+    def _decisions(self, root: Path):
+        lines = (root / ".agent/command-receipts.jsonl").read_text().splitlines()
+        return [json.loads(line)["decision"] for line in lines]
+
+    def test_finish_run_passes_after_superseded_timeout(self):
+        with TemporaryDirectory() as d:
+            root = Path(d)
+            _timed_out_gate(root, retry_in_new_attempt=True)
+            self.assertEqual(self._decisions(root), ["timeout", "allowed"])
+
+            result = porcelain.finish_run(root, root / ".agent/plan.lock.json")
+
+            self.assertTrue(result["ok"], result["diagnostics"])
+            proof = json.loads((root / ".agent/proof-pack.json").read_text())
+            self.assertEqual(proof["execution"]["command_timed_out"], 1)
+
+    def test_strict_verify_run_gate_and_next_action_accept_superseded_timeout(self):
+        with TemporaryDirectory() as d:
+            root = Path(d)
+            _timed_out_gate(root, retry_in_new_attempt=True)
+
+            result = porcelain.finish_run(root, root / ".agent/plan.lock.json", strict=True)
+
+            self.assertEqual(result["gates"][1], {"name": "verify-run", "status": "ok"})
+            # Strict finish-run can still stop at build-proof here: strict mode turns
+            # the steps_without_support proof-check warning into a failure. #60
+            # concerns verify-run only.
+            self.assertNotEqual(result["stopped_at"], "verify-run")
+            self.assertNotEqual(porcelain.next_action(root, strict=True).state, "run_unverified")
+
+    def test_timeout_in_the_completed_attempt_still_blocks_the_run(self):
+        with TemporaryDirectory() as d:
+            root = Path(d)
+            _timed_out_gate(root, retry_in_new_attempt=False)
+            self.assertEqual(self._decisions(root), ["timeout", "allowed"])
+
+            result = porcelain.finish_run(root, root / ".agent/plan.lock.json")
+
+            self.assertFalse(result["ok"])
+            self.assertEqual(result["stopped_at"], "verify-run")
+            self.assertTrue(any("timed out" in line for line in result["diagnostics"]))
+            self.assertEqual(porcelain.next_action(root, strict=True).state, "run_unverified")
 
 
 if __name__ == "__main__":

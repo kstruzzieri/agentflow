@@ -16,6 +16,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   fixtures (including later additions, pinned when first committed). Previously
   any change to a file from the original freeze set failed
   CI. (#64)
+- `verify-run` no longer fails on a timed-out command receipt that a later
+  attempt superseded: the receipt's attempt ended `blocked`, `failed` or
+  `abandoned`, and a later attempt of the same step, by ledger order, opened and
+  completed. It reports a `superseded_timeout` warning naming the receipt and
+  both attempts instead, in both modes, and strict `next-action` treats that
+  warning as advisory. Every other retained timeout still fails the run,
+  including one inside the attempt that completed. The proof still counts
+  superseded timeouts in `execution.command_timed_out`. (#60)
 
 ### Fixed
 
