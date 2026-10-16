@@ -1101,6 +1101,76 @@ class TestSupersededTimeout(unittest.TestCase):
             self.assertNotEqual(result["stopped_at"], "verify-run")
             self.assertNotEqual(porcelain.next_action(root, strict=True).state, "run_unverified")
 
+    def _timeout_current_attempt(self, root):
+        path = root / ".agent/execution.contract.json"
+        contract = json.loads(path.read_text())
+        contract["command_policy"]["command_timeout_seconds"] = 1
+        path.write_text(json.dumps(contract))
+        self.assertEqual(cli.main([
+            "run", "--step", "P1", "--agent", "tester", "--gate", 'python3 -c "print(1)"',
+            "--root", str(root), "--", "python3", "-c", "import time; time.sleep(5)",
+        ]), 124)
+
+    def _finish_recovered_attempt(self, root):
+        self.assertEqual(cli.main([
+            "run", "--step", "P1", "--agent", "tester", "--gate", 'python3 -c "print(1)"',
+            "--root", str(root), "--", "python3", "-c", "print(1)",
+        ]), 0)
+        self.assertEqual(cli.main([
+            "finish-step", "P1", "--agent", "tester", "--root", str(root),
+        ]), 0)
+        result = porcelain.finish_run(root, root / ".agent/plan.lock.json")
+        self.assertTrue(result["ok"], result["diagnostics"])
+        self.assertEqual(porcelain.next_action(root).state, "complete")
+        proof = json.loads((root / ".agent/proof-pack.json").read_text())
+        self.assertEqual(proof["execution"]["command_timed_out"], 1)
+
+    def test_reclaim_opens_the_timeout_replacement_without_another_claim(self):
+        for policy in ("advisory", "enforce"):
+            with self.subTest(policy=policy), TemporaryDirectory() as d:
+                root = Path(d)
+                _ready_repo(root)
+                _set_concurrency(root, lease_policy=policy)
+                self.assertEqual(cli.main([
+                    "claim-step", "P1", "--agent", "tester", "--lease-minutes", "1",
+                    "--root", str(root),
+                ]), 0)
+                self._timeout_current_attempt(root)
+                # Expire the latest lease without waiting for the real deadline.
+                path = root / ".agent/step-runs.jsonl"
+                rows = [json.loads(line) for line in path.read_text().splitlines()]
+                rows[-1]["lease_expires_at"] = "2000-01-01T00:00:00+00:00"
+                path.write_text("".join(json.dumps(row) + "\n" for row in rows))
+
+                self.assertEqual(cli.main([
+                    "reclaim-step", "P1", "--agent", "tester", "--reason", "expired timeout",
+                    "--root", str(root),
+                ]), 0)
+                self._finish_recovered_attempt(root)
+
+                self.assertEqual(self._decisions(root), ["timeout", "allowed"])
+
+    def test_failed_amendment_timeout_recovers_with_another_amendment(self):
+        with TemporaryDirectory() as d:
+            root = Path(d)
+            _completed_step(root)
+            self.assertEqual(cli.main([
+                "amend-step", "P1", "--agent", "tester", "--reason", "review fix",
+                "--root", str(root),
+            ]), 0)
+            self._timeout_current_attempt(root)
+            self.assertEqual(cli.main([
+                "fail-step", "P1", "--reason", "gate timed out", "--root", str(root),
+            ]), 0)
+
+            self.assertEqual(cli.main([
+                "amend-step", "P1", "--agent", "tester", "--reason", "retry review fix",
+                "--root", str(root),
+            ]), 0)
+            self._finish_recovered_attempt(root)
+
+            self.assertEqual(self._decisions(root), ["allowed", "timeout", "allowed"])
+
     def test_timeout_in_the_completed_attempt_still_blocks_the_run(self):
         with TemporaryDirectory() as d:
             root = Path(d)

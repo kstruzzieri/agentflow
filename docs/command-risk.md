@@ -106,7 +106,9 @@ they never satisfy validation gates.
 A retained timed-out receipt also fails `verify-run`, in both modes, unless a
 later attempt superseded it: the receipt's attempt ended `blocked`, `failed` or
 `abandoned`, and a later attempt of the same step (by ledger order) opened and
-completed. `verify-run` then reports it as a `superseded_timeout` warning, and
+completed. The step must be declared in the locked plan; retained history for an
+undeclared step cannot supersede a timeout. `verify-run` then reports a valid
+supersession as a `superseded_timeout` warning, and
 the proof still counts it in `execution.command_timed_out`. A passing rerun
 inside the timed-out attempt does not supersede it.
 

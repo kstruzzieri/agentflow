@@ -365,6 +365,82 @@ class ExecutionVerificationTests(unittest.TestCase):
                 self.assertEqual(len(errors), 1, errors)
                 self.assertIn("timed out after 1 seconds", errors[0]["message"])
 
+    def test_timeout_for_undeclared_step_is_not_superseded(self) -> None:
+        for strict in (False, True):
+            with self.subTest(strict=strict), tempfile.TemporaryDirectory() as tmp:
+                root = self._root(tmp)
+                self._complete(root, "A1")  # The only declared step, P1, is complete.
+                for event, attempt in (("claimed", "A2"), ("failed", "A2"),
+                                       ("claimed", "A3"), ("completed", "A3")):
+                    append_jsonl(root / ".agent/step-runs.jsonl", {
+                        "event": event, "step_id": "P9", "attempt_id": attempt,
+                        "recorded_at": "2026-10-14T00:00:00+00:00",
+                    })
+                self._append_timeout_receipt(root, step_id="P9", attempt_id="A2")
+
+                result = verify_run(root, plan(), strict=strict, record=False)
+                errors, warnings = self._timeout_findings(result)
+
+                self.assertEqual(result["status"], "failed")
+                self.assertEqual(warnings, [])
+                self.assertEqual(errors, [{
+                    "severity": "error",
+                    "message": "command receipt CR-timeout for P9 timed out after 1 seconds",
+                }])
+
+    def test_mixed_step_attempt_history_cannot_supersede_timeout(self) -> None:
+        for conflicting_attempt, conflicting_event in (("A1", "failed"), ("A2", "completed")):
+            for strict in (False, True):
+                with self.subTest(attempt=conflicting_attempt, strict=strict), \
+                        tempfile.TemporaryDirectory() as tmp:
+                    root = self._root(tmp)
+                    self._append_timeout_receipt(root)
+                    self._retried(root)  # P1/A1 failed, then P1/A2 completed.
+                    ledger = root / ".agent/step-runs.jsonl"
+                    events = [json.loads(line) for line in ledger.read_text().splitlines()]
+                    for event in events:
+                        if (event.get("attempt_id") == conflicting_attempt
+                                and event.get("event") == conflicting_event):
+                            event["step_id"] = "P2"
+                    ledger.write_text("".join(json.dumps(event) + "\n" for event in events))
+
+                    result = verify_run(root, plan(), strict=strict, record=False)
+                    errors, warnings = self._timeout_findings(result)
+
+                    self.assertEqual(result["status"], "failed")
+                    self.assertEqual(warnings, [])
+                    self.assertEqual(errors, [{
+                        "severity": "error",
+                        "message": "command receipt CR-timeout for P1 timed out after 1 seconds",
+                    }])
+
+    def test_contradictory_terminal_history_cannot_supersede_timeout(self) -> None:
+        for attempt, earlier_terminal in (("A1", "completed"), ("A2", "failed")):
+            for strict in (False, True):
+                with self.subTest(attempt=attempt, strict=strict), \
+                        tempfile.TemporaryDirectory() as tmp:
+                    root = self._root(tmp)
+                    self._append_timeout_receipt(root)
+                    self._retried(root)  # P1/A1 failed, then P1/A2 completed.
+                    ledger = root / ".agent/step-runs.jsonl"
+                    events = [json.loads(line) for line in ledger.read_text().splitlines()]
+                    terminal = "failed" if attempt == "A1" else "completed"
+                    index = next(i for i, event in enumerate(events)
+                                 if event.get("attempt_id") == attempt
+                                 and event.get("event") == terminal)
+                    events.insert(index, {**events[index], "event": earlier_terminal})
+                    ledger.write_text("".join(json.dumps(event) + "\n" for event in events))
+
+                    result = verify_run(root, plan(), strict=strict, record=False)
+                    errors, warnings = self._timeout_findings(result)
+
+                    self.assertEqual(result["status"], "failed")
+                    self.assertEqual(warnings, [])
+                    self.assertEqual(errors, [{
+                        "severity": "error",
+                        "message": "command receipt CR-timeout for P1 timed out after 1 seconds",
+                    }])
+
     def test_amendment_chain_supersedes_failed_amendment_timeout(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = self._root(tmp)

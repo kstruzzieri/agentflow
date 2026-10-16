@@ -546,6 +546,8 @@ def _superseding_attempt(
     if not isinstance(step_id, str) or not isinstance(attempt_id, str):
         return None
     owner: Dict[str, str] = {}
+    inconsistent_attempts = set()
+    closed_attempts = set()
     opened_at: Dict[str, int] = {}
     last_index: Dict[str, int] = {}
     last_kind: Dict[str, Any] = {}
@@ -553,17 +555,27 @@ def _superseding_attempt(
         aid, sid, kind = event.get("attempt_id"), event.get("step_id"), event.get("event")
         if not isinstance(aid, str) or not isinstance(sid, str):
             continue
-        owner.setdefault(aid, sid)  # read_step_state's mapping: the first step wins
+        if owner.setdefault(aid, sid) != sid:
+            inconsistent_attempts.add(aid)
+        if kind in TERMINAL_EVENTS:
+            if aid in closed_attempts:
+                inconsistent_attempts.add(aid)
+            closed_attempts.add(aid)
         if kind in ATTEMPT_OPENING_EVENTS:
             opened_at.setdefault(aid, index)
         if kind not in LEASE_EVENTS:
             last_index[aid], last_kind[aid] = index, kind
-    if owner.get(attempt_id) != step_id or last_kind.get(attempt_id) not in _SUPERSEDABLE_STATUSES:
+    if (
+        attempt_id in inconsistent_attempts
+        or owner.get(attempt_id) != step_id
+        or last_kind.get(attempt_id) not in _SUPERSEDABLE_STATUSES
+    ):
         return None
     closed_at = last_index[attempt_id]
     for aid, index in opened_at.items():  # insertion order == first-opened ledger order
         if (
             aid != attempt_id
+            and aid not in inconsistent_attempts
             and owner[aid] == step_id
             and index > closed_at
             and last_kind.get(aid) == "completed"
@@ -573,19 +585,27 @@ def _superseding_attempt(
 
 
 def _timeout_receipt_findings(
-    root: Path,
+    root: Path, plan: Dict[str, Any],
 ) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
     errors: List[Dict[str, Any]] = []
     warnings: List[Dict[str, Any]] = []
     timed_out = [receipt for receipt in command_receipts(root) if _receipt_timed_out(receipt)]
     # ponytail: rescans the ledger once per timed-out receipt (usually 0-2); index once if that grows.
     events = read_step_events(root) if timed_out else []
+    step_ids = {
+        step["id"] for step in plan.get("steps", [])
+        if isinstance(step, dict) and isinstance(step.get("id"), str)
+    }
     for receipt in timed_out:
         message = (
             f"command receipt {receipt.get('id')} for {receipt.get('step_id')} "
             f"timed out after {receipt.get('timeout_seconds')} seconds"
         )
-        superseded_by = _superseding_attempt(events, receipt)
+        step_id = receipt.get("step_id")
+        superseded_by = (
+            _superseding_attempt(events, receipt)
+            if isinstance(step_id, str) and step_id in step_ids else None
+        )
         if superseded_by is None:
             errors.append({"severity": "error", "message": message})
             continue
@@ -709,7 +729,7 @@ def verify_run(
         ):
             result["errors"].append({"severity": "error", "message": f"{step_id} is not completed"})
     result["errors"].extend(_terminal_attempt_violations(root))
-    timeout_errors, timeout_warnings = _timeout_receipt_findings(root)
+    timeout_errors, timeout_warnings = _timeout_receipt_findings(root, plan)
     result["errors"].extend(timeout_errors)
     result["warnings"].extend(timeout_warnings)
     for finding in _unresolved_finding_refs(root):
