@@ -57,6 +57,11 @@ an additive key until it is documented in the manifest. When a JSON-facing
 feature is deprecated, its output includes a machine-readable top-level
 `deprecations` array; stderr prose alone is not a deprecation signal.
 
+The manifest's `value_sets` section lists the values `next-action` can report
+in `state` and in `resumability.recovery_actions[].action`.
+A minor release may add values to these sets. A consumer that acts on these
+values must treat an unknown value as not actionable and fail closed.
+
 ## MCP contract
 
 The supported tool names and arguments are:
@@ -67,6 +72,7 @@ The supported tool names and arguments are:
 | `claim_step` | `step`, `agent`; optional `lease_minutes`, `root` |
 | `amend_step` | `step`, `agent`, `reason`; optional `reason_code`, `finding_refs`, `lease_minutes`, `root` |
 | `reclaim_step` | `step`, `agent`, `reason`; optional `lease_minutes`, `root` |
+| `block_step` | `step`, `reason`; optional `attempt`, `agent`, `root` |
 | `renew_lease` | `step`, `agent`; optional `attempt`, `minutes`, `root` |
 | `complete_step` | `step`; optional `attempt`, `agent`, `root` |
 | `verify_step` | `step`; optional `attempt`, `agent`, `strict`, `replay`, `root` |

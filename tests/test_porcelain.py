@@ -3,6 +3,7 @@ import io
 import json
 import subprocess
 import unittest
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest import mock
@@ -13,7 +14,8 @@ from agentflow.contracts import (
     PLAN_SCHEMA_VERSION,
     STEP_RUNS_SCHEMA_VERSION,
 )
-from agentflow import cli, porcelain
+from agentflow.artifacts import append_jsonl
+from agentflow import cli, execution_coverage, mcp_server, porcelain
 
 
 def _git(root: Path, *args: str) -> None:
@@ -68,10 +70,11 @@ def _plan(steps):
     }
 
 
-def _ready_repo_with_steps(root: Path, steps):
+def _ready_repo_with_steps(root: Path, steps, extra_allowed: tuple = ()):
     _init_repo(root)
     cli.main(["init", "--root", str(root)])
     plan = _plan(steps)
+    plan["allowed_files"].extend(extra_allowed)
     (root / ".agent/plan.lock.json").write_text(json.dumps(plan))
     cli.main(["lock-plan", str(root / ".agent/plan.lock.json")])
     cli.main(["init-execution", "--root", str(root)])
@@ -103,6 +106,36 @@ def _completed_step(root: Path):
     cli.main(["complete-step", "P1", "--root", str(root)])
 
 
+def _time_out_open_attempt(root: Path, agent: str = "tester") -> None:
+    path = root / ".agent/execution.contract.json"
+    contract = json.loads(path.read_text())
+    contract["command_policy"]["command_timeout_seconds"] = 1
+    path.write_text(json.dumps(contract))
+    rc = cli.main(["run", "--step", "P1", "--agent", agent, "--gate", 'python3 -c "print(1)"',
+                   "--root", str(root), "--", "python3", "-c", "import time; time.sleep(5)"])
+    assert rc == 124, rc
+
+
+def _timeout_then_rerun(root: Path) -> None:
+    """#70: P1/A1's gate times out, then a passing rerun lands in the same attempt."""
+    _claimed(root)
+    (root / "src").mkdir(parents=True, exist_ok=True)
+    (root / "src/feature.py").write_text("x = 1\n")
+    cli.main(["record-file-change", "--step", "P1", "--path", "src/feature.py", "--root", str(root)])
+    _time_out_open_attempt(root)
+    assert cli.main(["run", "--step", "P1", "--agent", "tester", "--gate", 'python3 -c "print(1)"',
+                     "--root", str(root), "--", "python3", "-c", "print(1)"]) == 0
+
+
+def _legacy_complete(root: Path, attempt: str) -> None:
+    """1.0 let a timed-out attempt complete; #70 refuses, so write the row directly."""
+    append_jsonl(root / ".agent/step-runs.jsonl", {
+        "schema_version": STEP_RUNS_SCHEMA_VERSION, "recorded_at": "2026-10-16T00:00:00+00:00",
+        "event": "completed", "step_id": "P1", "attempt_id": attempt,
+    })
+    (root / ".agent/attempts/P1.current").unlink(missing_ok=True)
+
+
 def _timed_out_gate(root: Path, retry_in_new_attempt: bool):
     """#60: P1/A1's gate times out. Then either fail A1 and complete P1 in A2,
     or rerun the gate inside A1 and complete A1 (the timeout stays unsuperseded)."""
@@ -125,7 +158,10 @@ def _timed_out_gate(root: Path, retry_in_new_attempt: bool):
     cli.main(["run", "--step", "P1", "--gate", gate, "--root", str(root),
               "--", "python3", "-c", "print(1)"])
     cli.main(["verify-step", "P1", "--root", str(root)])
-    cli.main(["complete-step", "P1", "--root", str(root)])
+    if retry_in_new_attempt:
+        cli.main(["complete-step", "P1", "--root", str(root)])
+    else:
+        _legacy_complete(root, "A1")
 
 
 def _build_verified_proof(root: Path):
@@ -140,6 +176,43 @@ def _set_concurrency(root: Path, **values):
     contract = json.loads(path.read_text())
     contract["concurrency"].update(values)
     path.write_text(json.dumps(contract))
+
+
+def _enforced_claim(root: Path, agent: str = "worker-7") -> None:
+    _ready_repo(root)
+    _set_concurrency(root, lease_policy="enforce")
+    assert cli.main(["claim-step", "P1", "--agent", agent, "--root", str(root)]) == 0
+    (root / "src").mkdir(parents=True, exist_ok=True)
+    (root / "src/feature.py").write_text("x = 1\n")
+    assert cli.main(["record-file-change", "--step", "P1", "--path", "src/feature.py",
+                     "--agent", agent, "--root", str(root)]) == 0
+
+
+def _set_attempt_lease(root: Path, attempt: str, expires_at) -> None:
+    """Rewrite every lease row of `attempt` (None = no deadline). `run` renews leases."""
+    path = root / ".agent/step-runs.jsonl"
+    rows = [json.loads(line) for line in path.read_text().splitlines()]
+    for row in rows:
+        if row.get("attempt_id") == attempt and "lease_expires_at" in row:
+            if expires_at is None:
+                row.pop("lease_expires_at")
+            else:
+                row["lease_expires_at"] = expires_at
+    path.write_text("".join(json.dumps(row) + "\n" for row in rows))
+
+
+def _closed_amendment(root: Path, close: str, timeout: bool) -> None:
+    """P1 completed as A1 (CR1), then amendment A2 (timeout = CR2) closed by `close`."""
+    _completed_step(root)
+    assert cli.main(["amend-step", "P1", "--agent", "tester", "--reason", "review fix",
+                     "--root", str(root)]) == 0
+    if timeout:
+        _time_out_open_attempt(root)
+    assert cli.main([close, "P1", "--reason", "closed", "--agent", "tester", "--root", str(root)]) == 0
+
+
+def _locked_plan(root: Path):
+    return json.loads((root / ".agent/plan.lock.json").read_text())
 
 
 def _recovery(projection, name):
@@ -1183,6 +1256,477 @@ class TestSupersededTimeout(unittest.TestCase):
             self.assertEqual(result["stopped_at"], "verify-run")
             self.assertTrue(any("timed out" in line for line in result["diagnostics"]))
             self.assertEqual(porcelain.next_action(root, strict=True).state, "run_unverified")
+
+
+class TestTimedOutAttemptRefusal(unittest.TestCase):
+    """#70: an attempt holding a timed-out receipt can never be completed."""
+
+    LEDGERS = ("step-runs.jsonl", "verification-runs.jsonl", "command-receipts.jsonl")
+
+    def _ledgers(self, root):
+        return {name: (root / ".agent" / name).read_bytes()
+                if (root / ".agent" / name).exists() else b"" for name in self.LEDGERS}
+
+    def _cli(self, argv):
+        out, err = io.StringIO(), io.StringIO()
+        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+            rc = cli.main(argv)
+        return rc, out.getvalue(), err.getvalue()
+
+    def test_complete_step_refuses_a_verified_timed_out_attempt(self):
+        with TemporaryDirectory() as d:
+            root = Path(d)
+            _timeout_then_rerun(root)
+            self.assertEqual(cli.main(["verify-step", "P1", "--root", str(root)]), 0)
+            before = self._ledgers(root)
+            rc, out, err = self._cli(["complete-step", "P1", "--root", str(root)])
+            self.assertEqual((rc, out), (1, ""))
+            self.assertIn("attempt A1 for step P1 holds timed-out command receipt CR1 "
+                          "and cannot complete", err)
+            self.assertIn("nothing was recorded", err)
+            self.assertEqual(self._ledgers(root), before)
+
+    def test_complete_step_names_the_timeout_before_verification(self):
+        with TemporaryDirectory() as d:
+            root = Path(d)
+            _timeout_then_rerun(root)
+            rc, _out, err = self._cli(["complete-step", "P1", "--root", str(root)])
+            self.assertEqual(rc, 1)
+            self.assertIn("holds timed-out command receipt CR1", err)
+            self.assertNotIn("verify-step must pass", err)
+
+    def test_finish_step_refuses_without_writing_or_replaying(self):
+        for extra in ([], ["--json"], ["--replay"]):
+            with self.subTest(extra=extra), TemporaryDirectory() as d:
+                root = Path(d)
+                _timeout_then_rerun(root)
+                before = self._ledgers(root)
+                for _ in range(2):  # a repeated refusal is stable
+                    rc, out, err = self._cli(["finish-step", "P1", "--root", str(root), *extra])
+                    self.assertEqual((rc, out), (1, ""))
+                    self.assertNotIn("Traceback", err)
+                    self.assertIn("holds timed-out command receipt CR1", err)
+                self.assertEqual(self._ledgers(root), before)
+
+    def test_mcp_completion_tools_report_the_refusal_envelope(self):
+        for tool in ("complete_step", "finish_step"):
+            with self.subTest(tool=tool), TemporaryDirectory() as d:
+                root = Path(d)
+                _timeout_then_rerun(root)
+                before = self._ledgers(root)
+                result = mcp_server.handle_message({
+                    "jsonrpc": "2.0", "id": 1, "method": "tools/call",
+                    "params": {"name": tool, "arguments": {"step": "P1", "root": str(root)}},
+                })["result"]
+                structured = result["structuredContent"]
+                self.assertTrue(result["isError"])
+                self.assertEqual((structured["exit_code"], structured["stdout"]), (1, ""))
+                self.assertNotIn("data", structured)
+                self.assertIn("holds timed-out command receipt CR1", structured["stderr"])
+                self.assertEqual(self._ledgers(root), before)
+
+    def test_mcp_block_step_closes_the_timed_out_attempt(self):
+        with TemporaryDirectory() as d:
+            root = Path(d)
+            _timeout_then_rerun(root)
+            result = mcp_server.handle_message({
+                "jsonrpc": "2.0", "id": 1, "method": "tools/call",
+                "params": {"name": "block_step", "arguments": {
+                    "step": "P1", "attempt": "A1", "reason": "gate timed out", "root": str(root)}},
+            })["result"]
+            self.assertFalse(result["isError"])
+            self.assertEqual(result["structuredContent"]["data"]["event"], "blocked")
+            self.assertEqual(porcelain.next_action(root, agent_id="tester").state, "step_unclaimed")
+
+    def test_mcp_block_step_refuses_a_foreign_agent_under_enforce(self):
+        with TemporaryDirectory() as d:
+            root = Path(d)
+            _enforced_claim(root)
+            _time_out_open_attempt(root, "worker-7")
+            result = mcp_server.handle_message({
+                "jsonrpc": "2.0", "id": 1, "method": "tools/call",
+                "params": {"name": "block_step", "arguments": {
+                    "step": "P1", "reason": "r", "agent": "worker-8", "root": str(root)}},
+            })["result"]
+            self.assertTrue(result["isError"])
+            self.assertEqual(result["structuredContent"]["exit_code"], 2)
+            self.assertIn("owned by worker-7", result["structuredContent"]["stderr"])
+
+
+class TestRecoverySelector(unittest.TestCase):
+    """#70: one selector drives the projection's step and recovery actions."""
+
+    def test_timed_out_attempt_close_follows_policy_lease_and_caller(self):
+        past = "2000-01-01T00:00:00+00:00"
+        inside_grace = (datetime.now(timezone.utc) - timedelta(seconds=5)).isoformat()
+        cases = [  # (policy, lease, agent, close)
+            ("advisory", None, None, "block"),
+            ("enforce", "live", "worker-7", "block"),
+            ("enforce", "no_deadline", "worker-7", "block"),
+            ("enforce", "grace", "worker-7", "block"),
+            ("enforce", "expired", "worker-7", "reclaim"),
+            ("enforce", "expired", "worker-8", "reclaim"),
+            ("enforce", "expired", None, None),
+            ("enforce", "live", "worker-8", None),
+            ("enforce", "live", None, None),
+            ("enforce", "no_deadline", "worker-8", None),
+        ]
+        for policy, lease, agent, close in cases:
+            with self.subTest(policy=policy, lease=lease, agent=agent), TemporaryDirectory() as d:
+                root = Path(d)
+                if policy == "advisory":
+                    _claimed(root)
+                    _time_out_open_attempt(root)
+                else:
+                    _enforced_claim(root)
+                    _time_out_open_attempt(root, "worker-7")
+                    if lease != "live":
+                        _set_attempt_lease(root, "A1", {"no_deadline": None, "grace": inside_grace,
+                                                        "expired": past}[lease])
+                projection, selection = porcelain._resumability(root, _locked_plan(root), agent_id=agent)
+                self.assertEqual((selection.kind, selection.close), ("timed_out", close))
+                self.assertEqual(_recovery(projection, "block")["allowed"], close == "block")
+                self.assertEqual(_recovery(projection, "reclaim")["allowed"], close == "reclaim")
+                self.assertFalse(_recovery(projection, "continue")["allowed"])
+                self.assertTrue(_recovery(projection, "fail")["break_glass"])
+                for name in ("block", "amend"):
+                    self.assertTrue(_recovery(projection, name)["automatic"])
+                    self.assertFalse(_recovery(projection, name)["break_glass"])
+                if close == "block":
+                    self.assertEqual(_recovery(projection, "block")["reason"],
+                                     "attempt holds a timed-out receipt and cannot complete")
+                if (lease, agent) == ("live", "worker-8"):
+                    self.assertIn("only the owner can block it", _recovery(projection, "block")["reason"])
+
+    def test_completed_step_needing_replacement_projects_amend_not_claim(self):
+        with TemporaryDirectory() as d:
+            root = Path(d)
+            _closed_amendment(root, "fail-step", timeout=False)
+            projection, selection = porcelain._resumability(root, _locked_plan(root), agent_id="tester")
+            self.assertEqual((selection.kind, selection.step_id), ("amend", "P1"))
+            self.assertEqual(projection["step"], {"id": "P1", "state": "failed", "completed": True})
+            self.assertIsNone(projection["attempt"])
+            self.assertTrue(_recovery(projection, "amend")["allowed"])
+            self.assertFalse(_recovery(projection, "claim")["allowed"])
+            self.assertEqual(_recovery(projection, "claim")["reason"], "step has completed work; use amend")
+            anonymous, _ = porcelain._resumability(root, _locked_plan(root))
+            self.assertEqual(_recovery(anonymous, "amend")["reason"], "amend requires an agent identity")
+
+    def test_claimable_step_beats_a_replacement_and_amend_denial_says_so(self):
+        p2 = {**_step(), "id": "P2", "files": ["src/other.py"],
+              "expected_diff": ["src/other.py changes are attributed to P2."]}
+        with TemporaryDirectory() as d:
+            root = Path(d)
+            _ready_repo_with_steps(root, [_step(), p2], extra_allowed=("src/other.py",))
+            (root / "src").mkdir()
+            cli.main(["claim-step", "P1", "--agent", "tester", "--root", str(root)])
+            (root / "src/feature.py").write_text("x = 1\n")
+            cli.main(["record-file-change", "--step", "P1", "--path", "src/feature.py", "--root", str(root)])
+            cli.main(["run", "--step", "P1", "--gate", 'python3 -c "print(1)"', "--root", str(root),
+                      "--", "python3", "-c", "print(1)"])
+            cli.main(["finish-step", "P1", "--root", str(root)])
+            self.assertEqual(cli.main(["amend-step", "P1", "--agent", "tester", "--reason", "r",
+                                       "--root", str(root)]), 0)
+            self.assertEqual(cli.main(["fail-step", "P1", "--reason", "x", "--root", str(root)]), 0)
+            projection, selection = porcelain._resumability(root, _locked_plan(root), agent_id="tester")
+            self.assertEqual((selection.kind, selection.step_id), ("claim", "P2"))
+            self.assertTrue(_recovery(projection, "claim")["allowed"])
+            self.assertFalse(_recovery(projection, "amend")["allowed"])
+            self.assertEqual(_recovery(projection, "amend")["reason"], "a step is eligible to claim first")
+
+    def test_older_recoverable_timeout_selects_amend(self):  # A2 timeout blocked, A3 clean blocked
+        with TemporaryDirectory() as d:
+            root = Path(d)
+            _closed_amendment(root, "block-step", timeout=True)
+            cli.main(["amend-step", "P1", "--agent", "tester", "--reason", "again", "--root", str(root)])
+            cli.main(["block-step", "P1", "--reason", "x", "--agent", "tester", "--root", str(root)])
+            _projection, selection = porcelain._resumability(root, _locked_plan(root), agent_id="tester")
+            self.assertEqual(selection.kind, "amend")
+            self.assertEqual(selection.needs[0]["causes"][0]["receipt_id"], "CR2")
+
+    def test_open_attempt_wins_over_an_older_recoverable_timeout(self):  # review focus 3
+        with TemporaryDirectory() as d:
+            root = Path(d)
+            _closed_amendment(root, "block-step", timeout=True)
+            cli.main(["amend-step", "P1", "--agent", "tester", "--reason", "again", "--root", str(root)])
+            projection, selection = porcelain._resumability(root, _locked_plan(root), agent_id="tester")
+            self.assertEqual((selection.kind, selection.attempt_id), ("inflight", "A3"))
+            self.assertFalse(_recovery(projection, "amend")["allowed"])
+            self.assertFalse(_recovery(projection, "block")["allowed"])
+            # Finishing A3 supersedes the older timeout: verify-run passes with a warning.
+            for argv in (
+                ["record-file-change", "--step", "P1", "--path", "src/feature.py", "--agent", "tester"],
+                ["run", "--step", "P1", "--gate", 'python3 -c "print(1)"', "--agent", "tester",
+                 "--", "python3", "-c", "print(1)"],
+                ["finish-step", "P1", "--agent", "tester"],
+            ):
+                cut = argv.index("--") if "--" in argv else len(argv)
+                argv[cut:cut] = ["--root", str(root)]
+                self.assertEqual(cli.main(argv), 0, argv)
+            result = execution_coverage.verify_run(root, _locked_plan(root), record=False)
+            self.assertEqual(result["errors"], [])
+            self.assertTrue(any("CR2" in w["message"] and "superseded by completed attempt A3" in w["message"]
+                                for w in result["warnings"]), result["warnings"])
+            self.assertEqual(cli.main(["verify-run", "--root", str(root)]), 0)
+
+    def test_unrecoverable_timeout_suppresses_amend_run_wide(self):
+        with TemporaryDirectory() as d:
+            root = Path(d)
+            _timed_out_gate(root, retry_in_new_attempt=False)  # legacy: A1 completed with CR1
+            self.assertEqual(cli.main(["amend-step", "P1", "--agent", "tester", "--reason", "r",
+                                       "--root", str(root)]), 0)
+            self.assertEqual(cli.main(["fail-step", "P1", "--reason", "x", "--root", str(root)]), 0)
+            projection, selection = porcelain._resumability(root, _locked_plan(root), agent_id="tester")
+            self.assertTrue(selection.needs)  # a replacement is needed; only the guard withholds it
+            self.assertIsNone(selection.kind)
+            self.assertEqual([r["id"] for r in selection.unrecoverable], ["CR1"])
+            self.assertFalse(any(item["allowed"] for item in projection["recovery_actions"]))
+
+
+_COMMAND_ACTION = {
+    "claim-step": "claim", "amend-step": "amend", "block-step": "block", "reclaim-step": "reclaim",
+    "record-file-change": "continue", "run": "continue", "finish-step": "continue",
+}
+
+
+class TestNextActionRecovery(unittest.TestCase):
+    """#70: next-action guidance a non-break-glass consumer can follow to a proof."""
+
+    def _drive(self, root, agent, strict=False):
+        """Follow next-action using only allowed, automatic, non-break-glass actions."""
+        for _ in range(25):
+            action = porcelain.next_action(root, strict=strict, agent_id=agent)
+            if not action.args or action.args[0] not in _COMMAND_ACTION:
+                return action
+            rec = _recovery(action.resumability, _COMMAND_ACTION[action.args[0]])
+            self.assertTrue(rec["allowed"] and rec["automatic"] and not rec["break_glass"],
+                            (action.state, rec))
+            argv = list(action.args)
+            cut = argv.index("--") if "--" in argv else len(argv)
+            argv[cut:cut] = ["--root", str(root)]
+            self.assertEqual(cli.main(argv), 0, (action.state, argv))
+        self.fail("next-action did not converge")
+
+    def _assert_proven(self, root, agent, strict=False):
+        action = self._drive(root, agent, strict)
+        self.assertIn(action.state, {"run_unverified", "proof_missing"})
+        self.assertEqual(cli.main(["verify-run", "--root", str(root), *(["--strict"] if strict else [])]), 0)
+        if not strict:
+            self.assertTrue(porcelain.finish_run(root, root / ".agent/plan.lock.json")["ok"])
+            self.assertEqual(porcelain.next_action(root, agent_id=agent).state, "complete")
+
+    def test_consumer_loop_recovers_every_fixture_without_break_glass(self):
+        def advisory_initial(root):
+            _timeout_then_rerun(root)
+
+        def enforce_owner(root):
+            _enforced_claim(root)
+            _time_out_open_attempt(root, "worker-7")
+
+        def reclaim_initial(root):
+            enforce_owner(root)
+            _set_attempt_lease(root, "A1", "2000-01-01T00:00:00+00:00")
+
+        def timed_out_amendment(root):
+            _completed_step(root)
+            cli.main(["amend-step", "P1", "--agent", "tester", "--reason", "r", "--root", str(root)])
+            _time_out_open_attempt(root)
+
+        def reclaim_amendment(root):
+            _completed_step(root)
+            _set_concurrency(root, lease_policy="enforce")
+            cli.main(["amend-step", "P1", "--agent", "tester", "--reason", "r", "--root", str(root)])
+            _time_out_open_attempt(root)
+            _set_attempt_lease(root, "A2", "2000-01-01T00:00:00+00:00")
+
+        fixtures = [  # (setup, driving agent, strict)
+            (advisory_initial, "tester", False),
+            (enforce_owner, "worker-7", False),
+            (reclaim_initial, "worker-8", False),
+            (timed_out_amendment, "tester", False),
+            (reclaim_amendment, "worker-8", False),
+            (lambda root: _closed_amendment(root, "fail-step", timeout=False), "tester", False),
+            (lambda root: _closed_amendment(root, "block-step", timeout=False), "tester", True),
+        ]
+        for setup, agent, strict in fixtures:
+            with self.subTest(setup=getattr(setup, "__name__", "closed_amendment"), strict=strict), \
+                    TemporaryDirectory() as d:
+                root = Path(d)
+                setup(root)
+                self._assert_proven(root, agent, strict)
+
+    def test_timed_out_attempt_states_before_and_after_rerun_and_verify(self):  # review focus 1
+        with TemporaryDirectory() as d:
+            root = Path(d)
+            _claimed(root)
+            _time_out_open_attempt(root)
+            want = ["block-step", "P1", "--attempt", "A1", "--reason", "gate timed out"]
+            self.assertEqual(porcelain.next_action(root).args, want)
+            cli.main(["run", "--step", "P1", "--gate", 'python3 -c "print(1)"', "--root", str(root),
+                      "--", "python3", "-c", "print(1)"])
+            self.assertEqual(porcelain.next_action(root).args, want)
+            cli.main(["verify-step", "P1", "--root", str(root)])
+            action = porcelain.next_action(root, agent_id="tester")
+            self.assertEqual(action.state, "attempt_timed_out")
+            self.assertEqual(action.args, [*want, "--agent", "tester"])
+            self.assertEqual(action.diagnostics, ["command receipt CR1 timed out after 1 seconds"])
+            # The emitted close works even after a standalone verify-step, and frees the step.
+            self.assertEqual(cli.main([*action.args, "--root", str(root)]), 0)
+            self.assertEqual(porcelain.next_action(root, agent_id="tester").state, "step_unclaimed")
+
+    def test_structured_gate_whose_own_run_timed_out(self):
+        # The receipt's command equals the gate's run, so verify-step credits it first-match.
+        sleepy = ["python3", "-c", "import os, time; time.sleep(int(os.environ.get('AF70_SLEEP', '0')))"]
+        with TemporaryDirectory() as d:
+            root = Path(d)
+            _ready_repo_with_steps(root, [{**_step(), "gates": [{"kind": "command", "run": sleepy}]}])
+            cli.main(["claim-step", "P1", "--agent", "tester", "--root", str(root)])
+            path = root / ".agent/execution.contract.json"
+            contract = json.loads(path.read_text())
+            contract["command_policy"]["command_timeout_seconds"] = 1
+            path.write_text(json.dumps(contract))
+            with mock.patch.dict("os.environ", {"AF70_SLEEP": "5"}):
+                self.assertEqual(cli.main(["run", "--step", "P1", "--gate", 'python3 -c "print(1)"',
+                                           "--root", str(root), "--", *sleepy]), 124)
+            cli.main(["run", "--step", "P1", "--gate", 'python3 -c "print(1)"', "--root", str(root),
+                      "--", *sleepy])  # passing rerun, same argv
+            self.assertEqual(porcelain.next_action(root).state, "attempt_timed_out")
+
+    def test_step_amendment_needed_for_each_cause_and_strictness_source(self):
+        cases = [  # (close, timeout, strict source, expected --reason)
+            ("block-step", True, None, "replace attempt A2: timed-out receipt CR2"),
+            ("fail-step", False, None, "replace failed attempt A2"),
+            ("block-step", False, "flag", "replace blocked attempt A2 (strict)"),
+            ("block-step", False, "env", "replace blocked attempt A2 (strict)"),
+            ("block-step", False, "policy", "replace blocked attempt A2 (strict)"),
+        ]
+        for close, timeout, source, reason in cases:
+            with self.subTest(close=close, timeout=timeout, source=source), TemporaryDirectory() as d:
+                root = Path(d)
+                _closed_amendment(root, close, timeout)
+                if source == "policy":
+                    path = root / ".agent/execution.contract.json"
+                    contract = json.loads(path.read_text())
+                    contract.setdefault("proof_policy", {})["strict_by_default"] = True
+                    path.write_text(json.dumps(contract))
+                if source == "env":
+                    out = io.StringIO()
+                    with mock.patch.dict("os.environ", {"AGENTFLOW_STRICT": "1"}), \
+                            contextlib.redirect_stdout(out):
+                        cli.main(["next-action", "--json", "--agent", "tester", "--root", str(root)])
+                    payload = json.loads(out.getvalue())
+                else:
+                    payload = porcelain.next_action(root, strict=source == "flag", agent_id="tester").to_dict()
+                self.assertEqual(payload["state"], "step_amendment_needed")
+                self.assertEqual(payload["args"], ["amend-step", "P1", "--agent", "tester", "--reason", reason])
+                self.assertEqual((payload["step_id"], payload["resumability"]["step"]["id"]), ("P1", "P1"))
+
+    def test_blocked_amendment_without_timeout_still_passes_in_default_mode(self):
+        with TemporaryDirectory() as d:
+            root = Path(d)
+            _closed_amendment(root, "block-step", timeout=False)
+            self.assertEqual(porcelain.next_action(root, agent_id="tester").state, "run_unverified")
+            self.assertTrue(porcelain.finish_run(root, root / ".agent/plan.lock.json")["ok"])
+            self.assertEqual(porcelain.next_action(root).state, "complete")
+
+    def test_two_repairable_steps_pick_plan_order_and_name_the_other(self):
+        p2 = {**_step(), "id": "P2", "files": ["src/other.py"],
+              "expected_diff": ["src/other.py changes are attributed to P2."]}
+        with TemporaryDirectory() as d:
+            root = Path(d)
+            _ready_repo_with_steps(root, [_step(), p2], extra_allowed=("src/other.py",))
+            (root / "src").mkdir()
+            for sid, path in (("P1", "src/feature.py"), ("P2", "src/other.py")):
+                cli.main(["claim-step", sid, "--agent", "tester", "--root", str(root)])
+                (root / path).write_text("x = 1\n")
+                cli.main(["record-file-change", "--step", sid, "--path", path, "--root", str(root)])
+                cli.main(["run", "--step", sid, "--gate", 'python3 -c "print(1)"', "--root", str(root),
+                          "--", "python3", "-c", "print(1)"])
+                cli.main(["finish-step", sid, "--root", str(root)])
+            for sid in ("P2", "P1"):
+                cli.main(["amend-step", sid, "--agent", "tester", "--reason", "r", "--root", str(root)])
+                cli.main(["fail-step", sid, "--reason", "x", "--root", str(root)])
+            action = porcelain.next_action(root, agent_id="tester")
+            self.assertEqual((action.state, action.step_id), ("step_amendment_needed", "P1"))
+            self.assertIn("also needs a replacement attempt: P2", action.diagnostics)
+
+    def test_legacy_stranded_run_never_advertises_amend(self):
+        with TemporaryDirectory() as d:
+            root = Path(d)
+            _timed_out_gate(root, retry_in_new_attempt=False)
+            # A failed amendment makes a replacement needed; only the run-wide guard withholds it.
+            self.assertEqual(cli.main(["amend-step", "P1", "--agent", "tester", "--reason", "r",
+                                       "--root", str(root)]), 0)
+            self.assertEqual(cli.main(["fail-step", "P1", "--reason", "x", "--root", str(root)]), 0)
+            for strict in (False, True):
+                action = porcelain.next_action(root, strict=strict, agent_id="tester")
+                self.assertEqual(action.state, "run_unverified")
+                self.assertTrue(any("CR1 for P1 cannot be superseded" in line for line in action.diagnostics))
+
+    def test_agent_identity_is_used_verbatim(self):  # review focus 2 and 5
+        with TemporaryDirectory() as d:
+            root = Path(d)
+            _ready_repo(root)
+            with mock.patch.dict("os.environ", {"USER": "someone-else"}):
+                action = porcelain.next_action(root, agent_id="worker 7")
+            self.assertEqual(action.args, ["claim-step", "P1", "--agent", "worker 7"])
+            self.assertIn("--agent 'worker 7'", action.command)
+            self.assertEqual(porcelain.next_action(root).args, ["claim-step", "P1", "--agent", "$USER"])
+            out = io.StringIO()
+            with mock.patch.dict("os.environ", {"AGENTFLOW_AGENT_ID": "worker-9"}), \
+                    contextlib.redirect_stdout(out):
+                cli.main(["next-action", "--json", "--root", str(root)])
+            self.assertEqual(json.loads(out.getvalue())["args"][-1], "worker-9")
+
+    def test_inflight_commands_carry_agent_and_finish_commands_carry_strict(self):
+        with TemporaryDirectory() as d:
+            root = Path(d)
+            _claimed(root)
+            (root / "src").mkdir()
+            (root / "src/feature.py").write_text("x = 1\n")
+            action = porcelain.next_action(root, agent_id="tester")
+            self.assertEqual(action.args[-2:], ["--agent", "tester"])  # record-file-change
+            cli.main(["record-file-change", "--step", "P1", "--path", "src/feature.py", "--root", str(root)])
+            run_args = porcelain.next_action(root, agent_id="tester").args
+            self.assertEqual(run_args[run_args.index("--") - 2:run_args.index("--")], ["--agent", "tester"])
+            cli.main(["run", "--step", "P1", "--gate", 'python3 -c "print(1)"', "--root", str(root),
+                      "--", "python3", "-c", "print(1)"])
+            self.assertEqual(porcelain.next_action(root, strict=True).args, ["finish-step", "P1", "--strict"])
+            self.assertEqual(porcelain.next_action(root).args, ["finish-step", "P1"])
+            cli.main(["finish-step", "P1", "--root", str(root)])
+            self.assertEqual(porcelain.next_action(root, strict=True).args, ["finish-run", "--strict"])
+
+    def test_inflight_command_is_withheld_when_continue_is_denied(self):  # ruling R6
+        with TemporaryDirectory() as d:
+            root = Path(d)
+            _enforced_claim(root)  # worker-7 owns A1 under enforce, live lease
+            owner = porcelain.next_action(root, agent_id="worker-7")
+            self.assertEqual(owner.state, "validation_missing")
+            self.assertEqual(owner.args[:2], ["run", "--step"])
+            self.assertEqual(owner.args[owner.args.index("--") - 2:owner.args.index("--")],
+                             ["--agent", "worker-7"])
+            cases = [  # (agent, lease rewrite, continue denial reason)
+                ("worker-8", None, "attempt is owned by worker-7"),
+                ("worker-7", "2000-01-01T00:00:00+00:00",
+                 "expired enforced lease must be renewed or reclaimed"),
+            ]
+            for agent, expires_at, reason in cases:
+                with self.subTest(agent=agent, expired=expires_at is not None):
+                    if expires_at is not None:
+                        _set_attempt_lease(root, "A1", expires_at)
+                    action = porcelain.next_action(root, agent_id=agent)
+                    self.assertEqual(action.state, "validation_missing")
+                    self.assertEqual((action.command, action.args), (None, []))
+                    self.assertEqual(_recovery(action.resumability, "continue")["reason"], reason)
+                    self.assertIn(reason, action.diagnostics)
+                    self.assertNotIn("args", action.to_dict())
+            # Without a supplied agent the command is unchanged.
+            self.assertEqual(porcelain.next_action(root).args[:2], ["run", "--step"])
+
+    def test_unknown_state_is_rejected(self):
+        with self.assertRaises(ValueError):
+            porcelain.Action("made_up", "x")
+        self.assertEqual(len(porcelain.NEXT_ACTION_STATES), 17)
 
 
 if __name__ == "__main__":

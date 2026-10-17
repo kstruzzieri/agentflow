@@ -174,6 +174,8 @@ class StabilityPolicyTests(unittest.TestCase):
             ("next-action", Action(
                 "validation_missing", "validation gate is unmet", gate="test gate"
             ).to_dict()),
+            ("next-action", Action("attempt_timed_out", "x", step_id="P1").to_dict()),
+            ("next-action", Action("step_amendment_needed", "x", step_id="P1").to_dict()),
             ("claim-step", rows("step-runs.jsonl")[0]),
             ("run", rows("command-receipts.jsonl")[0]),
             ("record-file-change", [rows("file-receipts.jsonl")[0]]),
@@ -310,6 +312,23 @@ class StabilityPolicyTests(unittest.TestCase):
             set(recovery["keys"]),
             {"action", "allowed", "automatic", "break_glass", "reason"},
         )
+
+    def test_cli_contract_lists_next_action_value_sets(self) -> None:
+        from agentflow import porcelain
+
+        manifest = json.loads((ROOT / "docs/cli-contract.json").read_text(encoding="utf-8"))
+        self.assertEqual(manifest["schema_version"], "1.1.0")
+        self.assertEqual(manifest["value_sets"]["next-action.state"], list(porcelain.NEXT_ACTION_STATES))
+        self.assertEqual(
+            manifest["value_sets"]["next-action.resumability.recovery_actions.action"],
+            list(porcelain.RECOVERY_ACTIONS),
+        )
+
+    def test_unknown_next_action_values_fail_closed_by_policy(self) -> None:
+        policy = (ROOT / "docs/stability.md").read_text(encoding="utf-8")
+        self.assertIn("A minor release may add values to these sets.", policy)
+        self.assertIn("must treat an unknown value as not actionable and fail closed", policy)
+        self.assertIn("| `block_step` |", policy)
 
     def test_next_step_contract_documents_optional_design_decision_ids(self) -> None:
         step = JSON_OUTPUTS["next-step"][0]

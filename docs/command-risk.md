@@ -110,7 +110,8 @@ completed. The step must be declared in the locked plan; retained history for an
 undeclared step cannot supersede a timeout. `verify-run` then reports a valid
 supersession as a `superseded_timeout` warning, and
 the proof still counts it in `execution.command_timed_out`. A passing rerun
-inside the timed-out attempt does not supersede it.
+inside the timed-out attempt does not supersede it, and `complete-step` and
+`finish-step` refuse to complete an attempt that holds a timed-out receipt.
 
 ## Detection limits
 

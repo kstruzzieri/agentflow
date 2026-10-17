@@ -160,6 +160,15 @@ def _argv_reclaim_step(a: Dict[str, Any]) -> List[str]:
     return argv
 
 
+def _argv_block_step(a: Dict[str, Any]) -> List[str]:
+    argv = ["block-step", _require(a, "step"), "--reason", _require(a, "reason"), "--json", *_root(a)]
+    if a.get("attempt"):
+        argv += ["--attempt", str(a["attempt"])]
+    if a.get("agent"):
+        argv += ["--agent", str(a["agent"])]
+    return argv
+
+
 def _argv_renew_lease(a: Dict[str, Any]) -> List[str]:
     argv = ["renew-lease", _require(a, "step"), "--agent", _require(a, "agent"), "--json", *_root(a)]
     if a.get("attempt"):
@@ -332,6 +341,21 @@ TOOLS: List[Tool] = [
             required=["step", "agent", "reason"],
         ),
         _argv_reclaim_step,
+    ),
+    Tool(
+        "block_step",
+        "Close an open step attempt as blocked (the recovery for a timed-out attempt).",
+        _object_schema(
+            {
+                **_STEP_PROP,
+                "reason": {"type": "string", "description": "Why the attempt is being blocked."},
+                **_ATTEMPT_PROP,
+                **_AGENT_PROP,
+                **_ROOT_PROP,
+            },
+            required=["step", "reason"],
+        ),
+        _argv_block_step,
     ),
     Tool(
         "renew_lease",

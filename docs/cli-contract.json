@@ -3295,5 +3295,35 @@
       }
     ]
   },
-  "schema_version": "1.0.0"
+  "schema_version": "1.1.0",
+  "value_sets": {
+    "next-action.resumability.recovery_actions.action": [
+      "claim",
+      "continue",
+      "renew",
+      "reclaim",
+      "fail",
+      "block",
+      "amend"
+    ],
+    "next-action.state": [
+      "uninitialized",
+      "plan_unlocked",
+      "execution_uninitialized",
+      "state_invalid",
+      "step_unclaimed",
+      "step_amendment_needed",
+      "file_receipts_missing",
+      "attempt_timed_out",
+      "validation_missing",
+      "step_unverified",
+      "step_uncompleted",
+      "drift_failing",
+      "run_unverified",
+      "proof_missing",
+      "proof_stale",
+      "proof_failing",
+      "complete"
+    ]
+  }
 }

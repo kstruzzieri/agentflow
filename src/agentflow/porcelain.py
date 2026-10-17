@@ -10,7 +10,7 @@ import shlex
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 from .artifacts import plan_binding_sha256, read_json, read_jsonl
 from .contracts import CHANGE_KINDS, EXECUTION_ARTIFACT_PATHS, PROVENANCE_VALUES
@@ -30,14 +30,42 @@ from .execution import (
     mark_step_verified,
     next_step,
     read_step_state,
+    refuse_timed_out_attempt,
     require_lifecycle_owner,
+    timed_out_receipts,
     validate_execution_contract,
 )
-from .execution_coverage import verify_run, verify_step
+from .execution_coverage import (
+    replacement_needs,
+    timeout_receipt_states,
+    verify_run,
+    verify_step,
+)
 from .git import changed_file_records
 from .proof import verify_proof
 from .receipts import command_receipts, file_receipts, sha256_path
 from .validation import audit_drift, path_in_effective_scope, validate_plan
+
+
+NEXT_ACTION_STATES = (
+    "uninitialized",
+    "plan_unlocked",
+    "execution_uninitialized",
+    "state_invalid",
+    "step_unclaimed",
+    "step_amendment_needed",
+    "file_receipts_missing",
+    "attempt_timed_out",
+    "validation_missing",
+    "step_unverified",
+    "step_uncompleted",
+    "drift_failing",
+    "run_unverified",
+    "proof_missing",
+    "proof_stale",
+    "proof_failing",
+    "complete",
+)
 
 
 @dataclass
@@ -51,6 +79,10 @@ class Action:
     diagnostics: List[str] = field(default_factory=list)
     blocking: bool = True
     resumability: Optional[Dict[str, Any]] = None
+
+    def __post_init__(self) -> None:
+        if self.state not in NEXT_ACTION_STATES:
+            raise ValueError(f"unknown next-action state: {self.state}")
 
     def to_dict(self) -> Dict[str, Any]:
         data: Dict[str, Any] = {
@@ -97,7 +129,40 @@ def _load_plan(root: Path) -> Optional[Any]:
     return read_json(plan_path)
 
 
-_RECOVERY_ACTIONS = ("claim", "continue", "renew", "reclaim", "fail")
+RECOVERY_ACTIONS = ("claim", "continue", "renew", "reclaim", "fail", "block", "amend")
+
+
+@dataclass
+class _Selection:
+    """#70: the one next legal lifecycle transition, shared by the projection
+    and next-action.
+
+    kind is inflight, timed_out (close: block, reclaim or None), claim, amend,
+    or None (diagnostic or run-level flow). needs/unrecoverable are filled only
+    when no attempt is open and no step is eligible.
+    """
+
+    kind: Optional[str]
+    step_id: Optional[str] = None
+    attempt_id: Optional[str] = None
+    close: Optional[str] = None
+    timed_out: List[Dict[str, Any]] = field(default_factory=list)
+    needs: List[Dict[str, Any]] = field(default_factory=list)
+    unrecoverable: List[Dict[str, Any]] = field(default_factory=list)
+
+
+def _timeout_close(
+    policy: str,
+    lease_state: str,
+    owner: Optional[str],
+    agent_id: Optional[str],
+) -> Optional[str]:
+    """The command that closes a timed-out open attempt for this caller, if any."""
+    if policy != "enforce":
+        return "block"
+    if lease_state == "expired":
+        return "reclaim" if agent_id else None
+    return "block" if agent_id and agent_id == owner else None
 
 
 def _recovery_action(
@@ -126,7 +191,7 @@ def _denied_recovery_actions(reason: str) -> List[Dict[str, Any]]:
             automatic=action != "fail",
             break_glass=action == "fail",
         )
-        for action in _RECOVERY_ACTIONS
+        for action in RECOVERY_ACTIONS
     ]
 
 
@@ -364,6 +429,21 @@ def _attach(action: Action, projection: Dict[str, Any]) -> Action:
     return action
 
 
+def _attach_inflight(
+    action: Action,
+    projection: Dict[str, Any],
+    agent_id: Optional[str],
+) -> Action:
+    """#70: withhold an in-flight command the supplied agent may not run."""
+    proceed = next(
+        item for item in projection["recovery_actions"] if item["action"] == "continue"
+    )
+    if agent_id and not proceed["allowed"]:
+        action.command, action.args = None, []
+        action.diagnostics.append(proceed["reason"])
+    return _attach(action, projection)
+
+
 def _project_receipts(root: Path, step_id: str, attempt_id: str) -> Dict[str, Any]:
     commands = [
         {
@@ -396,21 +476,58 @@ def _project_receipts(root: Path, step_id: str, attempt_id: str) -> Dict[str, An
     return {"commands": commands, "files": files}
 
 
+def _timeout_close_diagnostic(
+    attempt_id: str,
+    attempt: Dict[str, Any],
+    lease_state: str,
+) -> str:
+    """Why no close command is available to this caller (close is None)."""
+    owner = attempt.get("agent_id")
+    expires_at = attempt.get("lease_expires_at")
+    if lease_state == "expired":
+        return f"attempt {attempt_id} lease expired at {expires_at}; pass --agent to reclaim-step"
+    if lease_state == "no_deadline":
+        return (
+            f"attempt {attempt_id} is owned by {owner} with no lease deadline; "
+            "only the owner can block it; fail-step is break-glass"
+        )
+    return (
+        f"attempt {attempt_id} is owned by {owner} until {expires_at}; only the owner "
+        "can block it, or reclaim-step after expiry; fail-step is break-glass"
+    )
+
+
 def _project_recovery_actions(
-    step_id: Optional[str],
+    selection: _Selection,
     attempt: Optional[Dict[str, Any]],
     agent_id: Optional[str],
     policy: str,
     lease_state: str,
 ) -> List[Dict[str, Any]]:
-    if step_id is None:
+    step_id = selection.step_id
+    if selection.kind is None:
         return _denied_recovery_actions("no actionable step")
     if attempt is None:
-        claim_allowed = bool(agent_id)
-        claim_reason = (
-            f"step {step_id} is eligible for {agent_id}"
-            if claim_allowed
-            else "claim requires an agent identity"
+        amend = selection.kind == "amend"
+        if amend:
+            claim_allowed = False
+            claim_reason = "step has completed work; use amend"
+        else:
+            claim_allowed = bool(agent_id)
+            claim_reason = (
+                f"step {step_id} is eligible for {agent_id}"
+                if claim_allowed
+                else "claim requires an agent identity"
+            )
+        amend_allowed = amend and bool(agent_id)
+        amend_reason = (
+            f"step {step_id} has completed work and needs a replacement attempt"
+            if amend_allowed
+            else "amend requires an agent identity"
+            if amend
+            else "a step is eligible to claim first"
+            if selection.kind == "claim"
+            else "no completed step needs a replacement attempt"
         )
         return [
             _recovery_action("claim", claim_allowed, claim_reason),
@@ -421,6 +538,8 @@ def _project_recovery_actions(
                 "fail", False, "no open attempt",
                 automatic=False, break_glass=True,
             ),
+            _recovery_action("block", False, "no open attempt"),
+            _recovery_action("amend", amend_allowed, amend_reason),
         ]
 
     owner = attempt.get("agent_id")
@@ -459,6 +578,22 @@ def _project_recovery_actions(
             else "only an expired finite lease is reclaimable"
         )
     )
+    block_allowed = selection.kind == "timed_out" and selection.close == "block"
+    if selection.kind != "timed_out":
+        block_reason = "attempt can still complete; blocking is an operator decision"
+    else:
+        ids = ", ".join(str(receipt.get("id")) for receipt in selection.timed_out)
+        continue_allowed = False
+        continue_reason = (
+            f"attempt {selection.attempt_id} holds timed-out receipt {ids} and cannot complete"
+        )
+        block_reason = (
+            "attempt holds a timed-out receipt and cannot complete"
+            if block_allowed
+            else "lease expired; reclaim-step replaces the attempt"
+            if selection.close == "reclaim"
+            else _timeout_close_diagnostic(str(selection.attempt_id), attempt, lease_state)
+        )
     return [
         _recovery_action("claim", False, "step already has an open attempt"),
         _recovery_action("continue", continue_allowed, continue_reason),
@@ -471,16 +606,18 @@ def _project_recovery_actions(
             automatic=False,
             break_glass=True,
         ),
+        _recovery_action("block", block_allowed, block_reason),
+        _recovery_action("amend", False, "step already has an open attempt"),
     ]
 
 
-def resumability_projection(
+def _resumability(
     root: Path,
     plan: Any,
     agent_id: Optional[str] = None,
     strict: bool = False,
     now: Optional[datetime] = None,
-) -> Dict[str, Any]:
+) -> Tuple[Dict[str, Any], _Selection]:
     projection = _base_resumability(plan, agent_id)
     if not isinstance(plan, dict):
         return _diagnose(
@@ -488,7 +625,7 @@ def resumability_projection(
             "plan_invalid",
             ".agent/plan.lock.json top-level value must be a JSON object",
             ".agent/plan.lock.json",
-        )
+        ), _Selection(None)
     try:
         plan_errors = validate_plan(plan)
     except (AttributeError, KeyError, TypeError, ValueError) as exc:
@@ -502,7 +639,7 @@ def resumability_projection(
             "plan_invalid",
             "; ".join(plan_errors),
             ".agent/plan.lock.json",
-        )
+        ), _Selection(None)
     contract_path = root / ".agent/execution.contract.json"
     if not contract_path.exists():
         return _diagnose(
@@ -510,7 +647,7 @@ def resumability_projection(
             "execution_contract_missing",
             ".agent/execution.contract.json is missing",
             ".agent/execution.contract.json",
-        )
+        ), _Selection(None)
     try:
         contract = load_execution_contract(root)
     except (OSError, ValueError, json.JSONDecodeError) as exc:
@@ -519,14 +656,14 @@ def resumability_projection(
             "execution_contract_invalid",
             str(exc),
             ".agent/execution.contract.json",
-        )
+        ), _Selection(None)
     if not isinstance(contract, dict):
         return _diagnose(
             projection,
             "execution_contract_invalid",
             "execution contract must be a JSON object",
             ".agent/execution.contract.json",
-        )
+        ), _Selection(None)
     try:
         contract_errors = validate_execution_contract(contract)
     except (AttributeError, KeyError, TypeError, ValueError) as exc:
@@ -535,14 +672,14 @@ def resumability_projection(
             "execution_contract_invalid",
             str(exc),
             ".agent/execution.contract.json",
-        )
+        ), _Selection(None)
     if contract_errors:
         return _diagnose(
             projection,
             "execution_contract_invalid",
             "; ".join(item["message"] for item in contract_errors),
             ".agent/execution.contract.json",
-        )
+        ), _Selection(None)
 
     try:
         # Inside the fail-closed handler: these re-read .agent files, and a
@@ -576,7 +713,7 @@ def resumability_projection(
                 "execution_state_invalid",
                 f"execution ledger references unknown steps: {', '.join(unknown_steps)}",
                 ".agent/step-runs.jsonl",
-            )
+            ), _Selection(None)
         open_attempts = [
             (step_id, attempt_id)
             for step_id, step in state["steps"].items()
@@ -588,7 +725,7 @@ def resumability_projection(
                 "ambiguous_open_attempts",
                 "multiple open attempts prevent safe resumability selection",
                 ".agent/step-runs.jsonl",
-            )
+            ), _Selection(None)
         if not open_attempts:
             eligible = next_step(root, plan)
             if eligible is not None:
@@ -599,15 +736,36 @@ def resumability_projection(
                     "state": step_state.get("status", "pending"),
                     "completed": bool(step_state.get("completed")),
                 }
+                selection = _Selection("claim", step_id=step_id)
+            else:
+                # Nothing eligible: replace the first completed step that needs
+                # it, unless an unrecoverable timeout makes the run unprovable.
+                selection = _Selection(
+                    None,
+                    needs=replacement_needs(root, plan, strict=strict),
+                    unrecoverable=[
+                        receipt
+                        for receipt, receipt_state, _ in timeout_receipt_states(root, plan)
+                        if receipt_state == "unrecoverable"
+                    ],
+                )
+                if selection.needs and not selection.unrecoverable:
+                    need = selection.needs[0]
+                    selection.kind, selection.step_id = "amend", need["step_id"]
+                    projection["step"] = {
+                        "id": need["step_id"],
+                        "state": need["status"],
+                        "completed": True,
+                    }
             projection["lease"]["state"] = "not_applicable"
             projection["recovery_actions"] = _project_recovery_actions(
-                projection["step"]["id"] if projection["step"] else None,
+                selection,
                 None,
                 agent_id,
                 policy,
                 "not_applicable",
             )
-            return projection
+            return projection, selection
 
         step_id, attempt_id = open_attempts[0]
         attempt = state["attempts"].get(attempt_id)
@@ -617,14 +775,14 @@ def resumability_projection(
                 "execution_state_invalid",
                 f"attempt {attempt_id} is inconsistent with step {step_id}",
                 ".agent/step-runs.jsonl",
-            )
+            ), _Selection(None)
         if policy == "enforce" and not attempt.get("agent_id"):
             return _diagnose(
                 projection,
                 "execution_state_invalid",
                 f"enforced attempt {attempt_id} has no owner",
                 ".agent/step-runs.jsonl",
-            )
+            ), _Selection(None)
         expires_at = attempt.get("lease_expires_at")
         if expires_at is not None and attempt_deadline(attempt) is None:
             return _diagnose(
@@ -632,7 +790,7 @@ def resumability_projection(
                 "execution_state_invalid",
                 f"attempt {attempt_id} has an invalid lease deadline",
                 ".agent/step-runs.jsonl",
-            )
+            ), _Selection(None)
         current = now or datetime.now(timezone.utc)
         lease_state = (
             "no_deadline"
@@ -667,14 +825,26 @@ def resumability_projection(
             record=False,
             include_gates=True,
         ).get("gates", [])
+        timed_out = timed_out_receipts(root, step_id, attempt_id)
+        selection = (
+            _Selection(
+                "timed_out",
+                step_id=step_id,
+                attempt_id=attempt_id,
+                close=_timeout_close(policy, lease_state, attempt.get("agent_id"), agent_id),
+                timed_out=timed_out,
+            )
+            if timed_out
+            else _Selection("inflight", step_id=step_id, attempt_id=attempt_id)
+        )
         projection["recovery_actions"] = _project_recovery_actions(
-            step_id,
+            selection,
             attempt,
             agent_id,
             policy,
             lease_state,
         )
-        return projection
+        return projection, selection
     except (
         AttributeError,
         KeyError,
@@ -688,7 +858,17 @@ def resumability_projection(
             "execution_state_invalid",
             str(exc),
             "execution ledgers",
-        )
+        ), _Selection(None)
+
+
+def resumability_projection(
+    root: Path,
+    plan: Any,
+    agent_id: Optional[str] = None,
+    strict: bool = False,
+    now: Optional[datetime] = None,
+) -> Dict[str, Any]:
+    return _resumability(root, plan, agent_id, strict, now)[0]
 
 
 def _scoped_unrecorded_paths(root: Path, plan: Dict[str, Any], step_id: str,
@@ -765,6 +945,27 @@ def _latest_run_verification(root: Path) -> Optional[Dict[str, Any]]:
     return latest
 
 
+def _replacement_cause(
+    step_id: str,
+    need: Dict[str, Any],
+    cause: Dict[str, Any],
+) -> Tuple[str, str]:
+    """(amend-step --reason text, diagnostic) for one replacement_needs cause."""
+    if cause["cause"] == "timeout":
+        return (
+            f"replace attempt {cause['attempt_id']}: timed-out receipt {cause['receipt_id']}",
+            f"command receipt {cause['receipt_id']} for {step_id} timed out after "
+            f"{cause['timeout_seconds']} seconds in attempt {cause['attempt_id']} "
+            f"({cause['status']})",
+        )
+    if cause["cause"] == "failed_attempt":
+        return f"replace failed attempt {need['attempt_id']}", f"{step_id} has failed attempt"
+    return (
+        f"replace {need['status']} attempt {need['attempt_id']} (strict)",
+        f"{step_id} is not completed",
+    )
+
+
 def next_action(
     root: Path,
     strict: bool = False,
@@ -824,37 +1025,51 @@ def next_action(
             projection,
         )
 
-    projection = resumability_projection(root, plan, agent_id, strict)
+    projection, selection = _resumability(root, plan, agent_id, strict)
     if projection["diagnostics"]:
         return _invalid_action(projection)
-    attempt = projection["attempt"]
-    inflight = None
-    if attempt is not None and projection["step"] is not None:
-        step_id = projection["step"]["id"]
-        step = next(
-            item
-            for item in plan.get("steps", [])
-            if isinstance(item, dict) and item.get("id") == step_id
+    step_id = selection.step_id
+    agent_args = ["--agent", agent_id] if agent_id else []
+    strict_args = ["--strict"] if strict else []
+    if selection.kind == "claim":
+        args = ["claim-step", step_id, "--agent", agent_id or "$USER"]
+        return _attach(
+            Action("step_unclaimed", f"step {step_id} is eligible and unclaimed",
+                   command=_cmd(args), args=args, step_id=step_id),
+            projection,
         )
-        inflight = (step_id, attempt["id"], step)
-    if inflight is None:
-        eligible = next_step(root, plan)
-        if eligible is not None:
-            step_id = eligible["id"]
-            args = ["claim-step", step_id, "--agent", "$USER"]
-            return _attach(
-                Action("step_unclaimed", f"step {step_id} is eligible and unclaimed",
-                       command=_cmd(args), args=args, step_id=step_id),
-                projection,
-            )
-        # All steps complete: run/drift/proof states.
+    if selection.kind == "amend":
+        need, *others = selection.needs
+        texts = [_replacement_cause(step_id, need, cause) for cause in need["causes"]]
+        args = ["amend-step", step_id, "--agent", agent_id or "$USER", "--reason", texts[0][0]]
+        return _attach(
+            Action(
+                "step_amendment_needed",
+                f"step {step_id} has completed work but needs a replacement attempt",
+                command=_cmd(args), args=args, step_id=step_id,
+                diagnostics=[
+                    *(line for _text, line in texts),
+                    *(f"also needs a replacement attempt: {other['step_id']}" for other in others),
+                ],
+            ),
+            projection,
+        )
+    if selection.kind is None:
+        # Nothing actionable: run/drift/proof states. An unrecoverable timeout
+        # always fails verify-run, so only drift_failing/run_unverified carry it.
+        stranded = [
+            f"command receipt {receipt.get('id')} for {receipt.get('step_id')} cannot be "
+            "superseded; archive .agent/ outside the working tree and start a new run"
+            for receipt in selection.unrecoverable
+        ]
+        finish_args = ["finish-run", *strict_args]
         drift = audit_drift(root, plan)
         if drift.get("status") == "fail":
             return _attach(
                 Action("drift_failing", "changes fall outside plan scope",
-                       command=_cmd(["finish-run"]), args=["finish-run"],
-                       diagnostics=[f"out of scope: {p}" for p in
-                                    drift.get("out_of_scope_files", [])]),
+                       command=_cmd(finish_args), args=finish_args,
+                       diagnostics=[*(f"out of scope: {p}" for p in
+                                      drift.get("out_of_scope_files", [])), *stranded]),
                 projection,
             )
         run_result = verify_run(root, plan, strict=strict, record=False)
@@ -868,12 +1083,12 @@ def next_action(
             strict and bool(run_warnings)
         )
         if run_record is None or run_failed:
-            diagnostics = [f["message"] for f in run_findings]
+            diagnostics = [*(f["message"] for f in run_findings), *stranded]
             if run_record is None:
                 diagnostics.insert(0, "run verification has not been recorded")
             return _attach(
                 Action("run_unverified", "run-level verification not satisfied",
-                       command=_cmd(["finish-run"]), args=["finish-run"],
+                       command=_cmd(finish_args), args=finish_args,
                        diagnostics=diagnostics),
                 projection,
             )
@@ -881,7 +1096,7 @@ def next_action(
         if not proof_path.exists():
             return _attach(
                 Action("proof_missing", "proof pack not built",
-                       command=_cmd(["finish-run"]), args=["finish-run"]),
+                       command=_cmd(finish_args), args=finish_args),
                 projection,
             )
         findings = verify_proof(root, proof_path, strict=strict)
@@ -896,7 +1111,7 @@ def next_action(
             state = "proof_stale" if stale else "proof_failing"
             return _attach(
                 Action(state, "proof verification failed",
-                       command=_cmd(["finish-run"]), args=["finish-run"],
+                       command=_cmd(finish_args), args=finish_args,
                        diagnostics=[f["message"] for f in errors]),
                 projection,
             )
@@ -906,18 +1121,54 @@ def next_action(
             projection,
         )
 
-    step_id, attempt_id, step = inflight
+    attempt_id = str(selection.attempt_id)
+    step = next(
+        item
+        for item in plan.get("steps", [])
+        if isinstance(item, dict) and item.get("id") == step_id
+    )
+    if selection.kind == "timed_out":
+        # Checked before file receipts: the attempt can never complete.
+        diagnostics = [
+            f"command receipt {receipt.get('id')} timed out after "
+            f"{receipt.get('timeout_seconds')} seconds"
+            for receipt in selection.timed_out
+        ]
+        if selection.close == "block":
+            args = ["block-step", step_id, "--attempt", attempt_id,
+                    "--reason", "gate timed out", *agent_args]
+        elif selection.close == "reclaim":
+            args = ["reclaim-step", step_id, "--agent", str(agent_id),
+                    "--reason", f"timed-out attempt {attempt_id}"]
+        else:
+            args = []
+            diagnostics.append(_timeout_close_diagnostic(
+                attempt_id,
+                {"agent_id": projection["attempt"]["owner"],
+                 "lease_expires_at": projection["lease"]["expires_at"]},
+                projection["lease"]["state"],
+            ))
+        return _attach(
+            Action(
+                "attempt_timed_out",
+                f"attempt {attempt_id} of step {step_id} holds a timed-out command "
+                "receipt and cannot complete",
+                command=_cmd(args) if args else None, args=args, step_id=step_id,
+                diagnostics=diagnostics,
+            ),
+            projection,
+        )
     unrecorded = _scoped_unrecorded_paths(root, plan, step_id, attempt_id)
     if unrecorded:
-        args = ["record-file-change", "--step", step_id, "--path", unrecorded[0]]
-        return _attach(
+        args = ["record-file-change", "--step", step_id, "--path", unrecorded[0], *agent_args]
+        return _attach_inflight(
             Action(
                 "file_receipts_missing",
                 f"step {step_id} has changed scoped files with no receipt",
                 command=_cmd(args), args=args, step_id=step_id,
                 diagnostics=[f"unrecorded: {p}" for p in unrecorded],
             ),
-            projection,
+            projection, agent_id,
         )
     verify_result = verify_step(root, plan, step_id, attempt_id,
                                 strict=strict, record=False)
@@ -927,30 +1178,29 @@ def next_action(
     if step_failed:
         findings = [*verify_result["errors"], *verify_result["warnings"]]
         gate, command = _first_gate_command(step, findings)
-        args = ["run", "--step", step_id, "--gate", gate, "--", *command]
-        return _attach(
+        args = ["run", "--step", step_id, "--gate", gate, *agent_args, "--", *command]
+        return _attach_inflight(
             Action(
                 "validation_missing",
                 f"step {step_id} has an unmet validation gate",
                 command=_cmd(args), args=args, step_id=step_id, gate=gate,
                 diagnostics=[f["message"] for f in findings],
             ),
-            projection,
+            projection, agent_id,
         )
+    args = ["finish-step", step_id, *agent_args, *strict_args]
     if not attempt_is_verified(root, step_id, attempt_id):
-        args = ["finish-step", step_id]
-        return _attach(
+        return _attach_inflight(
             Action("step_unverified",
                    f"step {step_id} validated but not verified",
                    command=_cmd(args), args=args, step_id=step_id),
-            projection,
+            projection, agent_id,
         )
-    args = ["finish-step", step_id]
-    return _attach(
+    return _attach_inflight(
         Action("step_uncompleted",
                f"step {step_id} verified but not completed",
                command=_cmd(args), args=args, step_id=step_id),
-        projection,
+        projection, agent_id,
     )
 
 
@@ -959,6 +1209,7 @@ def finish_step(root: Path, plan: Dict[str, Any], step_id: str,
                 replay: bool = False,
                 agent_id: Optional[str] = None) -> Dict[str, Any]:
     resolved = require_lifecycle_owner(root, step_id, attempt_id, agent_id, action="verify")
+    refuse_timed_out_attempt(root, step_id, resolved)
     result = verify_step(root, plan, step_id, resolved, strict=strict, replay=replay)
     findings = [*result["errors"], *result["warnings"]]
     out: Dict[str, Any] = {

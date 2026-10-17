@@ -792,6 +792,32 @@ def _require_opened_attempt(root: Path, step_id: str, attempt_id: str) -> None:
         )
 
 
+def receipt_timed_out(receipt: Dict[str, Any]) -> bool:
+    return receipt.get("decision") == "timeout" or receipt.get("timed_out") is True
+
+
+def timed_out_receipts(root: Path, step_id: str, attempt_id: str) -> List[Dict[str, Any]]:
+    """Timed-out command receipts of exactly this (step, attempt), in ledger order."""
+    return [
+        receipt
+        for receipt in read_jsonl(root / EXECUTION_ARTIFACT_PATHS["command-receipts"])
+        if receipt.get("step_id") == step_id
+        and receipt.get("attempt_id") == attempt_id
+        and receipt_timed_out(receipt)
+    ]
+
+
+def refuse_timed_out_attempt(root: Path, step_id: str, attempt_id: str) -> None:
+    timed_out = timed_out_receipts(root, step_id, attempt_id)
+    if timed_out:
+        ids = ", ".join(str(receipt.get("id")) for receipt in timed_out)
+        raise RuntimeError(
+            f"attempt {attempt_id} for step {step_id} holds timed-out command receipt {ids} "
+            "and cannot complete; close it (next-action names the command), then rerun the "
+            "gate in the replacement attempt; nothing was recorded"
+        )
+
+
 def complete_step(
     root: Path,
     step_id: str,
@@ -805,6 +831,7 @@ def complete_step(
         _refuse_terminal_attempt(root, step_id, resolved_attempt)
     except ValueError as exc:
         raise RuntimeError(str(exc)) from None  # keeps complete-step's exit 1 for a closed attempt
+    refuse_timed_out_attempt(root, step_id, resolved_attempt)
     if not attempt_is_verified(root, step_id, resolved_attempt):
         raise RuntimeError("verify-step must pass before complete-step")
     _require_owner(root, step_id, resolved_attempt, agent_id, now, action="complete")

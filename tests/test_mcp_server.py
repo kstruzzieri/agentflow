@@ -31,6 +31,7 @@ REQUIRED_TOOLS = {
     "status",
     "audit_drift",
     "reclaim_step",
+    "block_step",
     "renew_lease",
 }
 
@@ -115,6 +116,18 @@ class RegistryTests(unittest.TestCase):
             ],
         )
 
+    def test_block_step_tool_registered_and_builds_argv(self) -> None:
+        tool = m.TOOLS_BY_NAME["block_step"]
+        self.assertEqual(tool.input_schema["required"], ["step", "reason"])
+        self.assertEqual(
+            tool.argv({"step": "P1", "reason": "gate timed out", "root": "."}),
+            ["block-step", "P1", "--reason", "gate timed out", "--json", "--root", "."],
+        )
+        self.assertEqual(
+            tool.argv({"step": "P1", "reason": "r", "attempt": "A1", "agent": "a", "root": "."}),
+            ["block-step", "P1", "--reason", "r", "--json", "--root", ".", "--attempt", "A1", "--agent", "a"],
+        )
+
     def test_renew_lease_tool_registered_and_builds_argv(self) -> None:
         names = {tool["name"] for tool in call("tools/list")["result"]["tools"]}
         self.assertIn("renew_lease", names)
@@ -155,6 +168,7 @@ class RegistryTests(unittest.TestCase):
         names = {tool["name"] for tool in call("tools/list")["result"]["tools"]}
         self.assertNotIn("run", names)
         self.assertNotIn("record_command", names)
+        self.assertNotIn("fail_step", names)
 
     def test_unknown_method_is_method_not_found(self) -> None:
         self.assertEqual(call("bogus")["error"]["code"], -32601)
