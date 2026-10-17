@@ -71,6 +71,9 @@ own review policy (strictness only ever rises, never falls):
 | `spec_quality` | `block` | yes |
 | `deep` | `block` | yes |
 
+A rebuild keeps that floor: `build-proof` joins the floor recorded in the proof
+it replaces (see [Adaptive Review Depth](agent-artifacts.md#adaptive-review-depth)).
+
 The contract's `proof_policy.require_review_run` is OR'd in, so a profile can
 demand a run at any depth. `build-proof` emits a `required_review_satisfied`
 check and records `required_review_depth` in the hash-bound `review.policy`

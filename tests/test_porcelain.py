@@ -1,12 +1,14 @@
 import contextlib
 import io
 import json
+import os
 import subprocess
 import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest import mock
 
+from agentflow.artifacts import append_jsonl
 from agentflow.contracts import (
     COMMAND_RECEIPTS_SCHEMA_VERSION,
     FILE_RECEIPTS_SCHEMA_VERSION,
@@ -1183,6 +1185,77 @@ class TestSupersededTimeout(unittest.TestCase):
             self.assertEqual(result["stopped_at"], "verify-run")
             self.assertTrue(any("timed out" in line for line in result["diagnostics"]))
             self.assertEqual(porcelain.next_action(root, strict=True).state, "run_unverified")
+
+
+class TestPolicyFloorRatchet(unittest.TestCase):
+    """#66: a non-strict finish-run keeps the floor of the proof it replaces."""
+
+    NOTE = ("review policy floor kept from existing proof: "
+            "proof_strict_effective=true, review_gate_effective=block")
+
+    def setUp(self):
+        env = mock.patch.dict(os.environ, {"AGENTFLOW_STRICT": ""})
+        env.start()
+        self.addCleanup(env.stop)
+
+    def _mcp(self, root: Path, tool: str) -> dict:
+        from agentflow import mcp_server
+        return mcp_server.handle_message({
+            "jsonrpc": "2.0", "id": 1, "method": "tools/call",
+            "params": {"name": tool, "arguments": {"root": str(root)}},
+        })["result"]["structuredContent"]
+
+    def test_non_strict_finish_run_stops_at_build_proof_with_the_floor_note(self):
+        with TemporaryDirectory() as d:
+            root = Path(d)
+            _completed_step(root)
+            plan = root / ".agent/plan.lock.json"
+            self.assertEqual(porcelain.finish_run(root, plan, strict=True)["stopped_at"], "build-proof")
+            result = porcelain.finish_run(root, plan)
+            self.assertEqual((result["ok"], result["stopped_at"]), (False, "build-proof"))
+            for line in (self.NOTE, "steps_without_support: warning", "created .agent/proof-pack.json"):
+                self.assertIn(line, result["diagnostics"])
+
+    def test_next_action_reports_stale_then_failing(self):
+        with TemporaryDirectory() as d:
+            root = Path(d)
+            _completed_step(root)
+            plan = root / ".agent/plan.lock.json"
+            porcelain.finish_run(root, plan, strict=True)
+            append_jsonl(root / ".agent/evidence.jsonl",
+                         {"id": "E9", "kind": "command", "claim": "late", "supports": []})
+            self.assertEqual(porcelain.next_action(root).state, "proof_stale")
+            porcelain.finish_run(root, plan)
+            action = porcelain.next_action(root)
+            self.assertEqual(action.state, "proof_failing")
+            self.assertIn("steps_without_support: warning", action.diagnostics)
+
+    def test_publication_failure_is_a_normal_stop_for_finish_run_and_mcp(self):
+        from agentflow import proof as proof_module
+        with TemporaryDirectory() as d:
+            root = Path(d)
+            _completed_step(root)
+            with mock.patch.object(proof_module.os, "replace",
+                                   side_effect=OSError(5, "Input/output error")):
+                result = porcelain.finish_run(root, root / ".agent/plan.lock.json")
+                content = self._mcp(root, "build_proof")
+            self.assertEqual((result["ok"], result["stopped_at"]), (False, "build-proof"))
+            self.assertTrue(any(line.startswith("could not publish proof: ")
+                                for line in result["diagnostics"]))
+            self.assertEqual(content["exit_code"], 1)
+            self.assertIn("could not publish proof: ", content["stderr"])
+            self.assertFalse((root / ".agent/proof-pack.json").exists())
+
+    def test_mcp_finish_run_without_strict_keeps_the_floor(self):
+        with TemporaryDirectory() as d:
+            root = Path(d)
+            _completed_step(root)
+            porcelain.finish_run(root, root / ".agent/plan.lock.json", strict=True)
+            content = self._mcp(root, "finish_run")
+            self.assertEqual(content["exit_code"], 1)
+            self.assertEqual(content["data"]["stopped_at"], "build-proof")
+            proof = json.loads((root / ".agent/proof-pack.json").read_text(encoding="utf-8"))
+            self.assertTrue(proof["review"]["policy"]["proof_strict_effective"])
 
 
 if __name__ == "__main__":

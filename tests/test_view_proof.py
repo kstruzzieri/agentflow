@@ -486,6 +486,26 @@ class ViewProofCliTests(unittest.TestCase):
             report = (root / "reports/out.html").read_text(encoding="utf-8")
             self.assertIn('href="../.agent/receipts/A1/CR1.stdout.txt"', report)
 
+    def test_refuses_an_output_that_aliases_a_proof_file(self) -> None:
+        for name in ("metadata", "symlink", "proof_input"):
+            with self.subTest(name), tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp)
+                _write_fixture(root)
+                metadata = root / ".agent/proof-pack.json"
+                args = ["view-proof", "--html", "--output", ".agent/proof-pack.json"]
+                if name == "symlink":
+                    (root / "report.html").symlink_to(metadata)
+                    args[-1] = "report.html"
+                if name == "proof_input":
+                    (root / "copy.json").write_bytes(metadata.read_bytes())
+                    args = ["view-proof", "--html", "--proof", "copy.json", "--output", "copy.json"]
+                before = {p: p.read_bytes() for p in (metadata, root / "copy.json") if p.exists()}
+                result = run_agentflow(root, *args)
+                self.assertEqual(result.returncode, 2, result.stderr)
+                self.assertIn("error: --output must not overwrite", result.stderr)
+                for path, data in before.items():
+                    self.assertEqual(path.read_bytes(), data)
+
     def test_view_proof_mutates_no_ledgers(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+import io
+import os
 import subprocess
 import unittest
 import json
 import tempfile
+from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
 from unittest.mock import patch
 
@@ -2155,6 +2158,495 @@ class IncompleteRunProofTests(unittest.TestCase):
             proof = build_proof(root, plan_path)
 
             self.assertNotIn("execution", proof)
+
+
+STRICT_FLOOR = {
+    "review_gate_effective": "block", "proof_strict_effective": True,
+    "require_review_run": False, "required_review_depth": None,
+    "verification_semantics": "ratchet-v1",
+}
+DEFAULT_FLOOR = {**STRICT_FLOOR, "review_gate_effective": "warn", "proof_strict_effective": False}
+FLOOR_NOTE = ("review policy floor kept from existing proof: "
+              "proof_strict_effective=true, review_gate_effective=block")
+REFUSAL_TAIL = "build-proof will not replace a proof whose review policy floor it cannot read"
+
+
+class _ProofRootMixin:
+    """#66 fixtures: a one-step root whose P1 is completed, built through the CLI."""
+
+    def setUp(self) -> None:
+        env = patch.dict(os.environ, {"AGENTFLOW_STRICT": ""})
+        env.start()
+        self.addCleanup(env.stop)
+
+    def _root(self, tmp: str, *, supported: bool = False) -> Path:
+        root = Path(tmp)
+        create_initial_artifacts(root)
+        init_execution_artifacts(root)
+        write_json(root / ".agent/plan.lock.json", {
+            **PLAN_CONTRACT_FIELDS, "schema_version": PLAN_SCHEMA_VERSION,
+            "objective": "o", "scope": ["s"], "evidence_ids": [],
+            "steps": [{**STEP_CONTRACT_FIELDS, "id": "P1", "evidence_ids": []}],
+        })
+        _complete_step(root)
+        if supported:  # no steps_without_support warning, so a strict build passes
+            append_jsonl(root / ".agent/evidence.jsonl",
+                         {"id": "E1", "kind": "command", "claim": "P1 gate passed", "supports": ["P1"]})
+        return root
+
+    def _build(self, root: Path, *args: str):
+        from agentflow.cli import main
+        out, err = io.StringIO(), io.StringIO()
+        with redirect_stdout(out), redirect_stderr(err):
+            status = main(["build-proof", "--root", str(root), *args])
+        return status, out.getvalue(), err.getvalue()
+
+    def _proof(self, root: Path) -> dict:
+        return json.loads((root / ".agent/proof-pack.json").read_text(encoding="utf-8"))
+
+    def _edit_proof(self, root: Path, edit) -> None:
+        proof = self._proof(root)
+        edit(proof)
+        (root / ".agent/proof-pack.json").write_text(json.dumps(proof), encoding="utf-8")
+
+    def _proof_policy(self, root: Path, **fields) -> None:
+        path = root / ".agent/execution.contract.json"
+        contract = json.loads(path.read_text(encoding="utf-8"))
+        contract["proof_policy"].update(fields)
+        path.write_text(json.dumps(contract), encoding="utf-8")
+
+    def _files(self, root: Path) -> dict:
+        return {name: (root / ".agent" / name).read_bytes()
+                for name in ("proof-pack.json", "proof-pack.md")}
+
+
+class PolicyFloorProofTests(_ProofRootMixin, unittest.TestCase):
+    """#66: build-proof joins the review.policy floor of the proof it replaces."""
+
+    def test_first_build_records_todays_policy_and_checks(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = self._root(tmp)
+            status, out, _ = self._build(root)
+            self.assertEqual(status, 0)
+            self.assertEqual(self._proof(root)["review"]["policy"], DEFAULT_FLOOR)
+            statuses = {c["id"]: c["status"] for c in self._proof(root)["checks"]}
+            self.assertEqual((statuses["review_gate"], statuses["required_review_satisfied"]),
+                             ("not_run", "passed"))
+            self.assertNotIn("floor kept", out)
+
+    def test_non_strict_rebuild_keeps_a_strict_floor(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = self._root(tmp)
+            self.assertEqual(self._build(root, "--strict")[0], 1)  # steps_without_support warns
+            status, out, _ = self._build(root)
+            self.assertEqual(status, 1)
+            self.assertEqual(self._proof(root)["review"]["policy"], STRICT_FLOOR)
+            self.assertIn(FLOOR_NOTE, out.splitlines())
+            self.assertIn("steps_without_support: warning", out.splitlines())
+            errors = [f["message"] for f in verify_proof(root, root / ".agent/proof-pack.json")
+                      if f["severity"] == "error"]
+            self.assertIn("steps_without_support: warning", errors)
+
+    def test_non_strict_rebuild_passes_when_the_run_meets_the_floor(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = self._root(tmp, supported=True)
+            self.assertEqual(self._build(root, "--strict")[0], 0)
+            status, out, _ = self._build(root)
+            self.assertEqual(status, 0)
+            self.assertEqual(self._proof(root)["review"]["policy"], STRICT_FLOOR)
+            self.assertIn(FLOOR_NOTE, out.splitlines())
+
+    def test_floor_survives_successive_rebuilds(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = self._root(tmp, supported=True)
+            self._build(root, "--strict")
+            for _ in range(2):
+                self.assertEqual(self._build(root)[0], 0)
+                self.assertEqual(self._proof(root)["review"]["policy"], STRICT_FLOOR)
+
+    def test_evidence_only_root_inherits_the_floor(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            create_initial_artifacts(root)
+            complete_initial_plan(root)
+            self._build(root, "--strict")
+            self._build(root)
+            self.assertTrue(self._proof(root)["review"]["policy"]["proof_strict_effective"])
+
+    def test_stale_or_tampered_proof_still_contributes_its_floor(self) -> None:
+        def stale(root):
+            append_jsonl(root / ".agent/evidence.jsonl",
+                         {"id": "E2", "kind": "command", "claim": "later", "supports": ["P1"]})
+
+        def tamper(root):
+            self._edit_proof(root, lambda p: p["checks"].append({"id": "forged", "status": "passed"}))
+
+        for name, change, finding in (
+            ("stale", stale, "hash mismatch for .agent/evidence.jsonl"),
+            ("tampered", tamper, "proof canonical core checksum mismatch"),
+        ):
+            with self.subTest(name), tempfile.TemporaryDirectory() as tmp:
+                root = self._root(tmp, supported=True)
+                self._build(root, "--strict")
+                change(root)
+                self.assertIn(finding, [f["message"] for f in
+                                        verify_proof(root, root / ".agent/proof-pack.json")])
+                self.assertEqual(self._build(root)[0], 0)
+                self.assertEqual(self._proof(root)["review"]["policy"], STRICT_FLOOR)
+
+    def test_a_valid_weaker_policy_lowers_the_floor_to_the_current_build(self) -> None:
+        """Documented limit: root-scoped inheritance has no authenticated lineage."""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = self._root(tmp, supported=True)
+            self._build(root, "--strict")
+            weaker = {**DEFAULT_FLOOR, "review_gate_effective": "ignore"}
+            self._edit_proof(root, lambda p: p["review"].update(policy=weaker))
+            status, out, _ = self._build(root)
+            self.assertEqual(status, 0)
+            self.assertEqual(self._proof(root)["review"]["policy"], DEFAULT_FLOOR)
+            self.assertNotIn("floor kept", out)
+
+    def test_refuses_an_unreadable_or_damaged_existing_proof(self) -> None:
+        metadata = ".agent/proof-pack.json"
+
+        def write(data: bytes):
+            return lambda root: (root / metadata).write_bytes(data)
+
+        def edit(change):
+            return lambda root: self._edit_proof(root, change)
+
+        def directory(root):
+            (root / metadata).unlink()
+            (root / metadata).mkdir()
+
+        def broken_symlink(root):
+            (root / metadata).unlink()
+            (root / metadata).symlink_to(root / ".agent/missing.json")
+
+        unreadable = ".agent/proof-pack.json is unreadable: "
+        cases = {
+            "directory": (directory, unreadable),
+            "broken_symlink": (broken_symlink, unreadable),
+            "invalid_utf8": (write(b"\xff\xfe{"), unreadable),
+            "malformed_json": (write(b"{"), unreadable),
+            "json_array": (write(b"[]"), unreadable),
+            "review_not_object": (edit(lambda p: p.update(review="x")), "review is not an object"),
+            "policy_not_object": (edit(lambda p: p["review"].update(policy="x")),
+                                  "review.policy is not an object"),
+            "malformed_schema": (edit(lambda p: p.update(schema_version="1.0")),
+                                 'schema_version is malformed: "1.0"'),
+            "int_schema": (edit(lambda p: p.update(schema_version=1)),
+                           "schema_version is malformed: 1"),
+            "newer_schema": (edit(lambda p: p.update(schema_version=_next_major(PROOF_PACK_SCHEMA_VERSION))),
+                             f"is a newer schema than supported {PROOF_PACK_SCHEMA_VERSION}; upgrade Agentflow"),
+            "string_strict": (edit(lambda p: p["review"]["policy"].update(proof_strict_effective="true")),
+                              'review.policy.proof_strict_effective is invalid: "true"'),
+            "unknown_gate": (edit(lambda p: p["review"]["policy"].update(review_gate_effective="strict")),
+                             'review.policy.review_gate_effective is invalid: "strict"'),
+            "missing_run": (edit(lambda p: p["review"]["policy"].pop("require_review_run")),
+                            "review.policy.require_review_run is missing"),
+        }
+        for name, (damage, fragment) in cases.items():
+            with self.subTest(name), tempfile.TemporaryDirectory() as tmp:
+                root = self._root(tmp)
+                self._build(root, "--strict")
+                damage(root)
+                path = root / metadata
+                before = path.read_bytes() if path.is_file() else None
+                markdown = (root / ".agent/proof-pack.md").read_bytes()
+                status, _, err = self._build(root)
+                self.assertEqual(status, 1)
+                self.assertIn("invalid working state: existing proof:", err)
+                self.assertIn(fragment, err)
+                self.assertIn(REFUSAL_TAIL, err)
+                self.assertNotIn("delete", err)
+                self.assertEqual((root / ".agent/proof-pack.md").read_bytes(), markdown)
+                if before is not None:
+                    self.assertEqual(path.read_bytes(), before)
+
+    def test_pre_ratchet_shapes_have_no_floor(self) -> None:
+        for name, strip in (("no_review", lambda p: p.pop("review")),
+                            ("no_policy", lambda p: p["review"].pop("policy"))):
+            with self.subTest(name), tempfile.TemporaryDirectory() as tmp:
+                root = self._root(tmp, supported=True)
+                self._build(root, "--strict")
+                self._edit_proof(root, strip)
+                self.assertEqual(self._build(root)[0], 0)
+                self.assertEqual(self._proof(root)["review"]["policy"], DEFAULT_FLOOR)
+
+    def test_absent_or_older_schema_version_still_joins(self) -> None:
+        for name, change in (("absent", lambda p: p.pop("schema_version")),
+                             ("older", lambda p: p.update(schema_version="0.3.0"))):
+            with self.subTest(name), tempfile.TemporaryDirectory() as tmp:
+                root = self._root(tmp, supported=True)
+                self._build(root, "--strict")
+                self._edit_proof(root, change)
+                self.assertEqual(self._build(root)[0], 0)
+                self.assertEqual(self._proof(root)["review"]["policy"], STRICT_FLOOR)
+
+    def test_inheritance_is_root_scoped(self) -> None:
+        deep = {**STRICT_FLOOR, "require_review_run": True, "required_review_depth": "deep"}
+        with self.subTest("deleted"), tempfile.TemporaryDirectory() as tmp:
+            root = self._root(tmp, supported=True)
+            self._build(root, "--strict")
+            (root / ".agent/proof-pack.json").unlink()
+            self._build(root)
+            self.assertEqual(self._proof(root)["review"]["policy"], DEFAULT_FLOOR)
+        with self.subTest("foreign"), tempfile.TemporaryDirectory() as tmp:
+            root = self._root(tmp, supported=True)
+            write_json(root / ".agent/proof-pack.json",
+                       {"schema_version": PROOF_PACK_SCHEMA_VERSION, "review": {"policy": deep}})
+            self.assertEqual(self._build(root)[0], 1)  # required run missing under block
+            self.assertEqual(self._proof(root)["review"]["policy"], deep)
+        with self.subTest("init_force"), tempfile.TemporaryDirectory() as tmp:
+            root = self._root(tmp, supported=True)
+            self._build(root, "--strict")
+            proof, plan = (root / ".agent/proof-pack.json").read_bytes(), \
+                (root / ".agent/plan.lock.json").read_bytes()
+            create_initial_artifacts(root, force=True)
+            self.assertEqual((root / ".agent/proof-pack.json").read_bytes(), proof)
+            (root / ".agent/plan.lock.json").write_bytes(plan)
+            self._build(root)
+            self.assertEqual(self._proof(root)["review"]["policy"], STRICT_FLOOR)
+
+    def test_contract_driven_floors_survive_contract_changes(self) -> None:
+        with self.subTest("strict_by_default"), tempfile.TemporaryDirectory() as tmp:
+            root = self._root(tmp, supported=True)
+            self._proof_policy(root, strict_by_default=True)
+            self.assertEqual(self._build(root)[0], 0)
+            self._proof_policy(root, strict_by_default=False)
+            self._build(root)
+            self.assertEqual(self._proof(root)["review"]["policy"], STRICT_FLOOR)
+        with self.subTest("execution_require_review_run"), tempfile.TemporaryDirectory() as tmp:
+            root = self._root(tmp, supported=True)
+            self._proof_policy(root, require_review_run=True)
+            self._build(root)
+            self._proof_policy(root, require_review_run=False)
+            self._build(root)
+            self.assertTrue(self._proof(root)["review"]["policy"]["require_review_run"])
+        with self.subTest("workflow_deleted"), tempfile.TemporaryDirectory() as tmp:
+            root = self._root(tmp, supported=True)
+            write_workflow_contract(root, valid_workflow_contract())  # spec_quality
+            self._build(root)
+            (root / ".agent/workflow.contract.json").unlink()
+            self.assertEqual(self._build(root)[0], 1)
+            policy = self._proof(root)["review"]["policy"]
+            self.assertEqual((policy["review_gate_effective"], policy["require_review_run"],
+                              policy["required_review_depth"]), ("block", True, "spec_quality"))
+            statuses = {c["id"]: c["status"] for c in self._proof(root)["checks"]}
+            self.assertEqual(statuses["required_review_satisfied"], "failed")
+
+    def test_strictness_from_env_and_contract(self) -> None:
+        with self.subTest("env_then_unset"), tempfile.TemporaryDirectory() as tmp:
+            root = self._root(tmp, supported=True)
+            with patch.dict(os.environ, {"AGENTFLOW_STRICT": "1"}):
+                self._build(root)
+            self._build(root)
+            self.assertEqual(self._proof(root)["review"]["policy"], STRICT_FLOOR)
+        for value in (None, "0", "true"):  # only "1" enables strict mode
+            with self.subTest(env=value), patch.dict(os.environ), \
+                    tempfile.TemporaryDirectory() as tmp:
+                os.environ.pop("AGENTFLOW_STRICT", None)
+                if value is not None:
+                    os.environ["AGENTFLOW_STRICT"] = value
+                root = self._root(tmp)
+                self.assertEqual(self._build(root)[0], 0)
+                self.assertEqual(self._proof(root)["review"]["policy"], DEFAULT_FLOOR)
+        with self.subTest("strict_by_default_without_proof"), tempfile.TemporaryDirectory() as tmp:
+            root = self._root(tmp)
+            self._proof_policy(root, strict_by_default=True)
+            status, out, _ = self._build(root)
+            self.assertEqual(status, 1)  # exited 0 before #66
+            self.assertIn("steps_without_support: warning", out.splitlines())
+            self.assertNotIn("floor kept", out)
+
+    def test_a_stricter_current_build_is_kept(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = self._root(tmp, supported=True)
+            self._build(root)
+            status, out, _ = self._build(root, "--strict")
+            self.assertEqual(status, 0)
+            self.assertEqual(self._proof(root)["review"]["policy"], STRICT_FLOOR)
+            self.assertNotIn("floor kept", out)
+
+    def test_existing_refusals_take_precedence_and_keep_both_files(self) -> None:
+        from agentflow import proof as proof_module
+        from agentflow.execution import amend_step
+
+        with self.subTest("incomplete_run"), tempfile.TemporaryDirectory() as tmp:
+            root = self._root(tmp)
+            plan = json.loads((root / ".agent/plan.lock.json").read_text(encoding="utf-8"))
+            amend_step(root, plan, "P1", "agent-b", "reopen")  # P1 now has an open attempt
+            (root / ".agent/proof-pack.json").write_text("{", encoding="utf-8")
+            before = self._files(root)
+            status, _, err = self._build(root)
+            self.assertEqual(status, 1)
+            self.assertIn("invalid working state: execution ledger:", err)
+            self.assertNotIn("existing proof", err)
+            self.assertEqual(self._files(root), before)
+        with self.subTest("snapshot_guard"), tempfile.TemporaryDirectory() as tmp:
+            root = self._root(tmp)
+            self._build(root, "--strict")
+            plan = json.loads((root / ".agent/plan.lock.json").read_text(encoding="utf-8"))
+            before = self._files(root)
+            original = proof_module.build_coverage
+
+            def amend_during_build(*args, **kwargs):
+                amend_step(root, plan, "P1", "agent-b", "concurrent review fix")
+                return original(*args, **kwargs)
+
+            with patch.object(proof_module, "build_coverage", side_effect=amend_during_build):
+                status, _, err = self._build(root)
+            self.assertEqual(status, 1)
+            self.assertIn("step ledger changed during proof construction", err)
+            self.assertEqual(self._files(root), before)
+
+
+class ProofPublicationTests(_ProofRootMixin, unittest.TestCase):
+    """#66: build-proof serializes on a lock and publishes atomically."""
+
+    def _temp_files(self, root: Path) -> list:
+        return sorted(p.name for p in (root / ".agent").iterdir() if p.name.endswith(".tmp"))
+
+    def _race(self, root: Path, first_policy: dict, *second_args: str, status: int = 0) -> dict:
+        """Hold the lock, start a second builder, publish first_policy, release.
+
+        The second builder must finish and exit with ``status``.
+        """
+        import threading
+        from agentflow.locks import file_lock
+        from agentflow.proof import proof_build_lock_path
+
+        statuses = []
+        second = threading.Thread(target=lambda: statuses.append(self._build(root, *second_args)[0]))
+        with file_lock(proof_build_lock_path(root)):
+            second.start()
+            second.join(timeout=0.5)
+            self.assertTrue(second.is_alive(), "second builder did not wait for the lock")
+            write_proof_metadata(root, build_proof(root, root / ".agent/plan.lock.json"))
+            self._edit_proof(root, lambda p: p["review"].update(policy=first_policy))
+        second.join(timeout=30)
+        self.assertFalse(second.is_alive())
+        self.assertEqual(statuses, [status])
+        return self._proof(root)["review"]["policy"]
+
+    def test_concurrent_builders_serialize_on_the_proof_build_lock(self) -> None:
+        with self.subTest("weaker_writer_publishes_last"), tempfile.TemporaryDirectory() as tmp:
+            root = self._root(tmp, supported=True)
+            self.assertEqual(self._race(root, STRICT_FLOOR), STRICT_FLOOR)
+        with self.subTest("incomparable_floors"), tempfile.TemporaryDirectory() as tmp:
+            root = self._root(tmp, supported=True)
+            run_floor = {**DEFAULT_FLOOR, "require_review_run": True}
+            # Exits 1: the kept require_review_run floor has no review run to satisfy it.
+            self.assertEqual(self._race(root, run_floor, "--strict", status=1),
+                             {**STRICT_FLOOR, "require_review_run": True})
+
+    def test_publication_failures_exit_1_and_keep_the_prior_proof(self) -> None:
+        import contextlib
+        from agentflow import cli as cli_module, proof as proof_module
+
+        @contextlib.contextmanager
+        def denied_lock(path):
+            raise PermissionError(13, "Permission denied", str(path))
+            yield  # pragma: no cover
+
+        real_replace = os.replace  # patching proof_module.os.replace patches os.replace itself
+        replaced = []
+
+        def fail_second_replace(src, dst):
+            replaced.append(Path(dst).name)
+            if len(replaced) == 2:
+                raise OSError(5, "Input/output error")
+            return real_replace(src, dst)
+
+        failures = {
+            "lock": lambda: patch.object(cli_module, "file_lock", denied_lock),
+            "stage": lambda: patch.object(proof_module.tempfile, "mkstemp",
+                                          side_effect=OSError(28, "No space left on device")),
+            "replace": lambda: patch.object(proof_module.os, "replace",
+                                            side_effect=OSError(5, "Input/output error")),
+            "replace_json": lambda: patch.object(proof_module.os, "replace",
+                                                 side_effect=fail_second_replace),
+        }
+        for name, failure in failures.items():
+            with self.subTest(name), tempfile.TemporaryDirectory() as tmp:
+                root = self._root(tmp, supported=True)
+                self._build(root, "--strict")
+                before = self._files(root)
+                replaced.clear()
+                with failure():
+                    status, _, err = self._build(root)
+                self.assertEqual(status, 1)
+                self.assertIn("could not publish proof: ", err)
+                self.assertEqual(self._files(root)["proof-pack.json"], before["proof-pack.json"])
+                self.assertEqual(self._temp_files(root), [])
+                if name == "replace_json":  # Markdown first, then the JSON that fails
+                    self.assertEqual(replaced, ["proof-pack.md", "proof-pack.json"])
+
+    def test_unexpected_error_mid_publication_cleans_up(self) -> None:
+        from agentflow import proof as proof_module
+        with tempfile.TemporaryDirectory() as tmp:
+            root = self._root(tmp, supported=True)
+            self._build(root, "--strict")
+            before = self._files(root)
+            with patch.object(proof_module.os, "replace", side_effect=RuntimeError("boom")):
+                with self.assertRaises(RuntimeError):
+                    self._build(root)
+            self.assertEqual(self._files(root), before)
+            self.assertEqual(self._temp_files(root), [])
+
+    def test_published_files_keep_the_umask_default_mode(self) -> None:
+        umask = os.umask(0)
+        os.umask(umask)
+        default = 0o666 & ~umask
+        mode = lambda path: path.stat().st_mode & 0o777
+        with tempfile.TemporaryDirectory() as tmp:
+            root = self._root(tmp, supported=True)
+            (root / ".agent/proof-pack.json").unlink(missing_ok=True)
+            self._build(root, "--output", "reports/new/proof.md")
+            self.assertEqual(mode(root / ".agent/proof-pack.json"), default)
+            self.assertEqual(mode(root / "reports/new/proof.md"), default)
+            # Like the old in-place write, a rebuild keeps an existing file's mode.
+            (root / ".agent/proof-pack.json").chmod(0o640)
+            self._build(root, "--output", "reports/new/proof.md")
+            self.assertEqual(mode(root / ".agent/proof-pack.json"), 0o640)
+
+    def test_a_filesystem_that_rejects_chmod_still_publishes(self) -> None:
+        from agentflow import proof as proof_module
+        with tempfile.TemporaryDirectory() as tmp:
+            root = self._root(tmp, supported=True)
+            with patch.object(proof_module.os, "chmod",
+                              side_effect=PermissionError(1, "Operation not permitted")):
+                status, _, err = self._build(root)
+            self.assertEqual(status, 0, err)
+            self.assertEqual(self._proof(root)["schema_version"], PROOF_PACK_SCHEMA_VERSION)
+            self.assertEqual(self._temp_files(root), [])
+
+    def test_markdown_output_in_a_new_directory_publishes(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = self._root(tmp, supported=True)
+            status, _, _ = self._build(root, "--output", "reports/new/proof.md")
+            self.assertEqual(status, 0)
+            self.assertTrue((root / "reports/new/proof.md").is_file())
+            self.assertEqual(sorted(p.name for p in (root / "reports/new").iterdir()), ["proof.md"])
+            self.assertEqual(self._temp_files(root), [])
+
+    def test_build_proof_refuses_an_output_aliasing_the_metadata(self) -> None:
+        for name in ("relative", "absolute", "symlink", "hardlink"):
+            with self.subTest(name), tempfile.TemporaryDirectory() as tmp:
+                root = self._root(tmp, supported=True)
+                self._build(root)
+                metadata = root / ".agent/proof-pack.json"
+                output = {"relative": ".agent/proof-pack.json", "absolute": str(metadata)}.get(name, "report.md")
+                if name == "symlink":
+                    (root / "report.md").symlink_to(metadata)
+                if name == "hardlink":
+                    os.link(metadata, root / "report.md")
+                before = self._files(root)
+                status, _, err = self._build(root, "--output", output)
+                self.assertEqual(status, 2)
+                self.assertIn("error: --output must not overwrite .agent/proof-pack.json", err)
+                self.assertEqual(self._files(root), before)
 
 
 class ReviewEvidenceExemptionTests(unittest.TestCase):

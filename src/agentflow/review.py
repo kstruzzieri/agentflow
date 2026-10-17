@@ -16,6 +16,7 @@ from typing import Any, Dict, List, Optional
 
 from .artifacts import append_jsonl, plan_binding_sha256, read_jsonl, try_read_json, utc_now
 from .contracts import (
+    REVIEW_DEPTH_ORDER,
     REVIEW_DEPTH_POLICY,
     REVIEW_GATE_POLICIES,
     REVIEW_RUNS_SCHEMA_VERSION,
@@ -692,6 +693,63 @@ def build_time_review_policy(root: Path, strict: bool = False) -> Dict[str, Any]
         "required_review_depth": policy["required_review_depth"],
         "verification_semantics": REVIEW_VERIFICATION_SEMANTICS,
     }
+
+
+def validate_recorded_review_policy(policy: Dict[str, Any]) -> List[str]:
+    """Errors for a recorded ``review.policy`` that cannot serve as a floor (#66).
+
+    Checks the five known fields in order, one message per field; extra keys are
+    ignored and a missing ``required_review_depth`` (pre-#74 proof) is valid.
+    """
+    errors: List[str] = []
+
+    def _check(field: str, valid: Any, required: bool = True) -> None:
+        if field not in policy:
+            if required:
+                errors.append(f"review.policy.{field} is missing")
+        elif not valid(policy[field]):
+            errors.append(f"review.policy.{field} is invalid: {json.dumps(policy[field])}")
+
+    _check("review_gate_effective",
+           lambda v: isinstance(v, str) and v in REVIEW_GATE_POLICIES)
+    _check("proof_strict_effective", lambda v: type(v) is bool)
+    _check("require_review_run", lambda v: type(v) is bool)
+    _check("required_review_depth",
+           lambda v: v is None or (isinstance(v, str) and v in REVIEW_DEPTH_ORDER),
+           required=False)
+    _check("verification_semantics", lambda v: v == REVIEW_VERIFICATION_SEMANTICS)
+    return errors
+
+
+def join_review_policy(current: Dict[str, Any], floor: Dict[str, Any]) -> Dict[str, Any]:
+    """Join the current build's policy with a validated recorded ``floor`` (#66).
+
+    The stricter value wins per field: gate over ignore<warn<block, strict and
+    run requirement OR'd, depth by ``REVIEW_DEPTH_ORDER`` (``None`` below every
+    depth). Strict then promotes ``warn`` to ``block``, as at build time.
+    """
+    depths = [d for d in (current.get("required_review_depth"),
+                          floor.get("required_review_depth")) if d is not None]
+    strict = bool(current["proof_strict_effective"] or floor["proof_strict_effective"])
+    gate = join_review_gate(current["review_gate_effective"], floor["review_gate_effective"])
+    return {
+        "review_gate_effective": "block" if strict and gate == "warn" else gate,
+        "proof_strict_effective": strict,
+        "require_review_run": bool(current["require_review_run"] or floor["require_review_run"]),
+        "required_review_depth": max(depths, key=review_depth_rank) if depths else None,
+        "verification_semantics": REVIEW_VERIFICATION_SEMANTICS,
+    }
+
+
+def raised_review_fields(current: Dict[str, Any], joined: Dict[str, Any]) -> List[str]:
+    """``k=v`` items for the floor note: fields the floor raised above ``current``."""
+    fields = ("proof_strict_effective", "review_gate_effective",
+              "require_review_run", "required_review_depth")
+    return [
+        f"{field}={json.dumps(joined[field]) if isinstance(joined[field], bool) else joined[field]}"
+        for field in fields
+        if joined[field] != current.get(field)
+    ]
 
 
 def review_checks(
