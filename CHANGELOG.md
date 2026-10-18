@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- MCP `block_step` tool, so an MCP-only adapter can take the `block` recovery
+  action. (#70)
+
 ### Changed
 
 - `scripts/check_schema_soak.py` no longer freezes source, tests and workflows
@@ -24,6 +29,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   warning as advisory. Every other retained timeout still fails the run,
   including one inside the attempt that completed. The proof still counts
   superseded timeouts in `execution.command_timed_out`. (#60)
+- With `--agent`, `next-action`'s in-flight states (`file_receipts_missing`,
+  `validation_missing`, `step_unverified`, `step_uncompleted`) omit
+  `command`/`args` and add the `continue` denial reason to `diagnostics` when
+  the `continue` recovery action is denied (a foreign caller, or an expired
+  lease under `lease_policy: enforce`). `docs/cli-contract.json` moves to
+  `schema_version` 1.1.0 and gains a `value_sets` section listing the
+  `next-action` states and recovery actions. Minor releases may add values to
+  those sets, and consumers must treat an unknown value as not actionable (fail
+  closed). Explicit agent identities, including literal `$USER`, are shell-quoted
+  in printed commands; only an omitted identity uses the expanding default
+  `$USER` placeholder. Leading-hyphen identities use `--agent=<value>` in
+  generated commands and MCP adapters so argparse preserves them. (#70)
 
 ### Fixed
 
@@ -59,6 +76,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   recorded on a step that never completed no longer satisfies the Stop hook
   (`docs/stop-hook.md`), and new proofs always carry empty
   `coverage.expired_leases` and `coverage.no_deadline_open_attempts`. (#58)
+- `complete-step` and `finish-step` refuse an attempt that holds a timed-out
+  command receipt (exit 1, nothing written). Both also refuse while a command
+  is running; a shared attempt lock covers command startup through receipt
+  append and verification through completion. `block-step`, `fail-step`, and
+  `reclaim-step` also refuse active commands, so recovery cannot strand the run
+  with a receipt written after its attempt closed. `next-action` reports
+  `attempt_timed_out` with a close the caller may take (`block-step`, or
+  `reclaim-step` after lease expiry). It reports `step_amendment_needed` with
+  `amend-step` when a completed step needs a replacement attempt: an
+  unsuperseded recoverable timeout, a failed latest attempt, or strict
+  incompletion. Previously it led to completing the timed-out attempt
+  (permanently unprovable) or looped on `finish-run`. `resumability`
+  `recovery_actions` gains `block` and `amend`. Generated commands use the
+  `--agent` passed to `next-action` and keep `--strict`. Runs already holding
+  a completed timed-out attempt stay unrecoverable; archive `.agent/` and
+  start a new run. (#70)
 - `build-proof`, and so `finish-run`, no longer drops the review policy floor
   recorded in the proof it replaces. A rebuild joins the existing
   `.agent/proof-pack.json` `review.policy` (gate, strictness, required run and

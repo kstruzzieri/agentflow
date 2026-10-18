@@ -293,10 +293,13 @@ agentflow verify-proof
   `timed_out: true`, `timeout_seconds`, and `exit_code: null`. A timed-out
   receipt fails `verify-run` until its attempt is closed (`block-step`,
   `fail-step` or `reclaim-step`) and a later attempt of the step opens and
-  completes; see [Timeout outcomes](command-risk.md#timeout-outcomes). Do not
-  complete the timed-out attempt itself: no later attempt can then supersede
-  its timeout. Use `--gate` with the matching legacy `step.validation` entry
-  unless the step uses structured command gates.
+  completes; see [Timeout outcomes](command-risk.md#timeout-outcomes).
+  `complete-step` and `finish-step` refuse the timed-out attempt itself
+  (exit 1); `next-action` reports `attempt_timed_out` with the allowed close.
+  After `block-step` the next state is `step_unclaimed` or
+  `step_amendment_needed`; `reclaim-step` already opens the replacement
+  attempt, so continue it. Use `--gate` with the matching legacy
+  `step.validation` entry unless the step uses structured command gates.
 - `record-file-change` maps each edited path back to the claimed step and
   captures per-hunk fingerprints (sha256 of changed lines, span-independent).
   Out-of-band edits inside an allowed file that are not re-recorded fail drift
@@ -347,7 +350,9 @@ agentflow complete-step P1
 (`amends_attempt`); it is the only sanctioned post-completion attempt opener. The
 amendment is gated by `verify-step` like any attempt and is surfaced in
 `build-proof` and `verify-run`. `reason_code` is one of `review_feedback`,
-`validation_followup`, `operator_correction`, or `other`.
+`validation_followup`, `operator_correction`, or `other`. When a completed step
+needs a replacement attempt, `next-action` reports `step_amendment_needed`
+and recommends `amend-step`.
 
 ## Porcelain shortcuts
 
@@ -359,16 +364,17 @@ semantics.
 
 - `next-action` is read-only. It inspects the current `.agent/` state and reports
   the single next required action across the ordered loop states (uninitialized,
-  plan unlocked, execution uninitialized, step unclaimed, missing file receipts,
-  missing validation, unverified step, uncompleted step, failing drift,
-  unverified run, missing/stale/failing proof, complete). It prints a copy-paste
-  `agentflow ...` command; `--json` emits the same as a parseable object.
+  plan unlocked, execution uninitialized, step unclaimed, step amendment needed,
+  timed-out attempt, missing file receipts, missing validation, unverified step,
+  uncompleted step, failing drift, unverified run, missing/stale/failing proof,
+  complete). It prints a copy-paste `agentflow ...` command; `--json` emits the
+  same as a parseable object.
   The additive `resumability` object reports locked contract hashes, the
   actionable step and open attempt, owner and evaluated lease state,
   attempt-scoped receipts and gates, structured diagnostics, and the
-  `claim`/`continue`/`renew`/`reclaim`/break-glass `fail` actions allowed for
-  `--agent` (or `AGENTFLOW_AGENT_ID`). Break-glass failure is always marked
-  `automatic: false`.
+  `claim`/`continue`/`renew`/`reclaim`/`block`/`amend`/break-glass `fail`
+  actions allowed for `--agent` (or `AGENTFLOW_AGENT_ID`). Break-glass failure
+  is always marked `automatic: false`.
   `next-action` is advisory and always exits zero (reporting a blocking state is
   still a successful report); `--strict` only promotes warnings to failures when
   classifying which state to report.

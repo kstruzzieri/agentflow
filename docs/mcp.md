@@ -30,6 +30,7 @@ its `dependencies = []` invariant.
 | `claim_step` | `claim-step` | Claim a plan step (`step`, `agent`) |
 | `amend_step` | `amend-step` | Open an auditable amendment on a completed step (`step`, `agent`, `reason`, optional `reason_code`, optional `finding_refs` array of `RR-...#ID` strings) |
 | `reclaim_step` | `reclaim-step` | Abandon an expired attempt and open a fresh claim |
+| `block_step` | `block-step` | Close an open attempt as blocked (`step`, `reason`, optional `attempt`, `agent`) |
 | `renew_lease` | `renew-lease` | Extend the current owner's step lease |
 | `record_review` | `record-review` | Record a review run from its manifest into the review-runs ledger (`manifest` required, optional `emit_evidence`) |
 | `complete_step` | `complete-step` | Complete a verified step attempt |
@@ -53,6 +54,9 @@ categorically non-executing surface: `verify_step`, `verify_proof`, and
 present under the client-selected root with the server process's permissions.
 Treat every selected root and its attested receipt ledger as executable input,
 and do not allow an untrusted client to select or replay it.
+
+`fail-step` is also not exposed: it is a deliberately CLI-only break-glass
+operator action, and an MCP adapter closes an attempt with `block_step`.
 
 The HTTP transport:
 
@@ -106,7 +110,7 @@ printf '%s\n%s\n' \
 ```
 
 Expected: an `initialize` result with `serverInfo.name == "agentflow"` followed by
-a `tools/list` result enumerating the seventeen tools above.
+a `tools/list` result enumerating the eighteen tools above.
 
 ## Recording other MCP servers as evidence (#19)
 

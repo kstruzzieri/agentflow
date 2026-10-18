@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import shutil
+from contextlib import ExitStack, contextmanager
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, Iterator, List, Optional, Tuple
 
 from .artifacts import append_jsonl, dumps_json, read_json, read_jsonl, utc_now
 from .contracts import (
@@ -688,19 +690,20 @@ def reclaim_step(
                 f"attempt {old_id} still leased to {old.get('agent_id')} "
                 f"until {old.get('lease_expires_at')}; wait or coordinate"
             )
-        minutes = _lease_minutes_or_default(lease_minutes, lease_ttl_minutes(root))
-        new_id = _next_attempt_id(read_step_events(root))
-        _append_step_event(root, {
-            "event": "abandoned", "step_id": step_id, "attempt_id": old_id,
-            "abandoned_by": agent_id, "reason": reason, "superseded_by": new_id,
-        })
-        recorded = _append_step_event(root, {
-            "event": "claimed", "step_id": step_id, "attempt_id": new_id,
-            "agent_id": agent_id, "lease_expires_at": _utc_plus_minutes(minutes, now),
-        })
-        pointer = _attempt_pointer(root, step_id)
-        pointer.parent.mkdir(parents=True, exist_ok=True)
-        pointer.write_text(f"{new_id}\n", encoding="utf-8")
+        with completion_lock(root, old_id, action="reclaiming"):
+            minutes = _lease_minutes_or_default(lease_minutes, lease_ttl_minutes(root))
+            new_id = _next_attempt_id(read_step_events(root))
+            _append_step_event(root, {
+                "event": "abandoned", "step_id": step_id, "attempt_id": old_id,
+                "abandoned_by": agent_id, "reason": reason, "superseded_by": new_id,
+            })
+            recorded = _append_step_event(root, {
+                "event": "claimed", "step_id": step_id, "attempt_id": new_id,
+                "agent_id": agent_id, "lease_expires_at": _utc_plus_minutes(minutes, now),
+            })
+            pointer = _attempt_pointer(root, step_id)
+            pointer.parent.mkdir(parents=True, exist_ok=True)
+            pointer.write_text(f"{new_id}\n", encoding="utf-8")
     return recorded
 
 
@@ -711,9 +714,13 @@ def _close_step(
     event_kind: str,
     reason: Optional[str] = None,
     extra: Optional[Dict[str, Any]] = None,
+    command_action: Optional[str] = None,
 ) -> Dict[str, Any]:
-    with file_lock(_step_runs_lock_path(root)):
+    with file_lock(_step_runs_lock_path(root)), ExitStack() as stack:
         resolved_attempt = resolve_attempt(root, step_id, attempt_id)
+        if command_action is not None:
+            _refuse_terminal_attempt(root, step_id, resolved_attempt)
+            stack.enter_context(completion_lock(root, resolved_attempt, action=command_action))
         event: Dict[str, Any] = {
             "event": event_kind,
             "step_id": step_id,
@@ -792,6 +799,54 @@ def _require_opened_attempt(root: Path, step_id: str, attempt_id: str) -> None:
         )
 
 
+def receipt_timed_out(receipt: Dict[str, Any]) -> bool:
+    return receipt.get("decision") == "timeout" or receipt.get("timed_out") is True
+
+
+def timed_out_receipts(root: Path, step_id: str, attempt_id: str) -> List[Dict[str, Any]]:
+    """Timed-out command receipts of exactly this (step, attempt), in ledger order."""
+    return [
+        receipt
+        for receipt in read_jsonl(root / EXECUTION_ARTIFACT_PATHS["command-receipts"])
+        if receipt.get("step_id") == step_id
+        and receipt.get("attempt_id") == attempt_id
+        and receipt_timed_out(receipt)
+    ]
+
+
+def refuse_timed_out_attempt(root: Path, step_id: str, attempt_id: str) -> None:
+    timed_out = timed_out_receipts(root, step_id, attempt_id)
+    if timed_out:
+        ids = ", ".join(str(receipt.get("id")) for receipt in timed_out)
+        raise RuntimeError(
+            f"attempt {attempt_id} for step {step_id} holds timed-out command receipt {ids} "
+            "and cannot complete; close it (next-action names the command), then rerun the "
+            "gate in the replacement attempt; nothing was recorded"
+        )
+
+
+def attempt_command_lock_path(root: Path, attempt_id: str) -> Path:
+    # Hash ledger-provided ids so lock names cannot escape the attempts directory.
+    key = hashlib.sha256(attempt_id.encode("utf-8")).hexdigest()
+    return root / ".agent/attempts" / f"{key}.command.lockfile"
+
+
+@contextmanager
+def completion_lock(
+    root: Path, attempt_id: str, *, action: str = "completing"
+) -> Iterator[None]:
+    """Exclude commands through a terminal transition, without waiting."""
+    with ExitStack() as stack:
+        try:
+            stack.enter_context(file_lock(attempt_command_lock_path(root, attempt_id), blocking=False))
+        except BlockingIOError:
+            raise RuntimeError(
+                f"a command is still running for attempt {attempt_id}; "
+                f"wait for its receipt before {action}; nothing was recorded"
+            ) from None
+        yield
+
+
 def complete_step(
     root: Path,
     step_id: str,
@@ -799,12 +854,26 @@ def complete_step(
     agent_id: Optional[str] = None,
     now: Optional[datetime] = None,
 ) -> Dict[str, Any]:
+    resolved = resolve_attempt(root, step_id, attempt_id)
+    with completion_lock(root, resolved):
+        return _complete_step(root, step_id, resolved, agent_id, now)
+
+
+def _complete_step(
+    root: Path,
+    step_id: str,
+    attempt_id: Optional[str],
+    agent_id: Optional[str] = None,
+    now: Optional[datetime] = None,
+) -> Dict[str, Any]:
+    # Caller holds completion_lock through the timeout check and terminal append.
     resolved_attempt = resolve_attempt(root, step_id, attempt_id)
     _require_opened_attempt(root, step_id, resolved_attempt)
     try:
         _refuse_terminal_attempt(root, step_id, resolved_attempt)
     except ValueError as exc:
         raise RuntimeError(str(exc)) from None  # keeps complete-step's exit 1 for a closed attempt
+    refuse_timed_out_attempt(root, step_id, resolved_attempt)
     if not attempt_is_verified(root, step_id, resolved_attempt):
         raise RuntimeError("verify-step must pass before complete-step")
     _require_owner(root, step_id, resolved_attempt, agent_id, now, action="complete")
@@ -823,7 +892,7 @@ def block_step(
     _require_opened_attempt(root, step_id, resolved_attempt)
     _refuse_terminal_attempt(root, step_id, resolved_attempt)
     _require_owner(root, step_id, resolved_attempt, agent_id, now, action="block")
-    return _close_step(root, step_id, resolved_attempt, "blocked", reason)
+    return _close_step(root, step_id, resolved_attempt, "blocked", reason, command_action="blocking")
 
 
 def fail_step(
@@ -835,7 +904,8 @@ def fail_step(
 ) -> Dict[str, Any]:
     # Break-glass path: no owner enforcement. Records who forced the failure.
     extra = {"failed_by": agent_id} if agent_id else None
-    return _close_step(root, step_id, attempt_id, "failed", reason, extra=extra)
+    return _close_step(root, step_id, attempt_id, "failed", reason,
+                       extra=extra, command_action="failing")
 
 
 def mark_step_verified(

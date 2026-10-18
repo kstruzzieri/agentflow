@@ -4,19 +4,21 @@ from __future__ import annotations
 
 from datetime import date, datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, NamedTuple, Optional, Tuple
 
 from .artifacts import append_jsonl, read_jsonl, try_read_json, utc_now
 from .contracts import TRUSTED_PROVENANCE_VALUES, VERIFICATION_RUNS_SCHEMA_VERSION
 from .execution import (
     ATTEMPT_OPENING_EVENTS,
     LEASE_EVENTS,
+    OPEN_EVENTS,
     TERMINAL_EVENTS,
     attempt_is_expired,
     lease_grace_seconds,
     lease_policy,
     read_step_events,
     read_step_state,
+    receipt_timed_out,
     resolve_attempt,
 )
 from .git import changed_file_records
@@ -111,10 +113,6 @@ def _add_finding(target: Dict[str, List[Dict[str, str]]], severity: str, message
     target["errors" if severity == "error" else "warnings"].append(
         {"severity": severity, "message": message}
     )
-
-
-def _receipt_timed_out(receipt: Dict[str, Any]) -> bool:
-    return receipt.get("decision") == "timeout" or receipt.get("timed_out") is True
 
 
 def _timeout_message(gate: str, receipt: Dict[str, Any]) -> str:
@@ -234,7 +232,7 @@ def verify_step(
                 )
                 continue
             gate_result["receipt_id"] = receipt.get("id")
-            if _receipt_timed_out(receipt):
+            if receipt_timed_out(receipt):
                 gate_result["status"] = "failed"
                 _add_finding(result, "error", _timeout_message(gate["gate"], receipt))
             elif receipt.get("exit_code") != 0:
@@ -256,7 +254,7 @@ def verify_step(
             receipt = receipt_by_gate.get(gate["gate"])
             if receipt:
                 gate_result["receipt_id"] = receipt.get("id")
-                if _receipt_timed_out(receipt):
+                if receipt_timed_out(receipt):
                     gate_result["status"] = "failed"
                     _add_finding(result, "error", _timeout_message(gate["gate"], receipt))
                 elif receipt.get("exit_code") != 0:
@@ -534,19 +532,18 @@ def _terminal_attempt_violations(root: Path) -> List[Dict[str, str]]:
 _SUPERSEDABLE_STATUSES = {"blocked", "failed", "abandoned"}
 
 
-def _superseding_attempt(
-    events: List[Dict[str, Any]], receipt: Dict[str, Any]
-) -> Optional[str]:
-    """#60: the completed attempt that replaced a timed-out receipt's attempt.
+class _LedgerAttempts(NamedTuple):
+    owner: Dict[str, str]  # attempt id -> step id, by first appearance
+    inconsistent: set  # attempt ids with mixed steps or duplicate terminals
+    opened_at: Dict[str, int]  # insertion order == first-opened ledger order
+    last_index: Dict[str, int]  # latest non-lease event per attempt
+    last_kind: Dict[str, Any]
 
-    Judged on ledger order alone. Attempt ids are compared only for equality,
-    never ordered, because aggregation renames them (WT<sid>- prefixes).
-    """
-    step_id, attempt_id = receipt.get("step_id"), receipt.get("attempt_id")
-    if not isinstance(step_id, str) or not isinstance(attempt_id, str):
-        return None
+
+def _ledger_attempts(events: List[Dict[str, Any]]) -> _LedgerAttempts:
+    """One ledger scan shared by supersession and receipt classification."""
     owner: Dict[str, str] = {}
-    inconsistent_attempts = set()
+    inconsistent = set()
     closed_attempts = set()
     opened_at: Dict[str, int] = {}
     last_index: Dict[str, int] = {}
@@ -556,32 +553,93 @@ def _superseding_attempt(
         if not isinstance(aid, str) or not isinstance(sid, str):
             continue
         if owner.setdefault(aid, sid) != sid:
-            inconsistent_attempts.add(aid)
+            inconsistent.add(aid)
         if kind in TERMINAL_EVENTS:
             if aid in closed_attempts:
-                inconsistent_attempts.add(aid)
+                inconsistent.add(aid)
             closed_attempts.add(aid)
         if kind in ATTEMPT_OPENING_EVENTS:
             opened_at.setdefault(aid, index)
         if kind not in LEASE_EVENTS:
             last_index[aid], last_kind[aid] = index, kind
+    return _LedgerAttempts(owner, inconsistent, opened_at, last_index, last_kind)
+
+
+def _superseding_attempt(
+    attempts: _LedgerAttempts, receipt: Dict[str, Any]
+) -> Optional[str]:
+    """#60: the completed attempt that replaced a timed-out receipt's attempt.
+
+    Judged on ledger order alone. Attempt ids are compared only for equality,
+    never ordered, because aggregation renames them (WT<sid>- prefixes).
+    """
+    step_id, attempt_id = receipt.get("step_id"), receipt.get("attempt_id")
+    if not isinstance(step_id, str) or not isinstance(attempt_id, str):
+        return None
     if (
-        attempt_id in inconsistent_attempts
-        or owner.get(attempt_id) != step_id
-        or last_kind.get(attempt_id) not in _SUPERSEDABLE_STATUSES
+        attempt_id in attempts.inconsistent
+        or attempts.owner.get(attempt_id) != step_id
+        or attempts.last_kind.get(attempt_id) not in _SUPERSEDABLE_STATUSES
     ):
         return None
-    closed_at = last_index[attempt_id]
-    for aid, index in opened_at.items():  # insertion order == first-opened ledger order
+    closed_at = attempts.last_index[attempt_id]
+    for aid, index in attempts.opened_at.items():
         if (
             aid != attempt_id
-            and aid not in inconsistent_attempts
-            and owner[aid] == step_id
+            and aid not in attempts.inconsistent
+            and attempts.owner[aid] == step_id
             and index > closed_at
-            and last_kind.get(aid) == "completed"
+            and attempts.last_kind.get(aid) == "completed"
         ):
             return aid
     return None
+
+
+def _classify_timeout_receipt(
+    attempts: _LedgerAttempts, receipt: Dict[str, Any], step_ids: set
+) -> Tuple[str, Optional[str]]:
+    step_id, attempt_id = receipt.get("step_id"), receipt.get("attempt_id")
+    if not isinstance(step_id, str) or step_id not in step_ids:
+        return "unrecoverable", None
+    superseded_by = _superseding_attempt(attempts, receipt)
+    if superseded_by is not None:
+        return "superseded", superseded_by
+    if (
+        not isinstance(attempt_id, str)
+        or attempts.owner.get(attempt_id) != step_id
+        or attempt_id in attempts.inconsistent
+    ):
+        return "unrecoverable", None
+    kind = attempts.last_kind.get(attempt_id)
+    if kind in OPEN_EVENTS:
+        return "open", None
+    if kind in _SUPERSEDABLE_STATUSES:
+        return "recoverable", None
+    return "unrecoverable", None
+
+
+def timeout_receipt_states(
+    root: Path, plan: Dict[str, Any],
+) -> List[Tuple[Dict[str, Any], str, Optional[str]]]:
+    """Every timed-out receipt in ledger order as (receipt, state, superseded_by).
+
+    state is superseded (#60), open (attempt still in flight), recoverable (the
+    attempt was closed blocked/failed/abandoned and a replacement can supersede
+    it) or unrecoverable (completed, unknown, mismatched, inconsistent or an
+    undeclared step). superseded_by is set only for superseded.
+    """
+    timed_out = [receipt for receipt in command_receipts(root) if receipt_timed_out(receipt)]
+    if not timed_out:
+        return []
+    attempts = _ledger_attempts(read_step_events(root))
+    step_ids = {
+        step["id"] for step in plan.get("steps", [])
+        if isinstance(step, dict) and isinstance(step.get("id"), str)
+    }
+    return [
+        (receipt, *_classify_timeout_receipt(attempts, receipt, step_ids))
+        for receipt in timed_out
+    ]
 
 
 def _timeout_receipt_findings(
@@ -589,24 +647,12 @@ def _timeout_receipt_findings(
 ) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
     errors: List[Dict[str, Any]] = []
     warnings: List[Dict[str, Any]] = []
-    timed_out = [receipt for receipt in command_receipts(root) if _receipt_timed_out(receipt)]
-    # ponytail: rescans the ledger once per timed-out receipt (usually 0-2); index once if that grows.
-    events = read_step_events(root) if timed_out else []
-    step_ids = {
-        step["id"] for step in plan.get("steps", [])
-        if isinstance(step, dict) and isinstance(step.get("id"), str)
-    }
-    for receipt in timed_out:
+    for receipt, state, superseded_by in timeout_receipt_states(root, plan):
         message = (
             f"command receipt {receipt.get('id')} for {receipt.get('step_id')} "
             f"timed out after {receipt.get('timeout_seconds')} seconds"
         )
-        step_id = receipt.get("step_id")
-        superseded_by = (
-            _superseding_attempt(events, receipt)
-            if isinstance(step_id, str) and step_id in step_ids else None
-        )
-        if superseded_by is None:
+        if state != "superseded":
             errors.append({"severity": "error", "message": message})
             continue
         warnings.append({
@@ -622,6 +668,61 @@ def _timeout_receipt_findings(
             "superseded_by": superseded_by,
         })
     return errors, warnings
+
+
+def replacement_needs(
+    root: Path, plan: Dict[str, Any], strict: bool = False
+) -> List[Dict[str, Any]]:
+    """Plan-order completed steps that need a replacement attempt, with causes.
+
+    Mirrors the verify_run errors a replacement attempt would clear: a
+    recoverable timed-out receipt, a failed latest attempt, and (effective
+    strict) a latest attempt that is not completed. attempt_id/status are the
+    step's latest non-lease ledger event.
+    """
+    effective_strict = strict or bool(_proof_policy(root).get("strict_by_default"))
+    state = read_step_state(root)
+    latest: Dict[str, Dict[str, Any]] = {}
+    for event in read_step_events(root):
+        if (
+            isinstance(event.get("step_id"), str)
+            and isinstance(event.get("attempt_id"), str)
+            and event.get("event") not in LEASE_EVENTS
+        ):
+            latest[event["step_id"]] = event
+    recoverable: Dict[str, List[Dict[str, Any]]] = {}
+    for receipt, receipt_state, _ in timeout_receipt_states(root, plan):
+        if receipt_state == "recoverable":
+            recoverable.setdefault(receipt["step_id"], []).append(receipt)
+    needs: List[Dict[str, Any]] = []
+    for step in plan.get("steps", []):
+        step_id = step.get("id") if isinstance(step, dict) else None
+        step_state = state["steps"].get(step_id) if isinstance(step_id, str) else None
+        if not step_state or not step_state["completed"] or step_state["open_attempts"]:
+            continue
+        status = step_state["status"]
+        causes: List[Dict[str, Any]] = [
+            {
+                "cause": "timeout",
+                "receipt_id": receipt.get("id"),
+                "attempt_id": receipt["attempt_id"],
+                "timeout_seconds": receipt.get("timeout_seconds"),
+                "status": state["attempts"][receipt["attempt_id"]]["status"],
+            }
+            for receipt in recoverable.get(step_id, [])
+        ]
+        if status == "failed":
+            causes.append({"cause": "failed_attempt"})
+        if effective_strict and status != "completed":
+            causes.append({"cause": "strict_incomplete"})
+        if causes:
+            needs.append({
+                "step_id": step_id,
+                "attempt_id": latest[step_id]["attempt_id"],
+                "status": latest[step_id]["event"],
+                "causes": causes,
+            })
+    return needs
 
 
 def _unresolved_finding_refs(root: Path) -> List[Dict[str, str]]:

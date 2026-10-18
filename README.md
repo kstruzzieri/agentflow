@@ -320,10 +320,11 @@ PYTHONPATH=src python3 -m agentflow.mcp_server --transport http --port 8765
 ```
 
 Exposed tools: `status`, `doctor`, `next_step`, `next_action`, `claim_step`,
-`amend_step`, `reclaim_step`, `renew_lease`, `record_review`, `complete_step`,
-`verify_step`, `finish_step`, `verify_run`, `finish_run`, `audit_drift`,
-`build_proof`, `verify_proof`. The arbitrary-command tools (`run`,
-`record-command`) are intentionally not exposed.
+`amend_step`, `reclaim_step`, `block_step`, `renew_lease`, `record_review`,
+`complete_step`, `verify_step`, `finish_step`, `verify_run`, `finish_run`,
+`audit_drift`, `build_proof`, `verify_proof`. The arbitrary-command tools
+(`run`, `record-command`) are intentionally not exposed, and `fail-step` is a
+deliberately CLI-only break-glass operator action.
 See [docs/mcp.md](docs/mcp.md) for transports, configs, and the security
 boundary.
 

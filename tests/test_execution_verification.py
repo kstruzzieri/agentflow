@@ -1,12 +1,17 @@
 from __future__ import annotations
 
+import contextlib
+import io
 import json
 import subprocess
 import tempfile
+import time
 import unittest
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
+from agentflow import cli
 from agentflow.contracts import (
     COMMAND_RECEIPTS_SCHEMA_VERSION,
     FILE_RECEIPTS_SCHEMA_VERSION,
@@ -24,7 +29,14 @@ from agentflow.execution import (
     mark_step_verified,
     reclaim_step,
 )
-from agentflow.execution_coverage import build_execution_coverage, verify_run, verify_step
+from agentflow.execution_coverage import (
+    build_execution_coverage,
+    replacement_needs,
+    timeout_receipt_states,
+    verify_run,
+    verify_step,
+)
+from agentflow.porcelain import finish_step, next_action
 from agentflow.receipts import record_command, record_file_change, run_command
 from agentflow.validation import audit_drift
 
@@ -94,6 +106,92 @@ class ExecutionVerificationTests(unittest.TestCase):
         if claim:
             claim_step(root, plan(), "P1", "agent-a")
         return root
+
+    def test_completion_refuses_an_inflight_command_without_writing_events(self) -> None:
+        for complete in (complete_step, finish_step):
+            with self.subTest(complete=complete.__name__), tempfile.TemporaryDirectory() as tmp:
+                root = self._root(tmp)
+                task_plan = plan()
+                record_command(root, "P1", "A1", ["python3", "-c", "print('ok')"], 0)
+                mark_step_verified(root, "P1", "A1", [])
+                contract = read_json(root / ".agent/execution.contract.json")
+                contract["command_policy"]["command_timeout_seconds"] = 2
+                write_json(root / ".agent/execution.contract.json", contract)
+                marker = root / ".agent/command-started"
+                command = ["python3", "-c",
+                           "from pathlib import Path; import time; "
+                           "Path('.agent/command-started').touch(); time.sleep(20)"]
+                with ThreadPoolExecutor(max_workers=1) as pool:
+                    pending = pool.submit(run_command, root, task_plan, "P1", "A1", command, confirmed=True)
+                    deadline = time.monotonic() + 10
+                    while not marker.exists() and not pending.done() and time.monotonic() < deadline:
+                        time.sleep(0.01)
+                    self.assertTrue(marker.exists(), "command did not start")
+                    before = (root / ".agent/step-runs.jsonl").read_bytes()
+                    with self.assertRaisesRegex(RuntimeError, "command.*running"):
+                        if complete is finish_step:
+                            complete(root, task_plan, "P1", "A1")
+                        else:
+                            complete(root, "P1", "A1")
+                    self.assertEqual((root / ".agent/step-runs.jsonl").read_bytes(), before)
+                    self.assertTrue(pending.result(timeout=10)["timed_out"])
+                self.assertEqual(timeout_receipt_states(root, task_plan)[0][1], "open")
+                block_step(root, "P1", "A1", "timeout")
+                replacement = claim_step(root, task_plan, "P1", "agent-a")["attempt_id"]
+                record_command(root, "P1", replacement, ["python3", "-c", "print('ok')"], 0)
+                mark_step_verified(root, "P1", replacement, [])
+                complete_step(root, "P1", replacement)
+                self.assertEqual(timeout_receipt_states(root, task_plan)[0][1], "superseded")
+
+    def test_timeout_recovery_refuses_an_inflight_command_without_poisoning_run(self) -> None:
+        for operation in ("block-step", "fail-step", "reclaim-step"):
+            with self.subTest(operation=operation), tempfile.TemporaryDirectory() as tmp:
+                root = self._root(tmp, claim=False)
+                task_plan = plan()
+                claim_step(root, task_plan, "P1", "agent-a", lease_minutes=1,
+                           now=datetime(2020, 1, 1, tzinfo=timezone.utc))
+                self._append_timeout_receipt(root)
+                marker = root / ".agent/command-started"
+                release = root / ".agent/command-release"
+                command = ["python3", "-c",
+                           "from pathlib import Path; import time; "
+                           "Path('.agent/command-started').touch(); "
+                           "exec(\"while not Path('.agent/command-release').exists(): time.sleep(0.01)\")"]
+                args = [operation, "P1", "--agent", "agent-a", "--reason", "timeout"]
+                if operation == "block-step":
+                    action = next_action(root, agent_id="agent-a")
+                    self.assertEqual(action.state, "attempt_timed_out")
+                    self.assertEqual(action.args[0], operation)
+                    args = action.args
+                with ThreadPoolExecutor(max_workers=1) as pool:
+                    pending = pool.submit(run_command, root, task_plan, "P1", "A1", command)
+                    try:
+                        deadline = time.monotonic() + 10
+                        while not marker.exists() and not pending.done() and time.monotonic() < deadline:
+                            time.sleep(0.01)
+                        self.assertTrue(marker.exists(), "command did not start")
+                        ledger = root / ".agent/step-runs.jsonl"
+                        before = ledger.read_bytes()
+                        out, err = io.StringIO(), io.StringIO()
+                        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+                            self.assertEqual(cli.main([*args, "--root", str(root)]), 1)
+                        self.assertIn("command is still running", err.getvalue())
+                        self.assertEqual(ledger.read_bytes(), before)
+                    finally:
+                        release.touch()
+                    self.assertEqual(pending.result(timeout=10)["exit_code"], 0)
+                with contextlib.redirect_stdout(io.StringIO()):
+                    self.assertEqual(cli.main([*args, "--root", str(root)]), 0)
+                if operation != "reclaim-step":
+                    claim_step(root, task_plan, "P1", "agent-a")
+                (root / "fixture.txt").write_text("hello\n", encoding="utf-8")
+                run_command(root, task_plan, "P1", None, ["python3", "-c", "print('ok')"],
+                            gate=task_plan["validation_gates"][0])
+                record_file_change(root, task_plan, "P1", None, "fixture.txt")
+                self.assertTrue(finish_step(root, task_plan, "P1", None)["completed"])
+                result = verify_run(root, task_plan, record=False)
+                self.assertEqual(result["errors"], [])
+                self.assertTrue(any(w.get("rule") == "superseded_timeout" for w in result["warnings"]))
 
     def _append_failed_commands(self, root: Path, count: int) -> None:
         for index in range(count):
@@ -259,6 +357,47 @@ class ExecutionVerificationTests(unittest.TestCase):
         mark_step_verified(root, "P1", attempt, [])
         complete_step(root, "P1", attempt)
 
+    def _legacy_complete(self, root: Path, attempt: str) -> None:
+        """1.0 let a timed-out attempt complete; #70 refuses, so write the rows."""
+        for event in ("verified", "completed"):
+            append_jsonl(root / ".agent/step-runs.jsonl", {
+                "schema_version": STEP_RUNS_SCHEMA_VERSION, "event": event,
+                "step_id": "P1", "attempt_id": attempt,
+                "recorded_at": "2026-10-16T00:00:00+00:00",
+            })
+
+    def test_complete_step_refuses_any_timed_out_receipt_on_the_attempt(self) -> None:
+        cases = {
+            "decision_with_false_flag": ({"timed_out": False}, ()),
+            "decision_without_flag": ({}, ("timed_out",)),
+            "flag_only": ({"decision": "allowed"}, ()),
+            "non_gate_command": ({"command": ["sleep", "9"], "gate": "unrelated"}, ()),
+        }
+        for name, (overrides, removed) in cases.items():
+            with self.subTest(case=name), tempfile.TemporaryDirectory() as tmp:
+                root = self._root(tmp)  # P1/A1 open
+                self._append_timeout_receipt(root, remove_fields=removed, **overrides)
+                mark_step_verified(root, "P1", "A1", [])
+                with self.assertRaisesRegex(RuntimeError, "holds timed-out command receipt CR-timeout "):
+                    complete_step(root, "P1", "A1")
+
+    def test_refusal_lists_every_timed_out_receipt(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = self._root(tmp)
+            self._append_timeout_receipt(root)
+            self._append_timeout_receipt(root, id="CR-t2")
+            mark_step_verified(root, "P1", "A1", [])
+            with self.assertRaisesRegex(RuntimeError, "receipt CR-timeout, CR-t2 and cannot complete"):
+                complete_step(root, "P1", "A1")
+
+    def test_timeouts_on_other_attempts_or_steps_do_not_block_completion(self) -> None:
+        for overrides in ({"attempt_id": "A9"}, {"step_id": "P2"}):
+            with self.subTest(overrides=overrides), tempfile.TemporaryDirectory() as tmp:
+                root = self._root(tmp)
+                self._append_timeout_receipt(root, **overrides)
+                mark_step_verified(root, "P1", "A1", [])
+                self.assertEqual(complete_step(root, "P1", "A1")["event"], "completed")
+
     def _retried(self, root: Path) -> None:
         fail_step(root, "P1", "A1", "gate timed out")
         self._complete(root, claim_step(root, plan(), "P1", "agent-a")["attempt_id"])
@@ -338,7 +477,7 @@ class ExecutionVerificationTests(unittest.TestCase):
         cases = {
             "still_open": (lambda root: None, {}, ()),
             # A passing rerun inside A1 does not clear A1's own timeout.
-            "completed_same_attempt": (lambda root: self._complete(root, "A1"), {}, ()),
+            "completed_same_attempt": (lambda root: self._legacy_complete(root, "A1"), {}, ()),
             "later_attempt_open": (later_attempt_open, {}, ()),
             "later_attempt_failed": (later_attempt_failed, {}, ()),
             "completed_before_close": (completed_before_close, {}, ()),
@@ -498,6 +637,113 @@ class ExecutionVerificationTests(unittest.TestCase):
 
             self.assertEqual(errors, [])
             self.assertEqual([w["superseded_by"] for w in warnings], ["WTw1-A1"])
+
+    def _amended(self, root: Path) -> str:
+        """P1 completed as A1; returns the open amendment attempt id (A2)."""
+        self._complete(root, "A1")
+        return amend_step(root, plan(), "P1", "agent-a", "review fix")["attempt_id"]
+
+    def test_timeout_receipt_states_classify_each_history(self) -> None:
+        cases = {
+            "open": (lambda root: None, {}, "open"),
+            "recoverable_failed": (lambda root: fail_step(root, "P1", "A1", "t"), {}, "recoverable"),
+            "recoverable_blocked": (lambda root: block_step(root, "P1", "A1", "t"), {}, "recoverable"),
+            "recoverable_abandoned": (lambda root: self._abandon(root, "A1"), {}, "recoverable"),
+            "superseded": (self._retried, {}, "superseded"),
+            "completed_same_attempt": (lambda root: self._legacy_complete(root, "A1"), {}, "unrecoverable"),
+            "unknown_attempt": (lambda root: None, {"attempt_id": "A9"}, "unrecoverable"),
+            "undeclared_step": (lambda root: None, {"step_id": "P9"}, "unrecoverable"),
+        }
+        for name, (setup, overrides, expected) in cases.items():
+            with self.subTest(case=name), tempfile.TemporaryDirectory() as tmp:
+                root = self._root(tmp)
+                self._append_timeout_receipt(root, **overrides)
+                setup(root)
+                [(receipt, state, by)] = timeout_receipt_states(root, plan())
+                self.assertEqual((receipt["id"], state), ("CR-timeout", expected))
+                self.assertEqual(by, "A2" if expected == "superseded" else None)
+
+    def test_replacement_needs_agree_with_verify_run(self) -> None:
+        def timeout_blocked(root):
+            aid = self._amended(root)
+            self._append_timeout_receipt(root, attempt_id=aid)
+            block_step(root, "P1", aid, "t")
+
+        def failed(root):
+            fail_step(root, "P1", self._amended(root), "gave up")
+
+        def blocked(root):
+            block_step(root, "P1", self._amended(root), "paused")
+
+        def older_timeout(root):  # A2 timeout blocked, then A3 clean blocked
+            timeout_blocked(root)
+            block_step(root, "P1", amend_step(root, plan(), "P1", "agent-a", "again")["attempt_id"], "x")
+
+        def superseded_then_failed(root):  # review focus 4
+            timeout_blocked(root)
+            self._complete(root, amend_step(root, plan(), "P1", "agent-a", "retry")["attempt_id"])
+            fail_step(root, "P1", amend_step(root, plan(), "P1", "agent-a", "more")["attempt_id"], "x")
+
+        def never_completed(root):
+            self._append_timeout_receipt(root)
+            block_step(root, "P1", "A1", "t")
+
+        def open_amendment(root):
+            self._append_timeout_receipt(root, attempt_id=self._amended(root))
+
+        cases = {  # name: (setup, {strict: expected cause names})
+            "timeout_blocked": (timeout_blocked, {False: ["timeout"], True: ["timeout", "strict_incomplete"]}),
+            "failed": (failed, {False: ["failed_attempt"], True: ["failed_attempt", "strict_incomplete"]}),
+            "blocked": (blocked, {False: [], True: ["strict_incomplete"]}),
+            "older_timeout": (older_timeout, {False: ["timeout"], True: ["timeout", "strict_incomplete"]}),
+            "superseded_then_failed": (superseded_then_failed, {False: ["failed_attempt"], True: ["failed_attempt", "strict_incomplete"]}),
+            "never_completed": (never_completed, {False: [], True: []}),
+            "open_amendment": (open_amendment, {False: [], True: []}),
+        }
+        messages = {"failed_attempt": "P1 has failed attempt", "strict_incomplete": "P1 is not completed"}
+        for name, (setup, expected) in cases.items():
+            for strict, causes in expected.items():
+                with self.subTest(case=name, strict=strict), tempfile.TemporaryDirectory() as tmp:
+                    root = self._root(tmp)
+                    setup(root)
+                    needs = replacement_needs(root, plan(), strict=strict)
+                    got = [c["cause"] for c in needs[0]["causes"]] if needs else []
+                    self.assertEqual(got, causes)
+                    errors = {f["message"] for f in verify_run(root, plan(), strict=strict, record=False)["errors"]}
+                    for cause in got:
+                        if cause in messages:
+                            self.assertIn(messages[cause], errors)
+                    if "timeout" in got:
+                        self.assertTrue(any("timed out after 1 seconds" in m for m in errors))
+
+    def test_timeout_receipt_states_follow_ledger_order_for_aggregated_ids(self) -> None:
+        def rows(*pairs):
+            for event, attempt in pairs:
+                append_jsonl(root / ".agent/step-runs.jsonl", {
+                    "schema_version": STEP_RUNS_SCHEMA_VERSION, "event": event, "step_id": "P1",
+                    "attempt_id": attempt, "recorded_at": "2026-10-17T00:00:00+00:00",
+                })
+        with tempfile.TemporaryDirectory() as tmp:
+            root = self._root(tmp)
+            rows(("claimed", "WTw2-A1"), ("failed", "WTw2-A1"))
+            self._append_timeout_receipt(root, id="WTw2-CR1", attempt_id="WTw2-A1")
+            [(_receipt, state, _by)] = timeout_receipt_states(root, plan())
+            self.assertEqual(state, "recoverable")
+            rows(("claimed", "WTw1-A1"), ("completed", "WTw1-A1"))  # sorts first, comes later
+            [(_receipt, state, by)] = timeout_receipt_states(root, plan())
+            self.assertEqual((state, by), ("superseded", "WTw1-A1"))
+
+    def test_strict_by_default_counts_as_strict(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = self._root(tmp)
+            block_step(root, "P1", self._amended(root), "paused")
+            path = root / ".agent/execution.contract.json"
+            contract = read_json(path)
+            contract.setdefault("proof_policy", {})["strict_by_default"] = True
+            write_json(path, contract)
+            [need] = replacement_needs(root, plan())
+            self.assertEqual([c["cause"] for c in need["causes"]], ["strict_incomplete"])
+            self.assertEqual((need["attempt_id"], need["status"]), ("A2", "blocked"))
 
     def test_verify_step_rejects_non_timeout_null_exit_code_generically(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

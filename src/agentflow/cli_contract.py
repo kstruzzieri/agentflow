@@ -16,6 +16,7 @@ from __future__ import annotations
 import argparse
 
 from .cli import build_parser
+from .porcelain import NEXT_ACTION_STATES, RECOVERY_ACTIONS
 
 
 STEP_EVENT = {
@@ -235,4 +236,12 @@ def build_cli_contract() -> dict:
                     walk(child, command)
 
     walk(build_parser())
-    return {"schema_version": "1.0.0", "commands": commands, "json_outputs": JSON_OUTPUTS}
+    return {
+        "schema_version": "1.1.0",
+        "commands": commands,
+        "json_outputs": JSON_OUTPUTS,
+        "value_sets": {
+            "next-action.state": list(NEXT_ACTION_STATES),
+            "next-action.resumability.recovery_actions.action": list(RECOVERY_ACTIONS),
+        },
+    }

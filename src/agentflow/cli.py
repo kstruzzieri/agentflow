@@ -739,6 +739,9 @@ def command_block_step(args: argparse.Namespace) -> int:
     except ValueError as exc:
         print(str(exc), file=sys.stderr)
         return 2
+    except RuntimeError as exc:
+        print(str(exc), file=sys.stderr)
+        return 1
     if args.json:
         print(json.dumps(event, indent=2, sort_keys=True))
     else:
@@ -753,6 +756,9 @@ def command_fail_step(args: argparse.Namespace) -> int:
     except ValueError as exc:
         print(str(exc), file=sys.stderr)
         return 2
+    except RuntimeError as exc:
+        print(str(exc), file=sys.stderr)
+        return 1
     if args.json:
         print(json.dumps(event, indent=2, sort_keys=True))
     else:
@@ -770,6 +776,9 @@ def command_reclaim_step(args: argparse.Namespace) -> int:
     except ValueError as exc:
         print(str(exc), file=sys.stderr)
         return 2
+    except RuntimeError as exc:
+        print(str(exc), file=sys.stderr)
+        return 1
     if args.json:
         print(json.dumps(event, indent=2, sort_keys=True))
     else:
@@ -1324,6 +1333,9 @@ def command_finish_step(args: argparse.Namespace) -> int:
     except ValueError as exc:
         print(str(exc), file=sys.stderr)
         return 2
+    except RuntimeError as exc:
+        print(str(exc), file=sys.stderr)
+        return 1
     if args.json:
         print(json.dumps(result, indent=2, sort_keys=True))
     else:

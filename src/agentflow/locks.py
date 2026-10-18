@@ -32,11 +32,12 @@ except ImportError:  # pragma: no cover - non-Windows
 
 
 @contextlib.contextmanager
-def file_lock(lock_path: Path) -> Iterator[None]:
+def file_lock(lock_path: Path, *, blocking: bool = True) -> Iterator[None]:
     """Hold an exclusive advisory lock on ``lock_path`` for the block's duration.
 
     The lock file is created if needed and never truncated; only its kernel lock
-    state is used. The lock is released and the descriptor closed on exit, even if
+    state is used. With blocking=False, contention raises BlockingIOError.
+    The lock is released and the descriptor closed on exit, even if
     the body raises. ``fcntl`` locks are released by the kernel if the process
     dies, so a crash cannot leave a stale lock behind.
     """
@@ -45,7 +46,7 @@ def file_lock(lock_path: Path) -> Iterator[None]:
     acquired = False
     try:
         if _HAVE_FCNTL:
-            fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
+            fcntl.flock(handle.fileno(), fcntl.LOCK_EX | (0 if blocking else fcntl.LOCK_NB))
             acquired = True
         elif _HAVE_MSVCRT:  # pragma: no cover - Windows only
             # LK_LOCK gives up with OSError after ~10 retries, so a long-held
@@ -57,7 +58,9 @@ def file_lock(lock_path: Path) -> Iterator[None]:
                     msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)
                     acquired = True
                     break
-                except OSError:
+                except OSError as exc:
+                    if not blocking:
+                        raise BlockingIOError(str(exc)) from exc
                     time.sleep(_MSVCRT_RETRY_SECONDS)
         yield
     finally:

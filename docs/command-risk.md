@@ -110,7 +110,14 @@ completed. The step must be declared in the locked plan; retained history for an
 undeclared step cannot supersede a timeout. `verify-run` then reports a valid
 supersession as a `superseded_timeout` warning, and
 the proof still counts it in `execution.command_timed_out`. A passing rerun
-inside the timed-out attempt does not supersede it.
+inside the timed-out attempt does not supersede it, and `complete-step` and
+`finish-step` refuse to complete an attempt that holds a timed-out receipt.
+They also refuse while a command is still running for that attempt (exit 1, no
+step events written); wait for its receipt before attempting completion. Commands
+in the same attempt are serialized from the open-state check through receipt
+append, so a timeout cannot arrive after completion. `block-step`,
+`fail-step`, and `reclaim-step` use that same lock and refuse an active command
+with exit 1 and no step events written. Retry recovery after its receipt arrives.
 
 ## Detection limits
 

@@ -94,9 +94,11 @@ Notes for the adapter:
   existing advisory action plus an authoritative `resumability` object derived
   from the locked plan, execution contract, and attempt-scoped ledgers. Consume
   its step/attempt owner, evaluated lease, receipts, gates, diagnostics, and
-  allowed recovery actions instead of reconstructing those rules. It always
-  exits zero; malformed or ambiguous state has diagnostics and no allowed
-  action, while `fail` is explicitly marked as non-automatic break-glass.
+  allowed recovery actions (`claim`, `continue`, `renew`, `reclaim`, `block`,
+  `amend`, break-glass `fail`) instead of reconstructing those rules. It
+  always exits zero; malformed or ambiguous state has diagnostics and no
+  allowed action, while `fail` is explicitly marked as non-automatic
+  break-glass.
 - Record file changes as they happen, not batched at the end. Hunk-level
   attribution fingerprints each diff hunk; an unrecorded edit inside an
   allowed file fails drift under the default `enforce` policy.
@@ -184,25 +186,28 @@ in-process CLI; MCP returns parsed JSON in `structuredContent.data`, which is
 usually more convenient for an adapter. The `next_action` MCP tool accepts the
 same optional `agent` identity and returns the same `resumability` projection.
 
-All seventeen MCP tools are state-transition or read-only operations on
+All eighteen MCP tools are state-transition or read-only operations on
 `.agent/` and are safe for Golem to call autonomously:
 
 `status`, `doctor`, `next_step`, `next_action`, `claim_step`, `amend_step`,
-`reclaim_step`, `renew_lease`, `record_review`, `complete_step`, `verify_step`,
-`finish_step`, `verify_run`, `finish_run`, `audit_drift`, `build_proof`,
-`verify_proof`.
+`reclaim_step`, `block_step`, `renew_lease`, `record_review`, `complete_step`,
+`verify_step`, `finish_step`, `verify_run`, `finish_run`, `audit_drift`,
+`build_proof`, `verify_proof`.
 
-Two CLI commands are deliberately **not** exposed over MCP:
+Three CLI commands are deliberately **not** exposed over MCP:
 
 - `agentflow run` — executes an arbitrary shell command and records the
   receipt.
 - `agentflow record-command` — records a receipt for a command the host
   already ran.
+- `agentflow fail-step` — the break-glass operator action. An adapter closes
+  an attempt with `block_step` instead.
 
-These are the shell-execution paths. They must stay on the CLI, invoked by
-the Golem host process under whatever command-approval policy Golem applies
-to its own shell tool. An MCP client — including a compromised or confused
-one — cannot drive shell execution through the Agentflow server.
+`run` and `record-command` are the shell-execution paths. They must stay on
+the CLI, invoked by the Golem host process under whatever command-approval
+policy Golem applies to its own shell tool. An MCP client — including a
+compromised or confused one — cannot drive shell execution through the
+Agentflow server.
 
 `record-file-change` is also CLI-only today; a Golem adapter that manages
 state over MCP still shells out for `run` and `record-file-change`.
@@ -261,7 +266,8 @@ inventing its own locking on top of `.agent/`.
 | `agentflow --version` fails | Report "Agentflow unavailable" with install hint; do not fall back to an unproofed run silently |
 | `lock-plan` returns `status: "invalid"` | Surface the structured `errors` to the planning layer; regenerate the plan |
 | `.agent/` state unclear (crash, resume) | Run `next-action --json --agent <worker-id>`; follow only an allowed non-break-glass recovery action, or surface diagnostics |
-| Gate command times out | Fix the gate or the timeout in `execution.contract.json`. After `block-step` or `fail-step`, open a replacement with `claim-step` if the step has never completed, or `amend-step` if it has completed work. Alternatively, once the lease expires, `reclaim-step` closes the old attempt and opens its replacement; continue that returned attempt without another claim. Run the gate, verify, and complete the replacement; `verify-run` then reports the old receipt as a `superseded_timeout` warning. Rerunning the gate inside the timed-out attempt does not clear the timeout; if that attempt then completes, no later attempt can supersede it and the run cannot be proven |
+| Gate command times out | Fix the gate or the timeout in `execution.contract.json`. `next-action` reports `attempt_timed_out` with the close the caller may take: `block-step`, or `reclaim-step` after lease expiry (it closes the old attempt and opens its replacement; continue that returned attempt without another claim). `complete-step` and `finish-step` refuse the timed-out attempt (exit 1), and rerunning the gate inside it does not clear the timeout. After the close, `next-action` reports `step_unclaimed` or `step_amendment_needed`; open the replacement, run the gate, verify, and complete it. `verify-run` then reports the old receipt as a `superseded_timeout` warning |
+| Completed step needs a replacement attempt | `next-action` reports `step_amendment_needed`; take the allowed `amend` action (`amend-step`). A completed step rejects a fresh `claim-step` |
 | `finish-run` stops at `build-proof` with `review policy floor kept from existing proof` | An earlier proof in this root was built stricter (or by a stricter contract). Meet that floor, or have the operator archive `.agent/proof-pack.json` on purpose; the adapter never removes it. The guarantee covers the proof retained in this root only: `aggregate-ledgers`, and a deleted, archived or replaced proof, reset the floor |
 | `finish-run` stops at a gate | `--json` reports `stopped_at`; resolve that gate before re-running |
 
