@@ -115,11 +115,15 @@ _ADVISORY_RULES = {
 }
 
 
-def _cmd(args: List[str]) -> str:
+def _cmd(args: List[str], *, user_placeholder: bool = False) -> str:
     """Render an argv list as a copy-paste 'agentflow ...' command."""
     rendered = []
-    for token in args:
-        rendered.append(token if token == "$USER" else shlex.quote(token))
+    for index, token in enumerate(args):
+        expand = (
+            user_placeholder and token == "$USER"
+            and index > 0 and args[index - 1] == "--agent"
+        )
+        rendered.append(token if expand else shlex.quote(token))
     return "agentflow " + " ".join(rendered)
 
 
@@ -1036,7 +1040,7 @@ def next_action(
         args = ["claim-step", step_id, "--agent", agent_id or "$USER"]
         return _attach(
             Action("step_unclaimed", f"step {step_id} is eligible and unclaimed",
-                   command=_cmd(args), args=args, step_id=step_id),
+                   command=_cmd(args, user_placeholder=not agent_id), args=args, step_id=step_id),
             projection,
         )
     if selection.kind == "amend":
@@ -1047,7 +1051,7 @@ def next_action(
             Action(
                 "step_amendment_needed",
                 f"step {step_id} has completed work but needs a replacement attempt",
-                command=_cmd(args), args=args, step_id=step_id,
+                command=_cmd(args, user_placeholder=not agent_id), args=args, step_id=step_id,
                 diagnostics=[
                     *(line for _text, line in texts),
                     *(f"also needs a replacement attempt: {other['step_id']}" for other in others),

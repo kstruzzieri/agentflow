@@ -37,7 +37,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `schema_version` 1.1.0 and gains a `value_sets` section listing the
   `next-action` states and recovery actions. Minor releases may add values to
   those sets, and consumers must treat an unknown value as not actionable (fail
-  closed). (#70)
+  closed). Explicit agent identities, including literal `$USER`, are shell-quoted
+  in printed commands; only an omitted identity uses the expanding default
+  `$USER` placeholder. (#70)
 
 ### Fixed
 

@@ -859,11 +859,12 @@ class TestNextActionInflightWork(unittest.TestCase):
     def test_command_rendering_shell_quotes_gate_but_expands_user(self):
         command = porcelain._cmd([
             "run", "--gate", 'python3 -c "print(1)"',
-            "--agent", "$USER", "--", "python3", "-c", "print(1)",
-        ])
+            "--agent", "$USER", "--", "python3", "-c", "print(1)", "$USER",
+        ], user_placeholder=True)
         self.assertIn("'python3 -c \"print(1)\"'", command)
         self.assertIn("--agent $USER", command)
         self.assertIn("'print(1)'", command)
+        self.assertTrue(command.endswith("'$USER'"))
 
     def test_file_receipts_missing_when_scoped_edit_unrecorded(self):
         with TemporaryDirectory() as d:
@@ -1677,6 +1678,48 @@ class TestNextActionRecovery(unittest.TestCase):
                     contextlib.redirect_stdout(out):
                 cli.main(["next-action", "--json", "--root", str(root)])
             self.assertEqual(json.loads(out.getvalue())["args"][-1], "worker-9")
+
+    def test_printed_commands_preserve_literal_user_identity(self):
+        with TemporaryDirectory() as d:
+            root = Path(d)
+            _ready_repo(root)
+            _set_concurrency(root, lease_policy="enforce")
+            for state in ("step_unclaimed", "file_receipts_missing", "validation_missing",
+                          "step_unverified", "step_amendment_needed"):
+                action = porcelain.next_action(root, agent_id="$USER")
+                self.assertEqual(action.state, state)
+                rendered = subprocess.run(
+                    ["sh", "-c", 'agentflow() { printf "%s\\0" "$@"; }; ' + action.command],
+                    env={"USER": "different-agent"}, capture_output=True, check=True,
+                )
+                argv = rendered.stdout.decode().split("\0")[:-1]
+                self.assertEqual(argv, action.args)
+                cut = argv.index("--") if "--" in argv else len(argv)
+                argv[cut:cut] = ["--root", str(root)]
+                self.assertEqual(cli.main(argv), 0)
+                if state == "step_unclaimed":
+                    (root / "src").mkdir()
+                    (root / "src/feature.py").write_text("x = 1\n")
+                elif state == "step_unverified":
+                    cli.main(["amend-step", "P1", "--agent", "$USER", "--reason", "test",
+                              "--root", str(root)])
+                    cli.main(["fail-step", "P1", "--reason", "test", "--root", str(root)])
+
+    def test_default_user_placeholder_still_expands_for_claim_and_amend(self):
+        for setup, state in ((_ready_repo, "step_unclaimed"),
+                             (lambda root: _closed_amendment(root, "fail-step", False),
+                              "step_amendment_needed")):
+            with self.subTest(state=state), TemporaryDirectory() as d:
+                root = Path(d)
+                setup(root)
+                action = porcelain.next_action(root)
+                self.assertEqual(action.state, state)
+                rendered = subprocess.run(
+                    ["sh", "-c", 'agentflow() { printf "%s\\0" "$@"; }; ' + action.command],
+                    env={"USER": "default-agent"}, capture_output=True, check=True,
+                )
+                argv = rendered.stdout.decode().split("\0")[:-1]
+                self.assertEqual(argv[argv.index("--agent") + 1], "default-agent")
 
     def test_inflight_commands_carry_agent_and_finish_commands_carry_strict(self):
         with TemporaryDirectory() as d:
