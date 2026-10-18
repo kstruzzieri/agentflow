@@ -2648,6 +2648,60 @@ class ProofPublicationTests(_ProofRootMixin, unittest.TestCase):
                 self.assertIn("error: --output must not overwrite .agent/proof-pack.json", err)
                 self.assertEqual(self._files(root), before)
 
+    def test_build_proof_refuses_an_output_aliasing_the_build_lock(self) -> None:
+        for name in ("relative", "absolute", "normalized", "symlink", "hardlink",
+                     "parent_symlink", "missing", "broken_symlink"):
+            with self.subTest(name), tempfile.TemporaryDirectory() as tmp:
+                root = self._root(tmp, supported=True)
+                self.assertEqual(self._build(root)[0], 0)
+                lock = root / ".agent/proof-pack.json.lockfile"
+                output = ".agent/proof-pack.json.lockfile"
+                if name in ("missing", "broken_symlink"):
+                    lock.unlink()
+                if name == "absolute":
+                    output = str(lock)
+                if name == "normalized":
+                    output = ".agent/../.agent/proof-pack.json.lockfile"
+                if name in ("symlink", "broken_symlink"):
+                    (root / "report.md").symlink_to(lock)
+                    output = "report.md"
+                if name == "hardlink":
+                    os.link(lock, root / "report.md")
+                    output = "report.md"
+                if name == "parent_symlink":
+                    (root / "reports").symlink_to(root / ".agent", target_is_directory=True)
+                    output = "reports/proof-pack.json.lockfile"
+                before = self._files(root)
+                lock_before = (lock.stat().st_ino, lock.read_bytes()) if lock.exists() else None
+
+                status, _, err = self._build(root, "--output", output)
+
+                self.assertEqual(status, 2, err)
+                self.assertIn("--output must not overwrite .agent/proof-pack.json.lockfile", err)
+                self.assertEqual(self._files(root), before)
+                if lock_before is None:
+                    self.assertFalse(lock.exists())
+                else:
+                    self.assertEqual((lock.stat().st_ino, lock.read_bytes()), lock_before)
+
+    def test_first_build_refuses_a_case_alias_of_the_build_lock(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = self._root(tmp, supported=True)
+            if not (root / ".agent/PLAN.LOCK.JSON").exists():
+                self.skipTest("requires a case-insensitive filesystem")
+            lock = root / ".agent/proof-pack.json.lockfile"
+            self.assertFalse(lock.exists())
+            markdown = root / ".agent/proof-pack.md"
+            before = markdown.read_bytes()
+
+            status, _, err = self._build(root, "--output", ".agent/PROOF-PACK.JSON.LOCKFILE")
+
+            self.assertEqual(status, 2, err)
+            self.assertIn("--output must not overwrite .agent/proof-pack.json.lockfile", err)
+            self.assertFalse((root / ".agent/proof-pack.json").exists())
+            self.assertEqual(markdown.read_bytes(), before)
+            self.assertEqual(lock.read_bytes(), b"")
+
 
 class ReviewEvidenceExemptionTests(unittest.TestCase):
     def test_kind_review_evidence_not_flagged_unused(self) -> None:

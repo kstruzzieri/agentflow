@@ -1141,9 +1141,10 @@ def command_build_proof(args: argparse.Namespace) -> int:
     output = Path(args.output)
     if not output.is_absolute():
         output = root / output
-    if _overwrites(output, root / ".agent/proof-pack.json"):
-        print("error: --output must not overwrite .agent/proof-pack.json", file=sys.stderr)
-        return 2
+    for protected in (root / ".agent/proof-pack.json", proof_build_lock_path(root)):
+        if _overwrites(output, protected):
+            print(f"error: --output must not overwrite {protected.relative_to(root)}", file=sys.stderr)
+            return 2
 
     try:
         plan = _load_plan(plan_path)
@@ -1166,7 +1167,12 @@ def command_build_proof(args: argparse.Namespace) -> int:
     try:
         # #66: one builder at a time from the floor read through publication, so
         # a slower builder cannot publish over a stricter proof it never saw.
-        with file_lock(proof_build_lock_path(root)):
+        lock_path = proof_build_lock_path(root)
+        with file_lock(lock_path):
+            # File identity exposes aliases that only resolve after lock creation.
+            if _overwrites(output, lock_path):
+                print(f"error: --output must not overwrite {lock_path.relative_to(root)}", file=sys.stderr)
+                return 2
             proof = build_proof(root, plan_path, strict_mode(args.strict))
             drift_path = root / ".agent/drift-report.json"
             drift = read_json(drift_path) if drift_path.exists() else {"status": "missing", "notes": []}
@@ -1234,9 +1240,10 @@ def command_view_proof(args: argparse.Namespace) -> int:
     output = Path(args.output)
     if not output.is_absolute():
         output = root / output
-    if _overwrites(output, root / ".agent/proof-pack.json"):
-        print("error: --output must not overwrite .agent/proof-pack.json", file=sys.stderr)
-        return 2
+    for protected in (root / ".agent/proof-pack.json", proof_build_lock_path(root)):
+        if _overwrites(output, protected):
+            print(f"error: --output must not overwrite {protected.relative_to(root)}", file=sys.stderr)
+            return 2
     if _overwrites(output, proof_path):
         print("error: --output must not overwrite the --proof file", file=sys.stderr)
         return 2

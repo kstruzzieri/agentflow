@@ -506,6 +506,43 @@ class ViewProofCliTests(unittest.TestCase):
                 for path, data in before.items():
                     self.assertEqual(path.read_bytes(), data)
 
+    def test_refuses_an_output_that_aliases_the_build_lock(self) -> None:
+        for name in ("relative", "absolute", "normalized", "symlink", "hardlink",
+                     "parent_symlink", "missing", "broken_symlink"):
+            with self.subTest(name), tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp)
+                _write_fixture(root)
+                metadata = root / ".agent/proof-pack.json"
+                before = metadata.read_bytes()
+                lock = root / ".agent/proof-pack.json.lockfile"
+                if name not in ("missing", "broken_symlink"):
+                    lock.write_bytes(b"held lock")
+                output = ".agent/proof-pack.json.lockfile"
+                if name == "absolute":
+                    output = str(lock)
+                if name == "normalized":
+                    output = ".agent/../.agent/proof-pack.json.lockfile"
+                if name in ("symlink", "broken_symlink"):
+                    (root / "report.html").symlink_to(lock)
+                    output = "report.html"
+                if name == "hardlink":
+                    os.link(lock, root / "report.html")
+                    output = "report.html"
+                if name == "parent_symlink":
+                    (root / "reports").symlink_to(root / ".agent", target_is_directory=True)
+                    output = "reports/proof-pack.json.lockfile"
+                lock_before = (lock.stat().st_ino, lock.read_bytes()) if lock.exists() else None
+
+                result = run_agentflow(root, "view-proof", "--html", "--output", output)
+
+                self.assertEqual(result.returncode, 2, result.stderr)
+                self.assertIn("--output must not overwrite .agent/proof-pack.json.lockfile", result.stderr)
+                self.assertEqual(metadata.read_bytes(), before)
+                if lock_before is None:
+                    self.assertFalse(lock.exists())
+                else:
+                    self.assertEqual((lock.stat().st_ino, lock.read_bytes()), lock_before)
+
     def test_view_proof_mutates_no_ledgers(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
