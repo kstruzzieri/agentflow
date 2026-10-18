@@ -212,6 +212,28 @@ requirement. See `docs/recommend-workflow.md` for the depth table. Review-run
 evidence and capability receipts stay separate: a review run is the recorded
 review, capability receipts are practice evidence.
 
+The floor also survives a rebuild. `build-proof` reads the `review.policy` of
+the `.agent/proof-pack.json` it is about to replace and joins it into the new
+proof's policy, so dropping `--strict` or `AGENTFLOW_STRICT`, switching off
+`strict_by_default`, or lowering or deleting a contract and rebuilding keeps the
+floor. It prints `review policy floor kept from existing proof: ...` when the
+floor raised a field. An existing proof that is unreadable, has a damaged
+`review.policy`, or has a malformed or newer `schema_version` makes `build-proof`
+refuse and write nothing. To proceed, restore the file, upgrade Agentflow for a
+newer `schema_version`, or archive the proof on purpose, which resets the floor.
+Inheritance is per root, with no proof of where the retained file came from.
+Archiving or deleting the proof, and `aggregate-ledgers` (which replaces the
+canonical `.agent/`), reset the floor. To start over at a lower floor on
+purpose, archive the proof before rebuilding.
+
+To fix a minimum that survives proof deletion and aggregation, set it in the
+contracts before work starts: `proof_policy.strict_by_default`, `review_gate`
+and `require_review_run` in `.agent/execution.contract.json`, and `review_depth`
+in `.agent/workflow.contract.json`. Aggregation already requires both contracts
+to match across worktrees. Contracts stay editable, and `strict_by_default` also
+makes `verify-run` strict. `verify-proof --strict` restores strictness but not a
+deleted run or depth requirement.
+
 ## Allowed Files
 
 When Agentflow writes `.agent/` artifacts in the same worktree, include

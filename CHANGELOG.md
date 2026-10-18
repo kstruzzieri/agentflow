@@ -59,6 +59,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   recorded on a step that never completed no longer satisfies the Stop hook
   (`docs/stop-hook.md`), and new proofs always carry empty
   `coverage.expired_leases` and `coverage.no_deadline_open_attempts`. (#58)
+- `build-proof`, and so `finish-run`, no longer drops the review policy floor
+  recorded in the proof it replaces. A rebuild joins the existing
+  `.agent/proof-pack.json` `review.policy` (gate, strictness, required run and
+  required depth) into the new proof's policy. Dropping `--strict` or
+  `AGENTFLOW_STRICT`, switching off `strict_by_default`, or lowering or deleting
+  a contract and then rebuilding keeps the floor. `build-proof` holds a
+  proof-build lock from reading that floor until it publishes. It replaces the
+  Markdown and then the JSON, each atomically, prints `review policy floor kept
+  from existing proof: ...` when the floor raised a field, and exits by the
+  strictness it records, listing the warning checks that failed a strict proof.
+  Newly failing cases:
+  - a rebuild whose run does not meet the inherited floor (exit 1);
+  - an existing proof that is unreadable, has a damaged `review.policy`, or has
+    a malformed or newer `schema_version` (exit 1, nothing written);
+  - a `strict_by_default` contract with warning checks, which used to exit 0
+    (exit 1);
+  - `build-proof --output` or `view-proof --html --output` naming
+    `.agent/proof-pack.json`, or `view-proof`'s own `--proof` file (exit 2,
+    nothing written);
+  - an `OSError` while publishing, which used to raise a traceback (exit 1,
+    `could not publish proof: ...`, the prior proof kept).
+
+  The floor is per root: archiving or deleting the proof, and
+  `aggregate-ledgers`, reset it. `verify-proof` is unchanged, and proofs issued
+  by earlier releases still verify. (#66)
 
 ## [1.0.0] - 2026-10-04
 
