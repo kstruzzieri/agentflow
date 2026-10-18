@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import shutil
+from contextlib import ExitStack, contextmanager
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, Iterator, List, Optional, Tuple
 
 from .artifacts import append_jsonl, dumps_json, read_json, read_jsonl, utc_now
 from .contracts import (
@@ -818,6 +820,26 @@ def refuse_timed_out_attempt(root: Path, step_id: str, attempt_id: str) -> None:
         )
 
 
+def attempt_command_lock_path(root: Path, attempt_id: str) -> Path:
+    # Hash ledger-provided ids so lock names cannot escape the attempts directory.
+    key = hashlib.sha256(attempt_id.encode("utf-8")).hexdigest()
+    return root / ".agent/attempts" / f"{key}.command.lockfile"
+
+
+@contextmanager
+def completion_lock(root: Path, attempt_id: str) -> Iterator[None]:
+    """Exclude commands until verification and completion finish, without waiting."""
+    with ExitStack() as stack:
+        try:
+            stack.enter_context(file_lock(attempt_command_lock_path(root, attempt_id), blocking=False))
+        except BlockingIOError:
+            raise RuntimeError(
+                f"a command is still running for attempt {attempt_id}; "
+                "wait for its receipt before completing; nothing was recorded"
+            ) from None
+        yield
+
+
 def complete_step(
     root: Path,
     step_id: str,
@@ -825,6 +847,19 @@ def complete_step(
     agent_id: Optional[str] = None,
     now: Optional[datetime] = None,
 ) -> Dict[str, Any]:
+    resolved = resolve_attempt(root, step_id, attempt_id)
+    with completion_lock(root, resolved):
+        return _complete_step(root, step_id, resolved, agent_id, now)
+
+
+def _complete_step(
+    root: Path,
+    step_id: str,
+    attempt_id: Optional[str],
+    agent_id: Optional[str] = None,
+    now: Optional[datetime] = None,
+) -> Dict[str, Any]:
+    # Caller holds completion_lock through the timeout check and terminal append.
     resolved_attempt = resolve_attempt(root, step_id, attempt_id)
     _require_opened_attempt(root, step_id, resolved_attempt)
     try:

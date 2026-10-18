@@ -3,7 +3,9 @@ from __future__ import annotations
 import json
 import subprocess
 import tempfile
+import time
 import unittest
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -31,6 +33,7 @@ from agentflow.execution_coverage import (
     verify_run,
     verify_step,
 )
+from agentflow.porcelain import finish_step
 from agentflow.receipts import record_command, record_file_change, run_command
 from agentflow.validation import audit_drift
 
@@ -100,6 +103,42 @@ class ExecutionVerificationTests(unittest.TestCase):
         if claim:
             claim_step(root, plan(), "P1", "agent-a")
         return root
+
+    def test_completion_refuses_an_inflight_command_without_writing_events(self) -> None:
+        for complete in (complete_step, finish_step):
+            with self.subTest(complete=complete.__name__), tempfile.TemporaryDirectory() as tmp:
+                root = self._root(tmp)
+                task_plan = plan()
+                record_command(root, "P1", "A1", ["python3", "-c", "print('ok')"], 0)
+                mark_step_verified(root, "P1", "A1", [])
+                contract = read_json(root / ".agent/execution.contract.json")
+                contract["command_policy"]["command_timeout_seconds"] = 2
+                write_json(root / ".agent/execution.contract.json", contract)
+                marker = root / ".agent/command-started"
+                command = ["python3", "-c",
+                           "from pathlib import Path; import time; "
+                           "Path('.agent/command-started').touch(); time.sleep(20)"]
+                with ThreadPoolExecutor(max_workers=1) as pool:
+                    pending = pool.submit(run_command, root, task_plan, "P1", "A1", command, confirmed=True)
+                    deadline = time.monotonic() + 10
+                    while not marker.exists() and not pending.done() and time.monotonic() < deadline:
+                        time.sleep(0.01)
+                    self.assertTrue(marker.exists(), "command did not start")
+                    before = (root / ".agent/step-runs.jsonl").read_bytes()
+                    with self.assertRaisesRegex(RuntimeError, "command.*running"):
+                        if complete is finish_step:
+                            complete(root, task_plan, "P1", "A1")
+                        else:
+                            complete(root, "P1", "A1")
+                    self.assertEqual((root / ".agent/step-runs.jsonl").read_bytes(), before)
+                    self.assertTrue(pending.result(timeout=10)["timed_out"])
+                self.assertEqual(timeout_receipt_states(root, task_plan)[0][1], "open")
+                block_step(root, "P1", "A1", "timeout")
+                replacement = claim_step(root, task_plan, "P1", "agent-a")["attempt_id"]
+                record_command(root, "P1", replacement, ["python3", "-c", "print('ok')"], 0)
+                mark_step_verified(root, "P1", replacement, [])
+                complete_step(root, "P1", replacement)
+                self.assertEqual(timeout_receipt_states(root, task_plan)[0][1], "superseded")
 
     def _append_failed_commands(self, root: Path, count: int) -> None:
         for index in range(count):

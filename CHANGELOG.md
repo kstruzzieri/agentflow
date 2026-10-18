@@ -74,7 +74,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (`docs/stop-hook.md`), and new proofs always carry empty
   `coverage.expired_leases` and `coverage.no_deadline_open_attempts`. (#58)
 - `complete-step` and `finish-step` refuse an attempt that holds a timed-out
-  command receipt (exit 1, nothing written). `next-action` reports
+  command receipt (exit 1, nothing written). Both also refuse while a command
+  is running; a shared attempt lock covers command startup through receipt
+  append and verification through completion. `next-action` reports
   `attempt_timed_out` with a close the caller may take (`block-step`, or
   `reclaim-step` after lease expiry). It reports `step_amendment_needed` with
   `amend-step` when a completed step needs a replacement attempt: an

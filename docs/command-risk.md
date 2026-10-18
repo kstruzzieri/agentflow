@@ -112,6 +112,10 @@ supersession as a `superseded_timeout` warning, and
 the proof still counts it in `execution.command_timed_out`. A passing rerun
 inside the timed-out attempt does not supersede it, and `complete-step` and
 `finish-step` refuse to complete an attempt that holds a timed-out receipt.
+They also refuse while a command is still running for that attempt (exit 1, no
+step events written); wait for its receipt before attempting completion. Commands
+in the same attempt are serialized from the open-state check through receipt
+append, so a timeout cannot arrive after completion.
 
 ## Detection limits
 

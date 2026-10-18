@@ -18,6 +18,7 @@ from .contracts import (
 )
 from .hunks import compute_hunks, effective_hunk_policy
 from .execution import (
+    attempt_command_lock_path,
     attempt_deadline,
     lease_grace_seconds,
     lease_policy,
@@ -274,6 +275,25 @@ def _apply_confirmation_fields(
 
 
 def run_command(
+    root: Path,
+    plan: Dict[str, Any],
+    step_id: str,
+    attempt_id: Optional[str],
+    command: List[str],
+    gate: Optional[str] = None,
+    confirmed: bool = False,
+    confirmation_source: Optional[str] = None,
+    agent_id: Optional[str] = None,
+) -> Dict[str, Any]:
+    resolved_attempt = resolve_attempt(root, step_id, attempt_id)
+    with file_lock(attempt_command_lock_path(root, resolved_attempt)):
+        return _run_command(
+            root, plan, step_id, resolved_attempt, command, gate,
+            confirmed, confirmation_source, agent_id,
+        )
+
+
+def _run_command(
     root: Path,
     plan: Dict[str, Any],
     step_id: str,

@@ -22,7 +22,8 @@ from .execution import (
     attempt_deadline,
     attempt_is_expired,
     attempt_is_verified,
-    complete_step,
+    _complete_step,
+    completion_lock,
     lease_grace_seconds,
     lease_policy,
     lease_ttl_minutes,
@@ -1209,24 +1210,25 @@ def finish_step(root: Path, plan: Dict[str, Any], step_id: str,
                 replay: bool = False,
                 agent_id: Optional[str] = None) -> Dict[str, Any]:
     resolved = require_lifecycle_owner(root, step_id, attempt_id, agent_id, action="verify")
-    refuse_timed_out_attempt(root, step_id, resolved)
-    result = verify_step(root, plan, step_id, resolved, strict=strict, replay=replay)
-    findings = [*result["errors"], *result["warnings"]]
-    out: Dict[str, Any] = {
-        "step_id": step_id,
-        "attempt_id": resolved,
-        "verification_status": result["status"],
-        "verified": False,
-        "completed": False,
-        "diagnostics": [f["message"] for f in findings],
-    }
-    if result["status"] == "failed":
+    with completion_lock(root, resolved):
+        refuse_timed_out_attempt(root, step_id, resolved)
+        result = verify_step(root, plan, step_id, resolved, strict=strict, replay=replay)
+        findings = [*result["errors"], *result["warnings"]]
+        out: Dict[str, Any] = {
+            "step_id": step_id,
+            "attempt_id": resolved,
+            "verification_status": result["status"],
+            "verified": False,
+            "completed": False,
+            "diagnostics": [f["message"] for f in findings],
+        }
+        if result["status"] == "failed":
+            return out
+        mark_step_verified(root, step_id, resolved, findings, agent_id=agent_id)
+        out["verified"] = True
+        _complete_step(root, step_id, resolved, agent_id=agent_id)
+        out["completed"] = True
         return out
-    mark_step_verified(root, step_id, resolved, findings, agent_id=agent_id)
-    out["verified"] = True
-    complete_step(root, step_id, resolved, agent_id=agent_id)
-    out["completed"] = True
-    return out
 
 
 def finish_run(root: Path, plan_path: Path, strict: bool = False) -> Dict[str, Any]:
