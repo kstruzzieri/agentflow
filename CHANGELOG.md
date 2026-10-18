@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-10-18
+
+Agentflow 1.1.0 closes integrity and recovery gaps in the execution ledger and
+the proof chain. Step-ledger writers refuse writes that used to leave
+`.agent/step-runs.jsonl` unreadable (#61, #62); `verify-run` and `build-proof`
+refuse an unfinished run (#58); a timed-out gate can be recovered with a new
+attempt, and `next-action` now leads there instead of into a dead end (#60,
+#70); and rebuilding a proof keeps the review policy floor of the proof it
+replaces (#66). No artifact schema or schema-version constant changes;
+`docs/cli-contract.json` moves to 1.1.0 for its new `value_sets` section.
+Integrations that follow `next-action` should handle the new
+`attempt_timed_out` and `step_amendment_needed` states and the `block` and
+`amend` recovery actions, and fail closed on values they do not recognize.
+
 ### Added
 
 - MCP `block_step` tool, so an MCP-only adapter can take the `block` recovery
@@ -205,6 +219,7 @@ repository, so this heading is intentionally unlinked._
 
 - Existing v0.2 proof artifacts remain valid when no execution contract exists.
 
-[Unreleased]: https://github.com/kstruzzieri/agentflow/compare/v1.0.0...HEAD
+[Unreleased]: https://github.com/kstruzzieri/agentflow/compare/v1.1.0...HEAD
+[1.1.0]: https://github.com/kstruzzieri/agentflow/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/kstruzzieri/agentflow/releases/tag/v1.0.0
 [0.4.0]: https://github.com/kstruzzieri/agentflow/releases/tag/v0.4.0
