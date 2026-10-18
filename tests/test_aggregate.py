@@ -4,6 +4,7 @@ import subprocess
 import sys
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from agentflow import aggregate
 from agentflow.aggregate import Source, parse_sources
@@ -13,6 +14,7 @@ from agentflow.contracts import (
     EXECUTION_CONTRACT_SCHEMA_VERSION,
     FILE_RECEIPTS_SCHEMA_VERSION,
     PLAN_SCHEMA_VERSION,
+    PROOF_PACK_SCHEMA_VERSION,
     STEP_RUNS_SCHEMA_VERSION,
     VERIFICATION_RUNS_SCHEMA_VERSION,
 )
@@ -1452,6 +1454,49 @@ class EndToEndAggregateTests(unittest.TestCase):
 
             self.assertEqual(proof.returncode, 1, proof.stdout + proof.stderr)
             self.assertIn("undeclared step ids: P1, P2", proof.stderr)
+
+    @mock.patch.dict("os.environ", {"AGENTFLOW_STRICT": ""})  # _run copies os.environ into the subprocess
+    def test_aggregation_resets_the_policy_floor(self):
+        """#66: aggregate-ledgers is an explicit floor-reset boundary, outside Golem's 1.1 guarantee."""
+        import tempfile
+        from agentflow.receipts import sha256_path
+        strict = {"review_gate_effective": "block", "proof_strict_effective": True,
+                  "require_review_run": False, "required_review_depth": None,
+                  "verification_semantics": "ratchet-v1"}
+        run_only = {**strict, "review_gate_effective": "warn", "proof_strict_effective": False,
+                    "require_review_run": True}
+
+        def floor_proof(policy):
+            return {"schema_version": PROOF_PACK_SCHEMA_VERSION, "review": {"policy": policy}}
+
+        for case in ("source_only", "canonical_only", "incomparable_sources"):
+            with self.subTest(case), tempfile.TemporaryDirectory() as tmp:
+                out = Path(tmp) / "out"; (out / "src").mkdir(parents=True)
+                self._git(out, "init", "-q"); self._git(out, "config", "user.email", "t@t"); self._git(out, "config", "user.name", "t")
+                (out / "seed.txt").write_text("seed", encoding="utf-8"); self._git(out, "add", "-A"); self._git(out, "commit", "-qm", "seed")
+                a = Path(tmp) / "a"; b = Path(tmp) / "b"
+                self._git(out, "worktree", "add", "-q", "-b", "wa", str(a), "HEAD")
+                self._git(out, "worktree", "add", "-q", "-b", "wb", str(b), "HEAD")
+                fx = out / "src/x.py"; fx.write_text("x", encoding="utf-8"); fy = out / "src/y.py"; fy.write_text("y", encoding="utf-8")
+                build_tree(a, steps=["P1"], files=[("src/x.py", sha256_path(fx))], plan_steps=("P1", "P2"))
+                build_tree(b, steps=["P2"], files=[("src/y.py", sha256_path(fy))], plan_steps=("P1", "P2"))
+                args = ("aggregate-ledgers", "--input", str(a), "--source-id", "w1", "--input", str(b),
+                        "--source-id", "w2", "--output", str(out), "--base", "HEAD", "--json")
+                if case == "canonical_only":
+                    self.assertEqual(self._run(tmp, *args).returncode, 0)
+                    self._run(out, "build-proof", "--strict")
+                    canonical = json.loads((out / ".agent/proof-pack.json").read_text(encoding="utf-8"))
+                    self.assertTrue(canonical["review"]["policy"]["proof_strict_effective"])
+                else:
+                    write_json(a / ".agent/proof-pack.json", floor_proof(strict))
+                    if case == "incomparable_sources":
+                        write_json(b / ".agent/proof-pack.json", floor_proof(run_only))
+                agg = self._run(tmp, *args)
+                self.assertEqual(agg.returncode, 0, agg.stderr)
+                proof = self._run(out, "build-proof")
+                self.assertEqual(proof.returncode, 0, proof.stdout + proof.stderr)
+                policy = json.loads((out / ".agent/proof-pack.json").read_text(encoding="utf-8"))["review"]["policy"]
+                self.assertEqual((policy["proof_strict_effective"], policy["require_review_run"]), (False, False))
 
 
 class EndToEndNegativeTests(unittest.TestCase):

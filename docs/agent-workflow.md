@@ -315,6 +315,10 @@ agentflow verify-proof
   (`required`/`recorded`/`waived`/`missing`) and a
   `required_capabilities_satisfied` check; a missing required capability warns,
   and strict proof promotes it to an error unless a waiver is recorded.
+  A rebuild joins the `review.policy` floor of the proof it replaces, and its
+  exit code follows the strictness the new proof records: warning checks fail a
+  strict proof, and `build-proof` lists them. `--output` must not name
+  `.agent/proof-pack.json`.
 - `verify-proof` re-checks proof metadata and referenced artifact hashes,
   including stale or tampered workflow contract metadata when the proof
   references it.

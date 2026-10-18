@@ -49,6 +49,7 @@ from .events import filter_events_since, project_events, valid_since
 from .capabilities import append_capability_receipt, build_capability_receipt
 from .handoff import export_handoff, lint_handoff_text
 from . import porcelain
+from .locks import file_lock
 from .packs import (
     PackError,
     find_profile,
@@ -67,9 +68,10 @@ from .draft_plan import (
 from .proof import (
     InvalidWorkingState,
     build_proof,
+    proof_build_lock_path,
+    publish_proof,
     render_markdown,
     verify_proof,
-    write_proof_metadata,
 )
 from .viewer import collect_view_model, render_html
 from .stuck import Thresholds, detect_stuck
@@ -80,7 +82,13 @@ from .recommend import (
     validate_brief,
 )
 from .receipts import record_command, record_file_change, replay_gates, run_command
-from .review import parse_finding_ref, record_review_run, review_evidence_entries
+from .review import (
+    build_time_review_policy,
+    parse_finding_ref,
+    raised_review_fields,
+    record_review_run,
+    review_evidence_entries,
+)
 from .review_runner import MANIFEST_FILENAME, exit_code_for, produce_manifest
 from .runtime import build_runtime_status
 from .validation import (
@@ -1127,6 +1135,13 @@ def _markdown_list(items: List[Any], empty: str = "None.") -> str:
     return "\n".join(f"- {item}" for item in items)
 
 
+def _overwrites(target: Path, protected: Path) -> bool:
+    """True when writing ``target`` would clobber ``protected`` (alias, symlink, hard link)."""
+    return os.path.realpath(target) == os.path.realpath(protected) or (
+        target.exists() and protected.exists() and os.path.samefile(target, protected)
+    )
+
+
 def command_build_proof(args: argparse.Namespace) -> int:
     root = Path(args.root).resolve()
     plan_path = Path(args.plan)
@@ -1135,6 +1150,10 @@ def command_build_proof(args: argparse.Namespace) -> int:
     output = Path(args.output)
     if not output.is_absolute():
         output = root / output
+    for protected in (root / ".agent/proof-pack.json", proof_build_lock_path(root)):
+        if _overwrites(output, protected):
+            print(f"error: --output must not overwrite {protected.relative_to(root)}", file=sys.stderr)
+            return 2
 
     try:
         plan = _load_plan(plan_path)
@@ -1155,7 +1174,20 @@ def command_build_proof(args: argparse.Namespace) -> int:
         return 1
 
     try:
-        proof = build_proof(root, plan_path, strict_mode(args.strict))
+        # #66: one builder at a time from the floor read through publication, so
+        # a slower builder cannot publish over a stricter proof it never saw.
+        lock_path = proof_build_lock_path(root)
+        with file_lock(lock_path):
+            # File identity exposes aliases that only resolve after lock creation.
+            if _overwrites(output, lock_path):
+                print(f"error: --output must not overwrite {lock_path.relative_to(root)}", file=sys.stderr)
+                return 2
+            proof = build_proof(root, plan_path, strict_mode(args.strict))
+            drift_path = root / ".agent/drift-report.json"
+            drift = read_json(drift_path) if drift_path.exists() else {"status": "missing", "notes": []}
+            evidence = read_jsonl(root / ".agent/evidence.jsonl")
+            markdown = render_markdown(plan, proof, evidence, drift)
+            publish_proof(root, proof, output, markdown)
     except InvalidWorkingState as exc:
         # #28: nothing is written, so a rejected build leaves any existing proof
         # in place rather than replacing it with one built from invalid input.
@@ -1166,22 +1198,27 @@ def command_build_proof(args: argparse.Namespace) -> int:
     except ValueError as exc:
         print(f"invalid ledger: {exc}", file=sys.stderr)
         return 1
-    write_proof_metadata(root, proof)
-    drift_path = root / ".agent/drift-report.json"
-    drift = read_json(drift_path) if drift_path.exists() else {"status": "missing", "notes": []}
-    try:
-        evidence = read_jsonl(root / ".agent/evidence.jsonl")
-    except ValueError as exc:
-        print(f"invalid ledger: {exc}", file=sys.stderr)
+    except OSError as exc:
+        print(f"could not publish proof: {exc}", file=sys.stderr)
         return 1
-    output.parent.mkdir(parents=True, exist_ok=True)
-    output.write_text(render_markdown(plan, proof, evidence, drift), encoding="utf-8")
     print(f"created {output.relative_to(root)}")
     print("created .agent/proof-pack.json")
 
+    # #66: strictness is the recorded policy, so a floor kept from the proof
+    # this build replaced makes a plain rebuild exit as strictly as the first.
+    recorded = proof["review"]["policy"]
+    raised = raised_review_fields(
+        build_time_review_policy(root, strict_mode(args.strict)), recorded
+    )
+    if raised:
+        print("review policy floor kept from existing proof: " + ", ".join(raised))
+    recorded_strict = recorded["proof_strict_effective"] is True
+    warnings = [check for check in proof["checks"] if check.get("status") == "warning"]
+    if recorded_strict:
+        for check in warnings:
+            print(f"{check['id']}: {check.get('message') or 'warning'}")
     has_failed = any(check.get("status") == "failed" for check in proof["checks"])
-    has_warning = any(check.get("status") == "warning" for check in proof["checks"])
-    return 1 if has_failed or (strict_mode(args.strict) and has_warning) else 0
+    return 1 if has_failed or (recorded_strict and warnings) else 0
 
 
 def command_verify_proof(args: argparse.Namespace) -> int:
@@ -1212,6 +1249,13 @@ def command_view_proof(args: argparse.Namespace) -> int:
     output = Path(args.output)
     if not output.is_absolute():
         output = root / output
+    for protected in (root / ".agent/proof-pack.json", proof_build_lock_path(root)):
+        if _overwrites(output, protected):
+            print(f"error: --output must not overwrite {protected.relative_to(root)}", file=sys.stderr)
+            return 2
+    if _overwrites(output, proof_path):
+        print("error: --output must not overwrite the --proof file", file=sys.stderr)
+        return 2
     try:
         model = collect_view_model(root, proof_path, output)
     except ValueError as exc:

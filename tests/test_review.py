@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import itertools
 import json
 import hashlib
 import os
@@ -24,12 +25,15 @@ from agentflow.review import (
     build_time_review_policy,
     effective_review_policy,
     join_review_gate,
+    join_review_policy,
     normalize_artifact_path,
     parse_finding_ref,
+    raised_review_fields,
     record_review_run,
     review_checks,
     review_summary,
     validate_manifest,
+    validate_recorded_review_policy,
     verify_review_integrity,
 )
 
@@ -1487,3 +1491,147 @@ class LedgerDepthProfileTests(unittest.TestCase):
             (agent / "review-runs.jsonl").write_text(json.dumps(row) + "\n", encoding="utf-8")
             with self.assertRaises(ValueError):
                 read_review_runs(Path(tmp))
+
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
+FLOOR_GATES = ("ignore", "warn", "block")
+FLOOR_DEPTHS = (None, "none", "light", "standard", "spec_quality", "deep")
+
+
+def _floor(gate="warn", strict=False, run=False, depth=None):
+    return {
+        "review_gate_effective": gate,
+        "proof_strict_effective": strict,
+        "require_review_run": run,
+        "required_review_depth": depth,
+        "verification_semantics": "ratchet-v1",
+    }
+
+
+def _floors(normalized=False):
+    for gate, strict, run, depth in itertools.product(
+        FLOOR_GATES, (False, True), (False, True), FLOOR_DEPTHS
+    ):
+        if not (normalized and strict and gate == "warn"):
+            yield _floor(gate, strict, run, depth)
+
+
+class ReviewPolicyFloorTests(unittest.TestCase):
+    """#66: validate and join the review.policy floor of a replaced proof."""
+
+    def test_validate_accepts_valid_policies_legacy_depth_and_extra_keys(self) -> None:
+        for policy in _floors():
+            self.assertEqual(validate_recorded_review_policy(policy), [], policy)
+        legacy = _floor()
+        del legacy["required_review_depth"]
+        self.assertEqual(validate_recorded_review_policy(legacy), [])
+        self.assertEqual(validate_recorded_review_policy({**_floor(), "future": 1}), [])
+
+    def test_historical_fixture_floors_validate(self) -> None:
+        proofs = sorted((REPO_ROOT / "tests/fixtures").glob("**/.agent/proof-pack.json"))
+        self.assertGreaterEqual(len(proofs), 6)
+        for path in proofs:
+            policy = json.loads(path.read_text(encoding="utf-8"))["review"]["policy"]
+            self.assertEqual(validate_recorded_review_policy(policy), [], path)
+
+    def test_validate_rejects_each_invalid_known_field(self) -> None:
+        invalid = {
+            "review_gate_effective": ["strict", "", None, ["block"], {"g": "block"}, 2],
+            "proof_strict_effective": ["true", 1, 0, None, []],
+            "require_review_run": ["false", 1, None],
+            "required_review_depth": ["shallow", "", ["deep"], {"d": 1}, 3, True],
+            "verification_semantics": ["ratchet-v2", None, 1],
+        }
+        for field, values in invalid.items():
+            for value in values:
+                with self.subTest(field=field, value=value):
+                    self.assertEqual(
+                        validate_recorded_review_policy({**_floor(), field: value}),
+                        [f"review.policy.{field} is invalid: {json.dumps(value)}"],
+                    )
+        for field in ("review_gate_effective", "proof_strict_effective",
+                      "require_review_run", "verification_semantics"):
+            with self.subTest(missing=field):
+                policy = _floor()
+                del policy[field]
+                self.assertEqual(validate_recorded_review_policy(policy),
+                                 [f"review.policy.{field} is missing"])
+
+    def test_join_takes_the_stricter_value_per_field(self) -> None:
+        legacy = _floor(depth="deep")
+        del legacy["required_review_depth"]
+        cases = [
+            (_floor("ignore"), _floor("block"), _floor("block")),
+            (_floor("block"), _floor("ignore"), _floor("block")),
+            (_floor(), _floor(run=True), _floor(run=True)),
+            # incomparable: the gate from the current build, the run from the floor
+            (_floor("block"), _floor("ignore", run=True), _floor("block", run=True)),
+            (_floor(depth=None), _floor(depth="none"), _floor(depth="none")),
+            (_floor(depth="deep"), _floor(depth="light"), _floor(depth="deep")),
+            (_floor(depth="light"), _floor(depth="spec_quality"), _floor(depth="spec_quality")),
+            (_floor(depth="standard"), legacy, _floor(depth="standard")),
+        ]
+        for current, floor, expected in cases:
+            with self.subTest(current=current, floor=floor):
+                self.assertEqual(join_review_policy(current, floor), expected)
+
+    def test_join_promotes_warn_to_block_under_strictness(self) -> None:
+        self.assertEqual(join_review_policy(_floor("warn"), _floor("block", strict=True)),
+                         _floor("block", strict=True))
+        self.assertEqual(join_review_policy(_floor("warn"), _floor("ignore", strict=True)),
+                         _floor("block", strict=True))
+        self.assertEqual(join_review_policy(_floor("ignore"), _floor("ignore", strict=True)),
+                         _floor("ignore", strict=True))
+
+    def test_join_is_idempotent_commutative_and_associative(self) -> None:
+        policies = list(_floors(normalized=True))
+        for a in policies:
+            self.assertEqual(join_review_policy(a, a), a)
+            for b in policies:
+                ab = join_review_policy(a, b)
+                self.assertEqual(ab, join_review_policy(b, a))
+                for c in policies:
+                    self.assertEqual(join_review_policy(ab, c),
+                                     join_review_policy(a, join_review_policy(b, c)))
+
+    def test_joined_policy_round_trips_through_verify_time_resolution(self) -> None:
+        keys = {"review_gate": "review_gate_effective", "strict_effective": "proof_strict_effective",
+                "require_review_run": "require_review_run",
+                "required_review_depth": "required_review_depth"}
+        with patch.dict(os.environ, {"AGENTFLOW_STRICT": ""}), \
+                tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / ".agent").mkdir()
+            workflow = root / ".agent/workflow.contract.json"
+            for gate, sbd, run, wf_run, depth in itertools.product(
+                FLOOR_GATES, (False, True), (False, True), (False, True), FLOOR_DEPTHS
+            ):
+                (root / ".agent/execution.contract.json").write_text(json.dumps({
+                    "schema_version": EXECUTION_CONTRACT_SCHEMA_VERSION,
+                    "proof_policy": {"review_gate": gate, "strict_by_default": sbd,
+                                     "require_review_run": run},
+                }), encoding="utf-8")
+                if depth is None and not wf_run:
+                    workflow.unlink(missing_ok=True)
+                else:
+                    contract = {"schema_version": "0.1.0"}
+                    if depth is not None:
+                        contract["review_depth"] = depth
+                    if wf_run:
+                        contract["proof_policy"] = {"require_review_run": True}
+                    workflow.write_text(json.dumps(contract), encoding="utf-8")
+                current = build_time_review_policy(root)
+                for floor in _floors(normalized=True):
+                    joined = join_review_policy(current, floor)
+                    resolved = effective_review_policy(root, False, recorded=joined)
+                    self.assertEqual({keys[k]: resolved[k] for k in keys},
+                                     {v: joined[v] for v in keys.values()},
+                                     (gate, sbd, run, wf_run, depth, floor))
+
+    def test_raised_review_fields_lists_only_raised_fields_in_order(self) -> None:
+        self.assertEqual(raised_review_fields(_floor(), _floor()), [])
+        self.assertEqual(
+            raised_review_fields(_floor("warn"), _floor("block", True, True, "deep")),
+            ["proof_strict_effective=true", "review_gate_effective=block",
+             "require_review_run=true", "required_review_depth=deep"],
+        )

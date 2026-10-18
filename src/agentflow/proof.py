@@ -2,14 +2,18 @@
 
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import json
+import os
 import re
+import tempfile
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 from . import __version__
 from .artifacts import (
+    dumps_json,
     plan_binding_sha256,
     historical_proof_reads,
     read_json,
@@ -40,8 +44,10 @@ from .execution_coverage import build_execution_coverage, incomplete_execution_e
 from .receipts import command_receipts, file_receipts, replay_gates, verify_receipt_outputs
 from .review import (
     build_time_review_policy,
+    join_review_policy,
     review_checks,
     review_summary,
+    validate_recorded_review_policy,
     verify_review_integrity,
 )
 from .workflow_contract import (
@@ -609,7 +615,70 @@ def _reject_invalid_working_state(root: Path, plan: Dict[str, Any]) -> None:
         raise InvalidWorkingState("execution contract", contract_errors)
 
 
+REVIEW_FLOOR_REFUSAL = (
+    "build-proof will not replace a proof whose review policy floor it cannot read"
+)
+
+
+def read_review_floor(root: Path) -> Optional[Dict[str, Any]]:
+    """The ``review.policy`` floor of the proof this build would replace (#66).
+
+    ``None`` means no floor: no proof yet, or one from before the policy was
+    recorded. A proof that exists but whose floor cannot be read is refused,
+    because building over it would silently drop a strictness it recorded.
+    The file is read as-is: a stale or tampered proof still contributes its
+    floor, and only an unreadable one blocks the build.
+    """
+    path = root / ".agent/proof-pack.json"
+    if not os.path.lexists(path):  # a broken symlink exists, so it is read below
+        return None
+
+    def refuse(*errors: str) -> InvalidWorkingState:
+        return InvalidWorkingState("existing proof", [*errors, REVIEW_FLOOR_REFUSAL])
+
+    try:
+        existing, error = try_read_json(path)
+    except OSError as exc:
+        existing, error = None, str(exc)
+    if existing is None:
+        raise refuse(f".agent/proof-pack.json is unreadable: {error}")
+    if "schema_version" in existing:
+        version = existing["schema_version"]
+        try:
+            parsed = parse_schema_version(version) if isinstance(version, str) else None
+        except ValueError:
+            parsed = None
+        if parsed is None:
+            raise refuse(f"schema_version is malformed: {json.dumps(version)}")
+        supported = parse_schema_version(PROOF_PACK_SCHEMA_VERSION)
+        if (parsed.major, parsed.minor) > (supported.major, supported.minor):
+            raise refuse(
+                f"schema_version {version} is a newer schema than supported "
+                f"{PROOF_PACK_SCHEMA_VERSION}; upgrade Agentflow"
+            )
+    if "review" not in existing:
+        return None
+    review = existing["review"]
+    if not isinstance(review, dict):
+        raise refuse("review is not an object")
+    if "policy" not in review:
+        return None
+    policy = review["policy"]
+    if not isinstance(policy, dict):
+        raise refuse("review.policy is not an object")
+    errors = validate_recorded_review_policy(policy)
+    if errors:
+        raise refuse(*errors)
+    return policy
+
+
 def build_proof(root: Path, plan_path: Path, strict: bool = False) -> Dict[str, Any]:
+    """Build the proof pack for ``root``.
+
+    #66: it reads the existing proof's review.policy floor, so the caller must
+    hold ``file_lock(proof_build_lock_path(root))`` from before this call through
+    publication. ``command_build_proof`` is the caller that takes the lock.
+    """
     resolved_root = root.resolve()
     resolved_plan_path = plan_path.resolve()
     try:
@@ -643,6 +712,8 @@ def build_proof(root: Path, plan_path: Path, strict: bool = False) -> Dict[str, 
             raise InvalidWorkingState(
                 "execution ledger", [error["message"] for error in incomplete]
             )
+    # #66: also for the evidence-only flow, so it sits outside the `if` above.
+    floor = read_review_floor(root)
     evidence = read_jsonl(root / ".agent/evidence.jsonl")
     context_receipts = read_jsonl(root / ".agent/context-receipts.jsonl")
     failures = read_jsonl(root / ".agent/failures.jsonl")
@@ -746,9 +817,10 @@ def build_proof(root: Path, plan_path: Path, strict: bool = False) -> Dict[str, 
     summary = execution_summary(root, plan)
     if summary is not None:
         proof["execution"] = summary
-    review["policy"] = build_time_review_policy(root, strict)
+    current_policy = build_time_review_policy(root, strict)
+    review["policy"] = current_policy if floor is None else join_review_policy(current_policy, floor)
     proof["review"] = review
-    proof["checks"].extend(review_checks(root, review, strict))
+    proof["checks"].extend(review_checks(root, review, strict, recorded=review["policy"]))
 
     required_caps = (
         list(workflow_summary.get("required_capabilities", []))
@@ -831,6 +903,57 @@ def write_proof_metadata(root: Path, proof: Dict[str, Any]) -> Path:
     output = root / ".agent/proof-pack.json"
     write_json(output, proof)
     return output
+
+
+def proof_build_lock_path(root: Path) -> Path:
+    return root / ".agent/proof-pack.json.lockfile"
+
+
+# Read once at import: os.umask can only be read by setting it, which is
+# process-global, so publishing must not do that while other threads run.
+_UMASK = os.umask(0)
+os.umask(_UMASK)
+
+
+def _published_mode(target: Path) -> int:
+    """The mode a plain write would give ``target``: its own, else the umask default."""
+    try:
+        return target.stat().st_mode & 0o777
+    except FileNotFoundError:
+        return 0o666 & ~_UMASK
+
+
+def publish_proof(root: Path, proof: Dict[str, Any], markdown_path: Path, markdown: str) -> None:
+    """Replace the Markdown, then the JSON, each via a same-directory temp file.
+
+    #66: both files are staged before either is replaced, so a staging failure
+    leaves the prior proof untouched. Raises OSError; any exception still removes
+    the staged files. Each file keeps the mode a plain write would have given it.
+    """
+    markdown_path.parent.mkdir(parents=True, exist_ok=True)
+    targets = [
+        (markdown_path, markdown),
+        (root / ".agent/proof-pack.json", dumps_json(proof)),
+    ]
+    staged: List[Tuple[str, Path]] = []
+    try:
+        for target, text in targets:
+            fd, name = tempfile.mkstemp(
+                prefix=f".{target.name}.", suffix=".tmp", dir=target.parent
+            )
+            staged.append((name, target))
+            with os.fdopen(fd, "w", encoding="utf-8") as handle:
+                handle.write(text)
+            # mkstemp creates 0600; some filesystems (SMB, vfat, FUSE) reject chmod,
+            # and a plain write never needed it, so keep 0600 there rather than fail.
+            with contextlib.suppress(OSError):
+                os.chmod(name, _published_mode(target))
+        for name, target in staged:
+            os.replace(name, target)
+    finally:
+        for name, _ in staged:
+            with contextlib.suppress(OSError):
+                os.unlink(name)
 
 
 def render_markdown(
