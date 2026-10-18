@@ -152,6 +152,16 @@ class RegistryTests(unittest.TestCase):
             ["complete-step", "P1", "--json", "--root", ".", "--agent", "a"],
         )
 
+    def test_agent_builders_preserve_leading_hyphen_identities(self) -> None:
+        for agent in ("-worker", "--strict"):
+            for name in ("claim_step", "amend_step", "reclaim_step", "block_step",
+                         "renew_lease", "complete_step", "verify_step", "next_action", "finish_step"):
+                with self.subTest(agent=agent, tool=name):
+                    argv = m.TOOLS_BY_NAME[name].argv({
+                        "step": "P1", "agent": agent, "reason": "timeout", "root": ".",
+                    })
+                    self.assertEqual(m.cli.build_parser().parse_args(argv).agent, agent)
+
     def test_verify_proof_argv_forwards_strict(self) -> None:
         tool = m.TOOLS_BY_NAME["verify_proof"]
         self.assertEqual(tool.argv({"root": "."}), ["verify-proof", "--root", "."])

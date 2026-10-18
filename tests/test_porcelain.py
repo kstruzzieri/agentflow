@@ -1705,6 +1705,56 @@ class TestNextActionRecovery(unittest.TestCase):
                               "--root", str(root)])
                     cli.main(["fail-step", "P1", "--reason", "test", "--root", str(root)])
 
+    def test_printed_commands_execute_leading_hyphen_identities(self):
+        for agent in ("-worker", "--strict"):
+            with self.subTest(agent=agent), TemporaryDirectory() as d:
+                root = Path(d)
+                _ready_repo(root)
+                _set_concurrency(root, lease_policy="enforce")
+                for state in ("step_unclaimed", "file_receipts_missing", "validation_missing",
+                              "step_unverified", "step_amendment_needed"):
+                    action = porcelain.next_action(root, agent_id=agent)
+                    self.assertEqual(action.state, state)
+                    rendered = subprocess.run(
+                        ["sh", "-c", 'agentflow() { printf "%s\\0" "$@"; }; ' + action.command],
+                        capture_output=True, check=True,
+                    )
+                    argv = rendered.stdout.decode().split("\0")[:-1]
+                    self.assertEqual(argv, action.args)
+                    cut = argv.index("--") if "--" in argv else len(argv)
+                    argv[cut:cut] = ["--root", str(root)]
+                    self.assertEqual(cli.main(argv), 0)
+                    if state == "step_unclaimed":
+                        (root / "src").mkdir()
+                        (root / "src/feature.py").write_text("x = 1\n")
+                    elif state == "step_unverified":
+                        self.assertEqual(cli.main(["amend-step", "P1", f"--agent={agent}",
+                                                   "--reason", "test", "--root", str(root)]), 0)
+                        self.assertEqual(cli.main(["fail-step", "P1", "--reason", "test",
+                                                   "--root", str(root)]), 0)
+
+    def test_timeout_recovery_executes_leading_hyphen_identities(self):
+        for close in ("block-step", "reclaim-step"):
+            with self.subTest(close=close), TemporaryDirectory() as d:
+                root = Path(d)
+                _ready_repo(root)
+                _set_concurrency(root, lease_policy="enforce")
+                self.assertEqual(cli.main(["claim-step", "P1", "--agent=-worker",
+                                           "--root", str(root)]), 0)
+                path = root / ".agent/execution.contract.json"
+                contract = json.loads(path.read_text())
+                contract["command_policy"]["command_timeout_seconds"] = 1
+                path.write_text(json.dumps(contract))
+                self.assertEqual(cli.main(["run", "--step", "P1", "--agent=-worker",
+                                           "--root", str(root), "--", "python3", "-c",
+                                           "import time; time.sleep(5)"]), 124)
+                if close == "reclaim-step":
+                    _set_attempt_lease(root, "A1", "2000-01-01T00:00:00+00:00")
+                action = porcelain.next_action(root, agent_id="-worker")
+                self.assertEqual(action.state, "attempt_timed_out")
+                self.assertEqual(action.args[0], close)
+                self.assertEqual(cli.main([*action.args, "--root", str(root)]), 0)
+
     def test_default_user_placeholder_still_expands_for_claim_and_amend(self):
         for setup, state in ((_ready_repo, "step_unclaimed"),
                              (lambda root: _closed_amendment(root, "fail-step", False),

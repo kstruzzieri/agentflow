@@ -30,6 +30,7 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 from urllib.parse import urlparse
 
 from . import __version__, cli
+from .porcelain import _agent_args
 
 # The single MCP protocol version this server implements. Per the spec, a server
 # that supports only one version always responds to initialize with that version.
@@ -118,7 +119,7 @@ def _argv_next_step(a: Dict[str, Any]) -> List[str]:
 
 
 def _argv_claim_step(a: Dict[str, Any]) -> List[str]:
-    argv = ["claim-step", _require(a, "step"), "--agent", _require(a, "agent"), "--json", *_root(a)]
+    argv = ["claim-step", _require(a, "step"), *_agent_args(_require(a, "agent")), "--json", *_root(a)]
     if a.get("lease_minutes") is not None:
         argv += ["--lease-minutes", str(int(a["lease_minutes"]))]
     return argv
@@ -128,8 +129,7 @@ def _argv_amend_step(a: Dict[str, Any]) -> List[str]:
     argv = [
         "amend-step",
         _require(a, "step"),
-        "--agent",
-        _require(a, "agent"),
+        *_agent_args(_require(a, "agent")),
         "--reason",
         _require(a, "reason"),
         "--json",
@@ -148,8 +148,7 @@ def _argv_reclaim_step(a: Dict[str, Any]) -> List[str]:
     argv = [
         "reclaim-step",
         _require(a, "step"),
-        "--agent",
-        _require(a, "agent"),
+        *_agent_args(_require(a, "agent")),
         "--reason",
         _require(a, "reason"),
         "--json",
@@ -165,12 +164,12 @@ def _argv_block_step(a: Dict[str, Any]) -> List[str]:
     if a.get("attempt"):
         argv += ["--attempt", str(a["attempt"])]
     if a.get("agent"):
-        argv += ["--agent", str(a["agent"])]
+        argv += _agent_args(str(a["agent"]))
     return argv
 
 
 def _argv_renew_lease(a: Dict[str, Any]) -> List[str]:
-    argv = ["renew-lease", _require(a, "step"), "--agent", _require(a, "agent"), "--json", *_root(a)]
+    argv = ["renew-lease", _require(a, "step"), *_agent_args(_require(a, "agent")), "--json", *_root(a)]
     if a.get("attempt"):
         argv += ["--attempt", str(a["attempt"])]
     if a.get("minutes") is not None:
@@ -190,7 +189,7 @@ def _argv_complete_step(a: Dict[str, Any]) -> List[str]:
     if a.get("attempt"):
         argv += ["--attempt", str(a["attempt"])]
     if a.get("agent"):
-        argv += ["--agent", str(a["agent"])]
+        argv += _agent_args(str(a["agent"]))
     return argv
 
 
@@ -199,7 +198,7 @@ def _argv_verify_step(a: Dict[str, Any]) -> List[str]:
     if a.get("attempt"):
         argv += ["--attempt", str(a["attempt"])]
     if a.get("agent"):
-        argv += ["--agent", str(a["agent"])]
+        argv += _agent_args(str(a["agent"]))
     if a.get("strict"):
         argv += ["--strict"]
     if a.get("replay"):
@@ -242,7 +241,7 @@ def _argv_verify_proof(a: Dict[str, Any]) -> List[str]:
 def _argv_next_action(a: Dict[str, Any]) -> List[str]:
     argv = ["next-action", "--json", *_root(a)]
     if a.get("agent"):
-        argv += ["--agent", str(a["agent"])]
+        argv += _agent_args(str(a["agent"]))
     if a.get("strict"):
         argv += ["--strict"]
     return argv
@@ -253,7 +252,7 @@ def _argv_finish_step(a: Dict[str, Any]) -> List[str]:
     if a.get("attempt"):
         argv += ["--attempt", str(a["attempt"])]
     if a.get("agent"):
-        argv += ["--agent", str(a["agent"])]
+        argv += _agent_args(str(a["agent"]))
     if a.get("strict"):
         argv += ["--strict"]
     if a.get("replay"):

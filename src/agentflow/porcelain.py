@@ -115,6 +115,10 @@ _ADVISORY_RULES = {
 }
 
 
+def _agent_args(identity: str) -> List[str]:
+    return [f"--agent={identity}"] if identity.startswith("-") else ["--agent", identity]
+
+
 def _cmd(args: List[str], *, user_placeholder: bool = False) -> str:
     """Render an argv list as a copy-paste 'agentflow ...' command."""
     rendered = []
@@ -1034,10 +1038,10 @@ def next_action(
     if projection["diagnostics"]:
         return _invalid_action(projection)
     step_id = selection.step_id
-    agent_args = ["--agent", agent_id] if agent_id else []
+    agent_args = _agent_args(agent_id) if agent_id else []
     strict_args = ["--strict"] if strict else []
     if selection.kind == "claim":
-        args = ["claim-step", step_id, "--agent", agent_id or "$USER"]
+        args = ["claim-step", step_id, *(agent_args or ["--agent", "$USER"])]
         return _attach(
             Action("step_unclaimed", f"step {step_id} is eligible and unclaimed",
                    command=_cmd(args, user_placeholder=not agent_id), args=args, step_id=step_id),
@@ -1046,7 +1050,7 @@ def next_action(
     if selection.kind == "amend":
         need, *others = selection.needs
         texts = [_replacement_cause(step_id, need, cause) for cause in need["causes"]]
-        args = ["amend-step", step_id, "--agent", agent_id or "$USER", "--reason", texts[0][0]]
+        args = ["amend-step", step_id, *(agent_args or ["--agent", "$USER"]), "--reason", texts[0][0]]
         return _attach(
             Action(
                 "step_amendment_needed",
@@ -1143,7 +1147,7 @@ def next_action(
             args = ["block-step", step_id, "--attempt", attempt_id,
                     "--reason", "gate timed out", *agent_args]
         elif selection.close == "reclaim":
-            args = ["reclaim-step", step_id, "--agent", str(agent_id),
+            args = ["reclaim-step", step_id, *agent_args,
                     "--reason", f"timed-out attempt {attempt_id}"]
         else:
             args = []

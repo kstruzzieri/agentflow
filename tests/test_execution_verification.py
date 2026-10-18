@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import contextlib
+import io
 import json
 import subprocess
 import tempfile
@@ -9,6 +11,7 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
+from agentflow import cli
 from agentflow.contracts import (
     COMMAND_RECEIPTS_SCHEMA_VERSION,
     FILE_RECEIPTS_SCHEMA_VERSION,
@@ -33,7 +36,7 @@ from agentflow.execution_coverage import (
     verify_run,
     verify_step,
 )
-from agentflow.porcelain import finish_step
+from agentflow.porcelain import finish_step, next_action
 from agentflow.receipts import record_command, record_file_change, run_command
 from agentflow.validation import audit_drift
 
@@ -139,6 +142,56 @@ class ExecutionVerificationTests(unittest.TestCase):
                 mark_step_verified(root, "P1", replacement, [])
                 complete_step(root, "P1", replacement)
                 self.assertEqual(timeout_receipt_states(root, task_plan)[0][1], "superseded")
+
+    def test_timeout_recovery_refuses_an_inflight_command_without_poisoning_run(self) -> None:
+        for operation in ("block-step", "fail-step", "reclaim-step"):
+            with self.subTest(operation=operation), tempfile.TemporaryDirectory() as tmp:
+                root = self._root(tmp, claim=False)
+                task_plan = plan()
+                claim_step(root, task_plan, "P1", "agent-a", lease_minutes=1,
+                           now=datetime(2020, 1, 1, tzinfo=timezone.utc))
+                self._append_timeout_receipt(root)
+                marker = root / ".agent/command-started"
+                release = root / ".agent/command-release"
+                command = ["python3", "-c",
+                           "from pathlib import Path; import time; "
+                           "Path('.agent/command-started').touch(); "
+                           "exec(\"while not Path('.agent/command-release').exists(): time.sleep(0.01)\")"]
+                args = [operation, "P1", "--agent", "agent-a", "--reason", "timeout"]
+                if operation == "block-step":
+                    action = next_action(root, agent_id="agent-a")
+                    self.assertEqual(action.state, "attempt_timed_out")
+                    self.assertEqual(action.args[0], operation)
+                    args = action.args
+                with ThreadPoolExecutor(max_workers=1) as pool:
+                    pending = pool.submit(run_command, root, task_plan, "P1", "A1", command)
+                    try:
+                        deadline = time.monotonic() + 10
+                        while not marker.exists() and not pending.done() and time.monotonic() < deadline:
+                            time.sleep(0.01)
+                        self.assertTrue(marker.exists(), "command did not start")
+                        ledger = root / ".agent/step-runs.jsonl"
+                        before = ledger.read_bytes()
+                        out, err = io.StringIO(), io.StringIO()
+                        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+                            self.assertEqual(cli.main([*args, "--root", str(root)]), 1)
+                        self.assertIn("command is still running", err.getvalue())
+                        self.assertEqual(ledger.read_bytes(), before)
+                    finally:
+                        release.touch()
+                    self.assertEqual(pending.result(timeout=10)["exit_code"], 0)
+                with contextlib.redirect_stdout(io.StringIO()):
+                    self.assertEqual(cli.main([*args, "--root", str(root)]), 0)
+                if operation != "reclaim-step":
+                    claim_step(root, task_plan, "P1", "agent-a")
+                (root / "fixture.txt").write_text("hello\n", encoding="utf-8")
+                run_command(root, task_plan, "P1", None, ["python3", "-c", "print('ok')"],
+                            gate=task_plan["validation_gates"][0])
+                record_file_change(root, task_plan, "P1", None, "fixture.txt")
+                self.assertTrue(finish_step(root, task_plan, "P1", None)["completed"])
+                result = verify_run(root, task_plan, record=False)
+                self.assertEqual(result["errors"], [])
+                self.assertTrue(any(w.get("rule") == "superseded_timeout" for w in result["warnings"]))
 
     def _append_failed_commands(self, root: Path, count: int) -> None:
         for index in range(count):

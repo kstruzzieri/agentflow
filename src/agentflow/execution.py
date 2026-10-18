@@ -690,19 +690,20 @@ def reclaim_step(
                 f"attempt {old_id} still leased to {old.get('agent_id')} "
                 f"until {old.get('lease_expires_at')}; wait or coordinate"
             )
-        minutes = _lease_minutes_or_default(lease_minutes, lease_ttl_minutes(root))
-        new_id = _next_attempt_id(read_step_events(root))
-        _append_step_event(root, {
-            "event": "abandoned", "step_id": step_id, "attempt_id": old_id,
-            "abandoned_by": agent_id, "reason": reason, "superseded_by": new_id,
-        })
-        recorded = _append_step_event(root, {
-            "event": "claimed", "step_id": step_id, "attempt_id": new_id,
-            "agent_id": agent_id, "lease_expires_at": _utc_plus_minutes(minutes, now),
-        })
-        pointer = _attempt_pointer(root, step_id)
-        pointer.parent.mkdir(parents=True, exist_ok=True)
-        pointer.write_text(f"{new_id}\n", encoding="utf-8")
+        with completion_lock(root, old_id, action="reclaiming"):
+            minutes = _lease_minutes_or_default(lease_minutes, lease_ttl_minutes(root))
+            new_id = _next_attempt_id(read_step_events(root))
+            _append_step_event(root, {
+                "event": "abandoned", "step_id": step_id, "attempt_id": old_id,
+                "abandoned_by": agent_id, "reason": reason, "superseded_by": new_id,
+            })
+            recorded = _append_step_event(root, {
+                "event": "claimed", "step_id": step_id, "attempt_id": new_id,
+                "agent_id": agent_id, "lease_expires_at": _utc_plus_minutes(minutes, now),
+            })
+            pointer = _attempt_pointer(root, step_id)
+            pointer.parent.mkdir(parents=True, exist_ok=True)
+            pointer.write_text(f"{new_id}\n", encoding="utf-8")
     return recorded
 
 
@@ -713,9 +714,13 @@ def _close_step(
     event_kind: str,
     reason: Optional[str] = None,
     extra: Optional[Dict[str, Any]] = None,
+    command_action: Optional[str] = None,
 ) -> Dict[str, Any]:
-    with file_lock(_step_runs_lock_path(root)):
+    with file_lock(_step_runs_lock_path(root)), ExitStack() as stack:
         resolved_attempt = resolve_attempt(root, step_id, attempt_id)
+        if command_action is not None:
+            _refuse_terminal_attempt(root, step_id, resolved_attempt)
+            stack.enter_context(completion_lock(root, resolved_attempt, action=command_action))
         event: Dict[str, Any] = {
             "event": event_kind,
             "step_id": step_id,
@@ -827,15 +832,17 @@ def attempt_command_lock_path(root: Path, attempt_id: str) -> Path:
 
 
 @contextmanager
-def completion_lock(root: Path, attempt_id: str) -> Iterator[None]:
-    """Exclude commands until verification and completion finish, without waiting."""
+def completion_lock(
+    root: Path, attempt_id: str, *, action: str = "completing"
+) -> Iterator[None]:
+    """Exclude commands through a terminal transition, without waiting."""
     with ExitStack() as stack:
         try:
             stack.enter_context(file_lock(attempt_command_lock_path(root, attempt_id), blocking=False))
         except BlockingIOError:
             raise RuntimeError(
                 f"a command is still running for attempt {attempt_id}; "
-                "wait for its receipt before completing; nothing was recorded"
+                f"wait for its receipt before {action}; nothing was recorded"
             ) from None
         yield
 
@@ -885,7 +892,7 @@ def block_step(
     _require_opened_attempt(root, step_id, resolved_attempt)
     _refuse_terminal_attempt(root, step_id, resolved_attempt)
     _require_owner(root, step_id, resolved_attempt, agent_id, now, action="block")
-    return _close_step(root, step_id, resolved_attempt, "blocked", reason)
+    return _close_step(root, step_id, resolved_attempt, "blocked", reason, command_action="blocking")
 
 
 def fail_step(
@@ -897,7 +904,8 @@ def fail_step(
 ) -> Dict[str, Any]:
     # Break-glass path: no owner enforcement. Records who forced the failure.
     extra = {"failed_by": agent_id} if agent_id else None
-    return _close_step(root, step_id, attempt_id, "failed", reason, extra=extra)
+    return _close_step(root, step_id, attempt_id, "failed", reason,
+                       extra=extra, command_action="failing")
 
 
 def mark_step_verified(

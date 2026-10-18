@@ -115,7 +115,9 @@ inside the timed-out attempt does not supersede it, and `complete-step` and
 They also refuse while a command is still running for that attempt (exit 1, no
 step events written); wait for its receipt before attempting completion. Commands
 in the same attempt are serialized from the open-state check through receipt
-append, so a timeout cannot arrive after completion.
+append, so a timeout cannot arrive after completion. `block-step`,
+`fail-step`, and `reclaim-step` use that same lock and refuse an active command
+with exit 1 and no step events written. Retry recovery after its receipt arrives.
 
 ## Detection limits
 

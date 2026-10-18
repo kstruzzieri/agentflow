@@ -39,7 +39,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   those sets, and consumers must treat an unknown value as not actionable (fail
   closed). Explicit agent identities, including literal `$USER`, are shell-quoted
   in printed commands; only an omitted identity uses the expanding default
-  `$USER` placeholder. (#70)
+  `$USER` placeholder. Leading-hyphen identities use `--agent=<value>` in
+  generated commands and MCP adapters so argparse preserves them. (#70)
 
 ### Fixed
 
@@ -78,7 +79,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `complete-step` and `finish-step` refuse an attempt that holds a timed-out
   command receipt (exit 1, nothing written). Both also refuse while a command
   is running; a shared attempt lock covers command startup through receipt
-  append and verification through completion. `next-action` reports
+  append and verification through completion. `block-step`, `fail-step`, and
+  `reclaim-step` also refuse active commands, so recovery cannot strand the run
+  with a receipt written after its attempt closed. `next-action` reports
   `attempt_timed_out` with a close the caller may take (`block-step`, or
   `reclaim-step` after lease expiry). It reports `step_amendment_needed` with
   `amend-step` when a completed step needs a replacement attempt: an
