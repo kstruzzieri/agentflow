@@ -398,6 +398,139 @@ class ExecutionVerificationTests(unittest.TestCase):
                 mark_step_verified(root, "P1", "A1", [])
                 self.assertEqual(complete_step(root, "P1", "A1")["event"], "completed")
 
+    # #77: a structured command gate is judged by the latest receipt with its
+    # exact argv in the attempt, like legacy gates and requirement coverage.
+    _GATE_ARGV = ["python3", "-c", "print('ok')"]
+    _GATE_LABEL = "python3 -c \"print('ok')\""
+
+    def _record_exits(self, root: Path, exits: tuple, gate: str | None = None) -> None:
+        for code in exits:
+            if code == "timeout":
+                self._append_timeout_receipt(root, command=self._GATE_ARGV)
+            else:
+                record_command(root, "P1", "A1", self._GATE_ARGV, code, gate=gate)
+
+    def test_structured_gate_uses_latest_exact_argv_receipt(self) -> None:
+        cases = (
+            ((1, 0), []),
+            ((0, 1), ["gate python3 -c print('ok') recorded exit code 1"]),
+        )
+        for exits, errors in cases:
+            for gate in (None, self._GATE_LABEL):
+                with self.subTest(exits=exits, gate=gate), tempfile.TemporaryDirectory() as tmp:
+                    root = self._root(tmp)
+                    self._record_exits(root, exits, gate)
+
+                    result = verify_step(root, plan(), "P1", "A1", record=False)
+
+                    self.assertEqual([f["message"] for f in result["errors"]], errors)
+                    self.assertEqual(
+                        finish_step(root, plan(), "P1", "A1")["completed"], not errors
+                    )
+
+    def test_structured_and_legacy_gates_reach_the_same_verdict(self) -> None:
+        legacy_plan = plan()
+        del legacy_plan["steps"][0]["gates"]
+        verdicts = {(1, 0): "passed", (0, 1): "failed", (0, 0): "passed", (1, 1): "failed"}
+        for exits, verdict in verdicts.items():
+            for name, task_plan in (("structured", plan()), ("legacy", legacy_plan)):
+                with self.subTest(exits=exits, gate=name), tempfile.TemporaryDirectory() as tmp:
+                    root = self._root(tmp)
+                    self._record_exits(root, exits, self._GATE_LABEL)
+
+                    result = verify_step(root, task_plan, "P1", "A1", record=False)
+
+                    self.assertEqual(result["status"], verdict)
+
+    def test_timeout_then_passing_rerun_verifies_but_cannot_complete(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = self._root(tmp)
+            self._record_exits(root, ("timeout", 0))
+
+            self.assertEqual(verify_step(root, plan(), "P1", "A1", record=False)["status"], "passed")
+            self.assertEqual(next_action(root).state, "attempt_timed_out")
+            with self.assertRaisesRegex(RuntimeError, "holds timed-out command receipt CR-timeout "):
+                finish_step(root, plan(), "P1", "A1")
+            mark_step_verified(root, "P1", "A1", [])
+            with self.assertRaisesRegex(RuntimeError, "holds timed-out command receipt CR-timeout "):
+                complete_step(root, "P1", "A1")
+
+    def test_timeout_after_passing_run_fails_verify_step(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = self._root(tmp)
+            self._record_exits(root, (0, "timeout"))
+
+            result = verify_step(root, plan(), "P1", "A1", record=False)
+
+            self.assertEqual(
+                [f["message"] for f in result["errors"]],
+                ["gate python3 -c print('ok') timed out after 1 seconds"],
+            )
+
+    def test_latest_receipt_ignores_other_attempts_of_the_step(self) -> None:
+        # (exits in A1, exits in A2) -> A2 errors; A1's receipts never count.
+        cases = (
+            ((0,), (), ["missing command receipt for gate: python3 -c print('ok')"]),
+            ((1,), (0,), []),
+            ((0,), (1,), ["gate python3 -c print('ok') recorded exit code 1"]),
+        )
+        for earlier, current, errors in cases:
+            with self.subTest(earlier=earlier, current=current), tempfile.TemporaryDirectory() as tmp:
+                root = self._root(tmp)
+                for code in earlier:
+                    record_command(root, "P1", "A1", self._GATE_ARGV, code)
+                fail_step(root, "P1", "A1", "retry")
+                attempt = claim_step(root, plan(), "P1", "agent-a")["attempt_id"]
+                for code in current:
+                    record_command(root, "P1", attempt, self._GATE_ARGV, code)
+
+                result = verify_step(root, plan(), "P1", attempt, record=False)
+
+                self.assertEqual([f["message"] for f in result["errors"]], errors)
+
+    def test_next_action_recommends_finish_after_failed_then_passing_rerun(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = self._root(tmp)
+            (root / "fixture.txt").write_text("hello\n", encoding="utf-8")
+            record_file_change(root, plan(), "P1", "A1", "fixture.txt")
+            self._record_exits(root, (1, 0))
+
+            action = next_action(root)
+
+            self.assertEqual((action.state, action.args[0]), ("step_unverified", "finish-step"))
+
+    def test_cli_verify_step_follows_the_latest_run_of_a_structured_gate(self) -> None:
+        argv = ["sh", "-c", "test -f fixture.txt"]
+        # fixture present on (run 1, run 2) -> receipt exits, verify/complete exit code
+        cases = (((False, True), [1, 0], 0), ((True, False), [0, 1], 1))
+        for present, exits, code in cases:
+            with self.subTest(present=present), tempfile.TemporaryDirectory() as tmp:
+                root = self._root(tmp, claim=False)
+                task_plan = plan()
+                task_plan["validation_gates"] = ["sh -c 'test -f fixture.txt'"]
+                task_plan["steps"][0]["validation"] = ["sh -c 'test -f fixture.txt'"]
+                task_plan["steps"][0]["gates"][0]["run"] = argv
+                write_json(root / ".agent/plan.lock.json", task_plan)
+                fixture = root / "fixture.txt"
+                flags = ["--agent", "agent-a", "--root", str(root)]
+                with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+                    self.assertEqual(cli.main(["claim-step", "P1", *flags]), 0)
+                    for exists in present:
+                        if exists:
+                            fixture.write_text("hello\n", encoding="utf-8")
+                        else:
+                            fixture.unlink(missing_ok=True)
+                        cli.main(["run", "--step", "P1", *flags, "--", *argv])
+                    fixture.write_text("hello\n", encoding="utf-8")
+                    self.assertEqual(
+                        cli.main(["record-file-change", "--step", "P1", "--path", "fixture.txt", *flags]), 0
+                    )
+                    verify_code = cli.main(["verify-step", "P1", *flags])
+                    complete_code = cli.main(["complete-step", "P1", *flags])
+                receipts = (root / ".agent/command-receipts.jsonl").read_text(encoding="utf-8").splitlines()
+                self.assertEqual([json.loads(line)["exit_code"] for line in receipts], exits)
+                self.assertEqual((verify_code, complete_code), (code, code))
+
     def _retried(self, root: Path) -> None:
         fail_step(root, "P1", "A1", "gate timed out")
         self._complete(root, claim_step(root, plan(), "P1", "agent-a")["attempt_id"])
