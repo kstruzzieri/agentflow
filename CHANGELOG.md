@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- `verify-step` judges a structured command gate (`{"kind": "command", "run":
+  [...]}`) by the latest receipt in the attempt with the gate's exact argv. It
+  used the first one; legacy `step.validation` gates and requirement coverage
+  already used the latest. The verdict moves in both directions. It relaxes: a
+  failed first run followed by an identical passing run in the same attempt now
+  verifies, and `next-action` recommends `finish-step` instead of asking for the
+  same run again. It tightens: an identical failing or timed-out run after a
+  passing one now fails `verify-step` instead of being masked, so an attempt
+  that verified only because its later failure was ignored fails if
+  `verify-step` runs on it again. `finish-step`, `next-action` and the MCP
+  `verify_step` tool follow, since they use the same check, and the per-gate
+  `receipt_id` in the `next-action --json` resumability projection names the
+  later receipt. `complete-step` and `finish-step` still refuse an attempt that
+  holds a timed-out receipt anywhere in it. No receipt, artifact schema or
+  schema-version constant changes. (#77)
+
 ## [1.1.0] - 2026-10-18
 
 Agentflow 1.1.0 closes integrity and recovery gaps in the execution ledger and

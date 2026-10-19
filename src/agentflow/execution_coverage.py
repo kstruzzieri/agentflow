@@ -59,7 +59,8 @@ def _matching_command_receipt(
     receipt_by_gate: Dict[str, Dict[str, Any]],
 ) -> Optional[Dict[str, Any]]:
     if isinstance(gate.get("run"), list):
-        for receipt in receipts:
+        # Latest wins, like receipt_by_gate and coverage._latest_command_receipt.
+        for receipt in reversed(receipts):
             if receipt.get("command") == gate["run"]:
                 return receipt
     for alias in gate.get("aliases", [gate.get("gate")]):
