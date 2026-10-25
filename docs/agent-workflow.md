@@ -305,7 +305,9 @@ agentflow verify-proof
   Out-of-band edits inside an allowed file that are not re-recorded fail drift
   under the default `enforce` policy (`proof_policy.hunk_attribution`).
 - `verify-step` checks the step attempt has required command and file receipts.
-- `complete-step` closes only a successfully verified step.
+- `complete-step` closes only a successfully verified step. Like `finish-step`,
+  it re-checks the step's gates on their latest receipts before closing, so a
+  gate that failed after `verify-step` refuses completion (exit 1).
 - `verify-run` checks the full execution ledger for completion coverage.
 - `audit-drift` writes the current `.agent/drift-report.json` used by the proof
   pack.

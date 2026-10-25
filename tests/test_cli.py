@@ -2117,6 +2117,126 @@ class AgentflowCliTests(unittest.TestCase):
             self.assertEqual(result.returncode, 1)
             self.assertIn("verify-step must pass before complete-step", result.stderr)
 
+    def _recheck_root(
+        self, tmp: str, structured: bool, timeout_seconds: int | None = None
+    ) -> tuple[Path, Path, list[str]]:
+        """#81: one-step root whose gate fails once `flag` exists. The flag lives outside the repo,
+        so toggling it changes no tracked file."""
+        cwd = Path(tmp) / "repo"
+        cwd.mkdir()
+        subprocess.run(["git", "init", "-q"], cwd=cwd, check=True)
+        flag = Path(tmp) / "broken"
+        gate = [sys.executable, "-c", f"import os, sys; sys.exit(os.path.exists({str(flag)!r}))"]
+        plan = valid_plan()
+        plan["locked"] = True
+        plan["evidence_ids"] = []
+        plan["validation_gates"] = ["recheck gate"]
+        step = plan["steps"][0]
+        step["evidence_ids"] = []
+        step["validation"] = ["recheck gate"]
+        if structured:
+            step["gates"] = [{"kind": "command", "run": gate}]
+        self.assertEqual(run_agentflow(cwd, "init").returncode, 0)
+        (cwd / ".agent/plan.lock.json").write_text(json.dumps(plan, indent=2), encoding="utf-8")
+        self.assertEqual(run_agentflow(cwd, "init-execution").returncode, 0)
+        if timeout_seconds is not None:
+            contract_path = cwd / ".agent/execution.contract.json"
+            contract = json.loads(contract_path.read_text(encoding="utf-8"))
+            contract["command_policy"]["risk_policy"] = "warn"
+            contract["command_policy"]["command_timeout_seconds"] = timeout_seconds
+            contract_path.write_text(json.dumps(contract, indent=2), encoding="utf-8")
+        self.assertEqual(run_agentflow(cwd, "claim-step", "P1", "--agent", "agent-a").returncode, 0)
+        (cwd / "fixture.txt").write_text("x\n", encoding="utf-8")
+        recorded = run_agentflow(
+            cwd, "record-file-change", "--step", "P1", "--path", "fixture.txt", "--agent", "agent-a"
+        )
+        self.assertEqual(recorded.returncode, 0, recorded.stderr)
+        run = ["run", "--step", "P1", "--agent", "agent-a", "--gate", "recheck gate", "--", *gate]
+        return cwd, flag, run
+
+    def test_complete_step_rejudges_gates_after_verify_step(self) -> None:
+        for structured in (True, False):
+            with self.subTest(structured=structured), tempfile.TemporaryDirectory() as tmp:
+                cwd, flag, run = self._recheck_root(tmp, structured)
+                self.assertEqual(run_agentflow(cwd, *run).returncode, 0)
+                verified = run_agentflow(cwd, "verify-step", "P1", "--agent", "agent-a")
+                self.assertEqual(verified.returncode, 0, verified.stdout + verified.stderr)
+                flag.touch()
+                self.assertEqual(run_agentflow(cwd, *run).returncode, 1)
+                ledgers = self._recheck_ledgers(cwd)
+
+                result = run_agentflow(cwd, "complete-step", "P1", "--agent", "agent-a")
+
+                self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+                self.assertIn("no longer passes verify-step", result.stderr)
+                self.assertIn("recorded exit code 1", result.stderr)
+                self.assertEqual(self._recheck_ledgers(cwd), ledgers)
+
+    @staticmethod
+    def _recheck_ledgers(cwd: Path) -> dict:
+        names = ("step-runs.jsonl", "verification-runs.jsonl", "command-receipts.jsonl")
+        return {name: (cwd / ".agent" / name).read_bytes() for name in names}
+
+    def test_complete_step_timeout_refusal_still_wins_after_verify_step(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            cwd, _flag, run = self._recheck_root(tmp, True, timeout_seconds=1)
+            self.assertEqual(run_agentflow(cwd, *run).returncode, 0)
+            self.assertEqual(
+                run_agentflow(cwd, "verify-step", "P1", "--agent", "agent-a").returncode, 0
+            )
+            sleeper = run_agentflow(
+                cwd, "run", "--step", "P1", "--agent", "agent-a",
+                "--", sys.executable, "-c", "import time; time.sleep(5)",
+            )
+            self.assertNotEqual(sleeper.returncode, 0)
+
+            result = run_agentflow(cwd, "complete-step", "P1", "--agent", "agent-a")
+
+            self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+            self.assertIn("holds timed-out command receipt", result.stderr)
+            self.assertNotIn("no longer passes verify-step", result.stderr)
+
+    def test_complete_step_refuses_unreadable_plan_at_recheck(self) -> None:
+        cases = {"missing": None, "malformed": "{", "array": "[]", "null": "null"}
+        for case, content in cases.items():
+            with self.subTest(case=case), tempfile.TemporaryDirectory() as tmp:
+                cwd, _flag, run = self._recheck_root(tmp, True)
+                self.assertEqual(run_agentflow(cwd, *run).returncode, 0)
+                self.assertEqual(
+                    run_agentflow(cwd, "verify-step", "P1", "--agent", "agent-a").returncode, 0
+                )
+                plan_path = cwd / ".agent/plan.lock.json"
+                if content is None:
+                    plan_path.unlink()
+                else:
+                    plan_path.write_text(content, encoding="utf-8")
+                ledgers = self._recheck_ledgers(cwd)
+
+                result = run_agentflow(cwd, "complete-step", "P1", "--agent", "agent-a")
+
+                self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+                self.assertIn("cannot re-check P1 before completing", result.stderr)
+                self.assertNotIn("Traceback", result.stderr)
+                self.assertEqual(self._recheck_ledgers(cwd), ledgers)
+
+    def test_complete_step_after_failed_then_passing_rerun_completes(self) -> None:
+        for structured in (True, False):
+            with self.subTest(structured=structured), tempfile.TemporaryDirectory() as tmp:
+                cwd, flag, run = self._recheck_root(tmp, structured)
+                self.assertEqual(run_agentflow(cwd, *run).returncode, 0)
+                self.assertEqual(
+                    run_agentflow(cwd, "verify-step", "P1", "--agent", "agent-a").returncode, 0
+                )
+                flag.touch()
+                self.assertEqual(run_agentflow(cwd, *run).returncode, 1)
+                flag.unlink()
+                self.assertEqual(run_agentflow(cwd, *run).returncode, 0)
+
+                result = run_agentflow(cwd, "complete-step", "P1", "--agent", "agent-a")
+
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                self.assertIn("completed P1", result.stdout)
+
     def test_export_handoff_and_lint_handoff_cli(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             cwd = Path(tmp)

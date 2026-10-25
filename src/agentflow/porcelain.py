@@ -12,7 +12,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
-from .artifacts import plan_binding_sha256, read_json, read_jsonl
+from .artifacts import plan_binding_sha256, read_json, read_jsonl, try_read_json
 from .contracts import CHANGE_KINDS, EXECUTION_ARTIFACT_PATHS, PROVENANCE_VALUES
 from .execution import (
     ATTEMPT_OPENING_EVENTS,
@@ -23,6 +23,7 @@ from .execution import (
     attempt_is_expired,
     attempt_is_verified,
     _complete_step,
+    complete_step,
     completion_lock,
     lease_grace_seconds,
     lease_policy,
@@ -1237,6 +1238,26 @@ def finish_step(root: Path, plan: Dict[str, Any], step_id: str,
         _complete_step(root, step_id, resolved, agent_id=agent_id)
         out["completed"] = True
         return out
+
+
+def complete_step_rechecked(root: Path, step_id: str, attempt_id: Optional[str],
+                            strict: bool = False,
+                            agent_id: Optional[str] = None) -> Dict[str, Any]:
+    """#81: complete-step re-judges the gates on their latest receipts, as finish-step
+    does, so a gate that failed after verify-step cannot complete the attempt. The plan
+    is read only here, after every other refusal, so those keep their messages."""
+    def recheck(resolved: str) -> None:
+        try:
+            plan, error = try_read_json(root / ".agent/plan.lock.json")
+            if error is not None:
+                raise ValueError(error)
+        except (OSError, ValueError) as exc:  # missing, malformed, or schema-rejected plan
+            raise RuntimeError(f"cannot re-check {step_id} before completing: {exc}") from None
+        result = verify_step(root, plan, step_id, resolved, strict=strict, record=False)
+        if result["status"] == "failed":
+            errors = "; ".join(f["message"] for f in result["errors"])
+            raise RuntimeError(f"{step_id} attempt {resolved} no longer passes verify-step: {errors}")
+    return complete_step(root, step_id, attempt_id, agent_id=agent_id, recheck=recheck)
 
 
 def finish_run(root: Path, plan_path: Path, strict: bool = False) -> Dict[str, Any]:
