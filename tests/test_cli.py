@@ -2197,7 +2197,8 @@ class AgentflowCliTests(unittest.TestCase):
             self.assertNotIn("no longer passes verify-step", result.stderr)
 
     def test_complete_step_refuses_unreadable_plan_at_recheck(self) -> None:
-        for case in ("missing", "malformed"):
+        cases = {"missing": None, "malformed": "{", "array": "[]", "null": "null"}
+        for case, content in cases.items():
             with self.subTest(case=case), tempfile.TemporaryDirectory() as tmp:
                 cwd, _flag, run = self._recheck_root(tmp, True)
                 self.assertEqual(run_agentflow(cwd, *run).returncode, 0)
@@ -2205,15 +2206,18 @@ class AgentflowCliTests(unittest.TestCase):
                     run_agentflow(cwd, "verify-step", "P1", "--agent", "agent-a").returncode, 0
                 )
                 plan_path = cwd / ".agent/plan.lock.json"
-                if case == "missing":
+                if content is None:
                     plan_path.unlink()
                 else:
-                    plan_path.write_text("{", encoding="utf-8")
+                    plan_path.write_text(content, encoding="utf-8")
+                ledgers = self._recheck_ledgers(cwd)
 
                 result = run_agentflow(cwd, "complete-step", "P1", "--agent", "agent-a")
 
                 self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
                 self.assertIn("cannot re-check P1 before completing", result.stderr)
+                self.assertNotIn("Traceback", result.stderr)
+                self.assertEqual(self._recheck_ledgers(cwd), ledgers)
 
     def test_complete_step_after_failed_then_passing_rerun_completes(self) -> None:
         for structured in (True, False):

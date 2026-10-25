@@ -12,7 +12,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
-from .artifacts import plan_binding_sha256, read_json, read_jsonl
+from .artifacts import plan_binding_sha256, read_json, read_jsonl, try_read_json
 from .contracts import CHANGE_KINDS, EXECUTION_ARTIFACT_PATHS, PROVENANCE_VALUES
 from .execution import (
     ATTEMPT_OPENING_EVENTS,
@@ -1248,7 +1248,9 @@ def complete_step_rechecked(root: Path, step_id: str, attempt_id: Optional[str],
     is read only here, after every other refusal, so those keep their messages."""
     def recheck(resolved: str) -> None:
         try:
-            plan = read_json(root / ".agent/plan.lock.json")
+            plan, error = try_read_json(root / ".agent/plan.lock.json")
+            if error is not None:
+                raise ValueError(error)
         except (OSError, ValueError) as exc:  # missing, malformed, or schema-rejected plan
             raise RuntimeError(f"cannot re-check {step_id} before completing: {exc}") from None
         result = verify_step(root, plan, step_id, resolved, strict=strict, record=False)
