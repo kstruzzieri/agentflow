@@ -37,11 +37,11 @@ agentflow verify-proof --root tests/fixtures/compatibility/released-v0.4.0
 
 ### Python 3.11 sdist seam
 
-Installing an sdist still builds it. `--no-build-isolation` reuses the preinstalled pinned backend and, with `--no-index`, avoids isolated-build dependency resolution/index fallback:
+Installing an sdist still builds it. `--no-build-isolation` reuses the preinstalled pinned backend and, with `--no-index`, avoids isolated-build dependency resolution/index fallback. The backend pin lives only in `pyproject.toml` `[build-system].requires`; the commands read it from there:
 
 ```bash
 python3.11 -m venv /tmp/agentflow-sdist
-/tmp/agentflow-sdist/bin/python -m pip install setuptools==84.1.0
+/tmp/agentflow-sdist/bin/python -m pip install $(python3.11 -c 'import tomllib; print(*tomllib.load(open("pyproject.toml", "rb"))["build-system"]["requires"])')
 /tmp/agentflow-sdist/bin/python -m pip install --no-index --no-build-isolation dist/agentflow_proof-*.tar.gz
 /tmp/agentflow-sdist/bin/agentflow --version
 ```

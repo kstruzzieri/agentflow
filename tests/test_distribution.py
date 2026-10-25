@@ -517,7 +517,10 @@ class RepositoryDistributionMetadataTests(unittest.TestCase):
             (REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8")
         )
 
-        self.assertEqual(data["build-system"]["requires"], ["setuptools==84.1.0"])
+        # Exact pin, but no literal version here: Dependabot bumps only pyproject.toml.
+        requires = data["build-system"]["requires"]
+        self.assertEqual(len(requires), 1)
+        self.assertRegex(requires[0], r"^setuptools==\d+(\.\d+)*$")
         self.assertEqual(data["project"]["name"], DIST_NAME)
         self.assertEqual(data["project"]["dependencies"], [])
         self.assertEqual(

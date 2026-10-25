@@ -451,7 +451,9 @@ class RepositoryReleaseDisciplineTests(unittest.TestCase):
         self.assertIn("needs: build", sdist)
         self.assertEqual(len(_action_pins(sdist, download)), 1)
         self.assertIn("python -m venv", sdist)
-        self.assertIn("setuptools==84.1.0", sdist)
+        self.assertIn('["build-system"]["requires"]', sdist)
+        self.assertIn('pip install $backend', sdist)
+        self.assertNotIn("setuptools==", sdist)
         self.assertIn("sdists=(dist/*.tar.gz)", sdist)
         self.assertIn('test "${#sdists[@]}" -eq 1', sdist)
         self.assertIn(
@@ -646,7 +648,8 @@ class RepositoryReleaseDisciplineTests(unittest.TestCase):
         )
 
         self.assertIn("Python 3.11 sdist seam", text)
-        self.assertIn("setuptools==84.1.0", text)
+        self.assertIn('["build-system"]["requires"]', text)
+        self.assertNotIn("setuptools==", text)
         self.assertIn("reuses the preinstalled pinned backend", text)
         self.assertIn("isolated-build dependency resolution/index fallback", text)
         self.assertNotIn("prevent an accidental rebuild", text)
@@ -661,12 +664,15 @@ class RepositoryReleaseDisciplineTests(unittest.TestCase):
 
         for required in (
             "python3.11 -m venv /tmp/agentflow-sdist",
-            "/tmp/agentflow-sdist/bin/python -m pip install setuptools==84.1.0",
+            "/tmp/agentflow-sdist/bin/python -m pip install $(python3.11 -c "
+            "'import tomllib; print(*tomllib.load(open(\"pyproject.toml\", \"rb\"))"
+            "[\"build-system\"][\"requires\"])')",
             "/tmp/agentflow-sdist/bin/python -m pip install --no-index "
             "--no-build-isolation dist/agentflow_proof-*.tar.gz",
             "/tmp/agentflow-sdist/bin/agentflow --version",
         ):
             self.assertIn(required, text)
+        self.assertNotIn("setuptools==", text)
 
 
 if __name__ == "__main__":
