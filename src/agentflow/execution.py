@@ -9,7 +9,7 @@ import shutil
 from contextlib import ExitStack, contextmanager
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any, Dict, Iterator, List, Optional, Tuple
+from typing import Any, Callable, Dict, Iterator, List, Optional, Tuple
 
 from .artifacts import append_jsonl, dumps_json, read_json, read_jsonl, utc_now
 from .contracts import (
@@ -853,10 +853,11 @@ def complete_step(
     attempt_id: Optional[str],
     agent_id: Optional[str] = None,
     now: Optional[datetime] = None,
+    recheck: Optional[Callable[[str], None]] = None,
 ) -> Dict[str, Any]:
     resolved = resolve_attempt(root, step_id, attempt_id)
     with completion_lock(root, resolved):
-        return _complete_step(root, step_id, resolved, agent_id, now)
+        return _complete_step(root, step_id, resolved, agent_id, now, recheck=recheck)
 
 
 def _complete_step(
@@ -865,8 +866,10 @@ def _complete_step(
     attempt_id: Optional[str],
     agent_id: Optional[str] = None,
     now: Optional[datetime] = None,
+    recheck: Optional[Callable[[str], None]] = None,
 ) -> Dict[str, Any]:
     # Caller holds completion_lock through the timeout check and terminal append.
+    # `recheck(attempt_id)` runs last, under that lock, and raises to refuse (#81).
     resolved_attempt = resolve_attempt(root, step_id, attempt_id)
     _require_opened_attempt(root, step_id, resolved_attempt)
     try:
@@ -877,6 +880,8 @@ def _complete_step(
     if not attempt_is_verified(root, step_id, resolved_attempt):
         raise RuntimeError("verify-step must pass before complete-step")
     _require_owner(root, step_id, resolved_attempt, agent_id, now, action="complete")
+    if recheck is not None:
+        recheck(resolved_attempt)
     return _close_step(root, step_id, resolved_attempt, "completed")
 
 

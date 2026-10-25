@@ -24,6 +24,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   later receipt. `complete-step` and `finish-step` still refuse an attempt that
   holds a timed-out receipt anywhere in it. No receipt, artifact schema or
   schema-version constant changes. (#77)
+- `complete-step` re-runs the `verify-step` judgment (gates on their latest
+  receipts, inspection evidence and file scope) before it closes the attempt, as
+  `finish-step` already did. Previously it only checked that `verify-step` had
+  passed at some point, so a gate that failed after `verify-step` still
+  completed the step, and `verify-run`, `build-proof` and `verify-proof` then
+  passed over a failing last run. It now refuses (exit 1, nothing written) with
+  `<step> attempt <id> no longer passes verify-step: ...`; rerun the gate to a
+  pass, then complete. It reads `.agent/plan.lock.json` for this check and
+  refuses (exit 1, `cannot re-check <step> before completing: ...`) when the
+  plan is missing or unreadable. Its other refusals keep their messages and
+  order: no or unopened attempt, closed attempt, a command still running, a
+  timed-out receipt, no `verify-step` yet, not the owner. The MCP
+  `complete_step` tool follows. No flag, artifact schema or schema-version
+  constant changes. (#81)
 
 ## [1.1.0] - 2026-10-18
 

@@ -34,7 +34,6 @@ from .execution import (
     amend_step,
     block_step,
     claim_step,
-    complete_step,
     doctor,
     fail_step,
     init_execution_artifacts,
@@ -718,7 +717,9 @@ def command_amend_step(args: argparse.Namespace) -> int:
 def command_complete_step(args: argparse.Namespace) -> int:
     root = Path(args.root).resolve()
     try:
-        event = complete_step(root, args.step, args.attempt, agent_id=args.agent)
+        event = porcelain.complete_step_rechecked(
+            root, args.step, args.attempt, strict_mode(False), agent_id=args.agent,
+        )
     except ValueError as exc:
         print(str(exc), file=sys.stderr)
         return 2
