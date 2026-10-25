@@ -122,7 +122,7 @@ jobs:
       - name: Install and smoke sdist
         run: |
           python -m venv "$RUNNER_TEMP/sdist-venv"
-          "$RUNNER_TEMP/sdist-venv/bin/python" -m pip install setuptools==83.0.0
+          "$RUNNER_TEMP/sdist-venv/bin/python" -m pip install setuptools==84.1.0
           shopt -s nullglob
           sdists=(dist/*.tar.gz)
           test "${#sdists[@]}" -eq 1

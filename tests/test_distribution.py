@@ -45,7 +45,7 @@ class DistributionInspectorTests(unittest.TestCase):
             "\n".join(
                 [
                     "[build-system]",
-                    'requires = ["setuptools==83.0.0"]',
+                    'requires = ["setuptools==84.1.0"]',
                     'build-backend = "setuptools.build_meta"',
                     "",
                     "[project]",
@@ -517,7 +517,7 @@ class RepositoryDistributionMetadataTests(unittest.TestCase):
             (REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8")
         )
 
-        self.assertEqual(data["build-system"]["requires"], ["setuptools==83.0.0"])
+        self.assertEqual(data["build-system"]["requires"], ["setuptools==84.1.0"])
         self.assertEqual(data["project"]["name"], DIST_NAME)
         self.assertEqual(data["project"]["dependencies"], [])
         self.assertEqual(
