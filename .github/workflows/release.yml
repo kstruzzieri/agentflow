@@ -122,10 +122,14 @@ jobs:
       - name: Install and smoke sdist
         run: |
           python -m venv "$RUNNER_TEMP/sdist-venv"
-          "$RUNNER_TEMP/sdist-venv/bin/python" -m pip install setuptools==84.1.0
           shopt -s nullglob
           sdists=(dist/*.tar.gz)
           test "${#sdists[@]}" -eq 1
+          # Preinstall the backend the sdist itself pins, so pyproject.toml stays the only copy.
+          backend="$(tar -xzOf "${sdists[0]}" "$(basename "${sdists[0]}" .tar.gz)/pyproject.toml" \
+            | python -c 'import sys, tomllib; print(*tomllib.load(sys.stdin.buffer)["build-system"]["requires"])')"
+          test -n "$backend"
+          "$RUNNER_TEMP/sdist-venv/bin/python" -m pip install $backend
           "$RUNNER_TEMP/sdist-venv/bin/python" -m pip install --no-index --no-build-isolation "${sdists[0]}"
           export PATH="$RUNNER_TEMP/sdist-venv/bin:$PATH"
           agentflow --version
