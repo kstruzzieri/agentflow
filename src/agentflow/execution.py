@@ -494,9 +494,9 @@ def read_step_events(root: Path) -> List[Dict[str, Any]]:
     return read_jsonl(_step_runs_path(root))
 
 
-def read_step_state(root: Path) -> Dict[str, Any]:
+def step_state_from_events(events: List[Dict[str, Any]]) -> Dict[str, Any]:
     state: Dict[str, Any] = {"steps": {}, "attempts": {}}
-    for event in read_step_events(root):
+    for event in events:
         step_id = event.get("step_id")
         attempt_id = event.get("attempt_id")
         event_kind = event.get("event")
@@ -537,6 +537,10 @@ def read_step_state(root: Path) -> Dict[str, Any]:
     return state
 
 
+def read_step_state(root: Path) -> Dict[str, Any]:
+    return step_state_from_events(read_step_events(root))
+
+
 def _find_step(plan: Dict[str, Any], step_id: str) -> Dict[str, Any]:
     for step in plan.get("steps", []):
         if isinstance(step, dict) and step.get("id") == step_id:
@@ -545,7 +549,10 @@ def _find_step(plan: Dict[str, Any], step_id: str) -> Dict[str, Any]:
 
 
 def next_step(root: Path, plan: Dict[str, Any]) -> Optional[Dict[str, Any]]:
-    state = read_step_state(root)
+    return eligible_step(read_step_state(root), plan)
+
+
+def eligible_step(state: Dict[str, Any], plan: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     steps = plan.get("steps", [])
     completed = {
         step_id
