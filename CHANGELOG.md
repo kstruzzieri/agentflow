@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.1] - 2026-10-25
+
+Agentflow 1.1.1 closes two gaps through which a step could complete, and a
+proof issue, over a gate whose last run failed. `verify-step` judges a
+structured command gate by its latest receipt in the attempt instead of its
+first (#77), and `complete-step` re-runs that judgment before it closes an
+attempt, as `finish-step` already did (#81). A failed gate run followed by an
+identical passing one now verifies in the same attempt. No flag, artifact
+schema, schema-version constant or `docs/cli-contract.json` change.
+
 ### Fixed
 
 - `verify-step` judges a structured command gate (`{"kind": "command", "run":
@@ -33,10 +43,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `<step> attempt <id> no longer passes verify-step: ...`; rerun the gate to a
   pass, then complete. It reads `.agent/plan.lock.json` for this check and
   refuses (exit 1, `cannot re-check <step> before completing: ...`) when the
-  plan is missing or unreadable. Its other refusals keep their messages and
-  order: no or unopened attempt, closed attempt, a command still running, a
-  timed-out receipt, no `verify-step` yet, not the owner. The MCP
-  `complete_step` tool follows. No flag, artifact schema or schema-version
+  plan is missing, unreadable or not a JSON object. Its other refusals keep
+  their messages and order: no or unopened attempt, closed attempt, a command
+  still running, a timed-out receipt, no `verify-step` yet, not the owner. The
+  MCP `complete_step` tool follows. No flag, artifact schema or schema-version
   constant changes. (#81)
 
 ## [1.1.0] - 2026-10-18
@@ -251,7 +261,8 @@ repository, so this heading is intentionally unlinked._
 
 - Existing v0.2 proof artifacts remain valid when no execution contract exists.
 
-[Unreleased]: https://github.com/kstruzzieri/agentflow/compare/v1.1.0...HEAD
+[Unreleased]: https://github.com/kstruzzieri/agentflow/compare/v1.1.1...HEAD
+[1.1.1]: https://github.com/kstruzzieri/agentflow/compare/v1.1.0...v1.1.1
 [1.1.0]: https://github.com/kstruzzieri/agentflow/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/kstruzzieri/agentflow/releases/tag/v1.0.0
 [0.4.0]: https://github.com/kstruzzieri/agentflow/releases/tag/v0.4.0
