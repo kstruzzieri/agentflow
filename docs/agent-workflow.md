@@ -377,6 +377,14 @@ semantics.
   `claim`/`continue`/`renew`/`reclaim`/`block`/`amend`/break-glass `fail`
   actions allowed for `--agent` (or `AGENTFLOW_AGENT_ID`). Break-glass failure
   is always marked `automatic: false`.
+  The additive `recorded_blockers` list reports every attempt closed by
+  `block-step` or `fail-step`, in ledger order, with its reason, time, attempt
+  owner and `superseded_by` (the next attempt opened for that step, or `null`
+  while the blocker is current). It is absent when no validated ledger was read
+  (`uninitialized`, `plan_unlocked`, `execution_uninitialized`,
+  `state_invalid`). A recorded blocker does not change the reported state and
+  does not satisfy `verify-run` or the stop gate. Human output prints one
+  `recorded blocker:` line per current blocker after the diagnostics.
   `next-action` is advisory and always exits zero (reporting a blocking state is
   still a successful report); `--strict` only promotes warnings to failures when
   classifying which state to report.

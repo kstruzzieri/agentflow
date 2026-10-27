@@ -63,6 +63,9 @@ run_gate() {
   # shellcheck disable=SC2086  # intentional word-split of $AGENTFLOW
   if ! $AGENTFLOW "$@" --root "$ROOT" >&2; then
     echo "agentflow stop-gate: '$1' failed; blocking completion until the Agentflow proof chain passes." >&2
+    # shellcheck disable=SC2086  # intentional word-split of $AGENTFLOW
+    $AGENTFLOW next-action --root "$ROOT" >&2 || true
+    echo "agentflow stop-gate: a recorded blocker does not satisfy this gate. If the work is genuinely blocked, an operator must interrupt the session (see docs/stop-hook.md)." >&2
     exit 1
   fi
 }

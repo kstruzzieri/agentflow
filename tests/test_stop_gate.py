@@ -6,7 +6,8 @@ outcome onto a universal exit-code contract (0 = proof satisfied / allow stop,
 non-zero = blocked). The Agentflow CLI itself is exercised by the rest of the
 suite, so here we inject a fake ``agentflow`` via ``$AGENTFLOW_CMD`` and assert
 only the hook's own behaviour: pass-through when ungoverned, fail-fast ordering,
-and a clean exit when every gate passes.
+a clean exit when every gate passes, and the refusal guidance (the next-action
+output, then the fixed operator line, printed only when a gate fails).
 """
 
 import os
@@ -21,8 +22,10 @@ HOOK = REPO_ROOT / "hooks" / "stop-gate.sh"
 # A fake `agentflow` that records the gate it was asked to run, writes a stdout
 # marker for gate subcommands, and fails for any subcommand named in $FAKE_FAIL
 # (space-delimited). It tolerates the global `--root` option and non-gate probes
-# like `--version` (which carry no gate, so they are neither logged nor failed —
-# they always succeed).
+# like `--version` (which carry no gate, so they are neither logged nor failed,
+# and always succeed). `next-action` is also a non-gate probe: it is never
+# logged, prints a "next-action from fake" marker line, and fails only when
+# $FAKE_FAIL names it.
 FAKE_AGENTFLOW = """#!/bin/sh
 sub=""
 for arg in "$@"; do
@@ -37,8 +40,22 @@ if [ -n "$sub" ]; then
     *" $sub "*) exit 1 ;;
   esac
 fi
+if [ "${1:-}" = "next-action" ]; then
+  printf 'next-action from fake: %s\\n' "$*"
+  case " ${FAKE_FAIL:-} " in
+    *" next-action "*) exit 1 ;;
+  esac
+fi
 exit 0
 """
+
+# The fixed line the hook prints last on every refusal (kept in sync with
+# hooks/stop-gate.sh and docs/stop-hook.md).
+OPERATOR_LINE = (
+    "agentflow stop-gate: a recorded blocker does not satisfy this gate. "
+    "If the work is genuinely blocked, an operator must interrupt the session "
+    "(see docs/stop-hook.md)."
+)
 
 
 class StopGateHookTests(unittest.TestCase):
@@ -172,6 +189,56 @@ class StopGateHookTests(unittest.TestCase):
         second = self._run()
         self.assertEqual(first.returncode, 0, first.stderr)
         self.assertEqual(second.returncode, 0, second.stderr)
+
+    def test_refusal_prints_next_action_then_operator_line(self):
+        for gate in ("verify-run", "build-proof", "verify-proof"):
+            with self.subTest(gate=gate):
+                self.log.unlink(missing_ok=True)
+                self._lock_plan()
+                result = self._run(fail=gate)
+                self.assertEqual(result.returncode, 1, result.stderr)
+                self.assertEqual(result.stdout, "")
+                failed = result.stderr.index(
+                    f"'{gate}' failed; blocking completion"
+                )
+                next_action = result.stderr.index(
+                    f"next-action from fake: next-action --root {self.root}"
+                )
+                operator = result.stderr.index(OPERATOR_LINE)
+                self.assertLess(failed, next_action)
+                self.assertLess(next_action, operator)
+                self.assertEqual(self._gates_run()[-1], gate)
+
+    def test_refusal_survives_a_failing_next_action(self):
+        # next-action is guidance only: if it fails, the hook still refuses
+        # (exit 1) and still prints the failed-gate line and the operator line.
+        self._lock_plan()
+        result = self._run(fail="verify-run next-action")
+        self.assertEqual(result.returncode, 1, result.stderr)
+        self.assertEqual(result.stdout, "")
+        self.assertIn("'verify-run' failed; blocking completion", result.stderr)
+        self.assertIn("next-action from fake", result.stderr)
+        self.assertIn(OPERATOR_LINE, result.stderr)
+
+    def test_passing_and_ungoverned_stderr_unchanged(self):
+        # The guidance is refusal-only: ungoverned and passing runs print
+        # exactly what they printed before.
+        ungoverned = self._run()
+        self.assertEqual(ungoverned.returncode, 0, ungoverned.stderr)
+        self.assertEqual(
+            ungoverned.stderr,
+            f"agentflow stop-gate: no locked plan at "
+            f"{self.root}/.agent/plan.lock.json; nothing to enforce.\n",
+        )
+        self._lock_plan()
+        passing = self._run()
+        self.assertEqual(passing.returncode, 0, passing.stderr)
+        self.assertEqual(
+            passing.stderr,
+            "stdout from verify-run\nstdout from build-proof\n"
+            "stdout from verify-proof\n"
+            "agentflow stop-gate: proof chain verified; safe to stop.\n",
+        )
 
 
 if __name__ == "__main__":

@@ -2905,6 +2905,21 @@
           "diagnostics": "array",
           "gate": "string|null",
           "reason": "string",
+          "recorded_blockers": {
+            "items": {
+              "keys": {
+                "attempt_id": "string",
+                "attempt_owner": "string|null",
+                "event": "string",
+                "reason": "string|null",
+                "recorded_at": "string|null",
+                "step_id": "string",
+                "superseded_by": "string|null"
+              },
+              "type": "object"
+            },
+            "type": "array|null"
+          },
           "resumability": {
             "keys": {
               "agent_id": "string|null",

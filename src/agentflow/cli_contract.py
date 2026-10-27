@@ -164,6 +164,16 @@ RESUMABILITY = {
     },
 }
 
+RECORDED_BLOCKER = {
+    "step_id": "string",
+    "attempt_id": "string",
+    "event": "string",
+    "reason": "string|null",
+    "recorded_at": "string|null",
+    "attempt_owner": "string|null",
+    "superseded_by": "string|null",
+}
+
 JSON_OUTPUTS = {
     "pack inspect": [{"type": "object", "keys": {"status": "string", "errors": "array", "id": "string|null", "version": "string|null", "profiles": "array|null", "manifest_sha256": "string|null"}}],
     "doctor": [{"type": "object", "keys": {"status": "string", "contract": "object|null", "findings": "array"}}],
@@ -194,7 +204,7 @@ JSON_OUTPUTS = {
     "replay-gates": [{"type": "object", "keys": {"status": "string", "errors": "array", "warnings": "array", "receipts": "array", "recorded": "boolean"}}],
     "runtime-status": [{"type": "object", "keys": {"schema_version": "string|null", "id": "string|null", "status": "string|null", "runtimes": "array|null", "mcp_servers": "array|null", "routes": "array|null", "findings": "array", "runtime_config_sha256": "string|null", "created_at": "string|null"}}],
     "events": [{"type": "array", "items": {"type": "object", "keys": {"timestamp": "string", "type": "string", "step_id": "string|null", "attempt_id": "string|null", "source": "object", "data": "object"}}}],
-    "next-action": [{"type": "object", "keys": {"state": "string", "reason": "string", "blocking": "boolean", "command": "string|null", "args": "array|null", "step_id": "string|null", "gate": "string|null", "diagnostics": "array", "resumability": RESUMABILITY}}],
+    "next-action": [{"type": "object", "keys": {"state": "string", "reason": "string", "blocking": "boolean", "command": "string|null", "args": "array|null", "step_id": "string|null", "gate": "string|null", "diagnostics": "array", "resumability": RESUMABILITY, "recorded_blockers": {"type": "array|null", "items": {"type": "object", "keys": RECORDED_BLOCKER}}}}],
     "finish-step": [{"type": "object", "keys": {"verification_status": "string", "verified": "boolean", "completed": "boolean", "diagnostics": "array"}}],
     "finish-run": [{"type": "object", "keys": {"ok": "boolean", "gates": "array", "stopped_at": "string|null", "diagnostics": "array"}}],
 }

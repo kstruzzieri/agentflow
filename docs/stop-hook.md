@@ -53,6 +53,34 @@ rather than misreporting it as a proof failure. This is deliberate: an
 enforcement gate must not silently allow completion just because its enforcer is
 absent. Install Agentflow or set `$AGENTFLOW_CMD` to recover.
 
+## Blocked agents
+
+A hook that runs inside the workspace is not a security boundary. A workspace
+writer can record a blocker with any reason, rewrite ledgers and checksums, or
+delete `.agent/plan.lock.json`, which makes the hook pass through as ungoverned.
+Agentflow therefore adds no escape hatch: exit `0` keeps meaning "proof
+satisfied (or repo ungoverned)", and a recorded blocker does not satisfy the
+gate.
+
+Operator interruption is the supported way out (Esc in Claude Code). The
+operator then completes or re-plans the step, or disables the hook.
+
+On a refusal, stderr shows the failing gate's output and the `'<gate>' failed`
+line. Then comes `agentflow next-action`: the next action plus one
+`recorded blocker:` line per current blocker. The last line is the fixed
+operator line, quoted verbatim:
+
+```
+agentflow stop-gate: a recorded blocker does not satisfy this gate. If the work is genuinely blocked, an operator must interrupt the session (see docs/stop-hook.md).
+```
+
+Stdout stays empty and the exit code is unchanged, even if `next-action` itself
+fails.
+
+Retry, time or cost budgets and operator-approved pauses belong in the host (for
+example Golem), where approval and budget state live outside the agent's write
+access.
+
 ## Per-runtime wiring
 
 All deliverables here are **examples**. None auto-activate in this repository;
@@ -98,7 +126,7 @@ maps to exit 2. Add to `.claude/settings.json`:
   attempt failed. A genuinely blocked agent should record the blocker, so the
   ledger says why, and name it in its reply. The operator then interrupts the
   session (Esc in Claude Code) and either completes or re-plans the step, or
-  disables the hook.
+  disables the hook. See [Blocked agents](#blocked-agents).
 - The self-healing `build-proof` step keeps the common case from blocking at all.
 
 ### OpenHands
@@ -153,8 +181,8 @@ From a source checkout with no installed console script, the hook auto-prepends
 
 [`tests/test_stop_gate.py`](../tests/test_stop_gate.py) injects a fake
 `agentflow` via `$AGENTFLOW_CMD` and asserts the hook's orchestration:
-pass-through when ungoverned, fail-fast gate ordering, and a clean exit when the
-whole chain passes.
+pass-through when ungoverned, fail-fast gate ordering, next-action and operator
+guidance on refusal, and a clean exit when the whole chain passes.
 
 ```bash
 PYTHONPATH=src python3 -m unittest discover -s tests -p test_stop_gate.py
