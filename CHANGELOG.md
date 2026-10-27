@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [1.1.1] - 2026-10-25
+## [1.1.1] - 2026-10-26
 
 Agentflow 1.1.1 closes two gaps through which a step could complete, and a
 proof issue, over a gate whose last run failed. `verify-step` judges a
