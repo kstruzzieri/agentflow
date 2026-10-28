@@ -2110,6 +2110,27 @@ class TestRecordedBlockers(unittest.TestCase):
                 self.assertEqual(payload["state"], state)
                 self.assertNotIn("recorded_blockers", payload)
 
+    def test_state_reduces_the_validated_rows_not_a_later_append(self):
+        """S72-02: a row landing after validation never reaches the reduced state."""
+        with TemporaryDirectory() as d:
+            root = Path(d)
+            _claimed(root)
+            self._cli(root, "block-step", "P1", "--reason", "r", "--agent", "tester")
+            real = porcelain._projection_ledgers
+
+            def read_then_append(r):
+                ledgers = real(r)
+                # No opener: fails identity validation, and would complete P1.
+                _step_row(r, event="completed", step_id="P1", attempt_id="A9")
+                return ledgers
+
+            with mock.patch.object(porcelain, "_projection_ledgers", side_effect=read_then_append):
+                payload = porcelain.next_action(root).to_dict()
+            self.assertEqual(payload["state"], "step_unclaimed")
+            self.assertEqual([e["attempt_id"] for e in payload["recorded_blockers"]], ["A1"])
+            # The appended row landed and fails validation on a fresh read.
+            self.assertEqual(porcelain.next_action(root).state, "state_invalid")
+
     def test_json_keeps_a_raw_reason(self):
         raw = "line\nnext\x1b[31m" + "x" * 300
         with TemporaryDirectory() as d:

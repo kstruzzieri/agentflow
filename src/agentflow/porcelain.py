@@ -31,8 +31,6 @@ from .execution import (
     lease_ttl_minutes,
     load_execution_contract,
     mark_step_verified,
-    next_step,
-    read_step_state,
     refuse_timed_out_attempt,
     require_lifecycle_owner,
     step_state_from_events,
@@ -763,7 +761,7 @@ def _resumability(
         ledgers = _projection_ledgers(root)
         _validate_step_event_identity(ledgers["step-runs"], policy)
         blockers = _recorded_blockers(ledgers["step-runs"])
-        state = read_step_state(root)
+        state = step_state_from_events(ledgers["step-runs"])
         plan_steps = {
             step["id"]: step
             for step in plan.get("steps", [])
@@ -790,7 +788,7 @@ def _resumability(
                 ".agent/step-runs.jsonl",
             ), _Selection(None)
         if not open_attempts:
-            eligible = next_step(root, plan)
+            eligible = eligible_step(state, plan)
             if eligible is not None:
                 step_id = eligible["id"]
                 step_state = state["steps"].get(step_id, {})

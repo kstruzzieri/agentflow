@@ -38,6 +38,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   to stderr when it refuses a stop. Stdout and exit codes are unchanged, and a
   recorded blocker still does not satisfy the gate. (#72)
 
+### Fixed
+
+- `next-action` reduces step state and selects the eligible step from the
+  `.agent/step-runs.jsonl` rows it validates and derives `recorded_blockers`
+  from. It used to read the ledger again for both, so a row appended during
+  the call could change the step state or the step offered to claim without
+  passing validation. The run, drift, proof and in-flight checks that follow
+  still read the ledgers themselves. (#72 follow-up)
+
 ## [1.1.1] - 2026-10-26
 
 Agentflow 1.1.1 closes two gaps through which a step could complete, and a
