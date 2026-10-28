@@ -1900,6 +1900,317 @@ class TestPolicyFloorRatchet(unittest.TestCase):
             self.assertTrue(proof["review"]["policy"]["proof_strict_effective"])
 
 
+class TestRecordedBlockers(unittest.TestCase):
+    """#72: next-action reports attempts closed by block-step / fail-step."""
+
+    KEYS = {"step_id", "attempt_id", "event", "reason", "recorded_at", "attempt_owner", "superseded_by"}
+
+    @staticmethod
+    def _row(event, attempt, step="P1", **extra):
+        return {"event": event, "step_id": step, "attempt_id": attempt, "recorded_at": "t", **extra}
+
+    def _blockers(self, root, **kwargs):
+        return porcelain.next_action(root, **kwargs).to_dict()["recorded_blockers"]
+
+    def _cli(self, root, *argv):
+        self.assertEqual(cli.main([*argv, "--root", str(root)]), 0)
+
+    def _last_time(self, root):
+        return json.loads((root / ".agent/step-runs.jsonl").read_text().splitlines()[-1])["recorded_at"]
+
+    def test_every_validated_state_carries_the_key(self):
+        def unrecorded_edit(root):
+            _claimed(root)
+            (root / "src").mkdir(parents=True, exist_ok=True)
+            (root / "src/feature.py").write_text("x = 1\n")
+
+        def verified(root):
+            _validated(root)
+            self._cli(root, "verify-step", "P1")
+
+        def drifting(root):
+            _completed_step(root)
+            (root / "rogue.txt").write_text("out of scope\n")
+
+        def run_verified(root):
+            _completed_step(root)
+            self._cli(root, "verify-run")
+
+        def stale_proof(root):
+            _completed_step(root)
+            _build_verified_proof(root)
+            plan_path = root / ".agent/plan.lock.json"
+            plan = json.loads(plan_path.read_text())
+            plan["objective"] = "changed after proof"
+            plan_path.write_text(json.dumps(plan, indent=2))
+
+        def corrupt_proof(root):
+            _completed_step(root)
+            _build_verified_proof(root)
+            (root / ".agent/proof-pack.json").write_text("{}\n")
+
+        cases = [
+            (_ready_repo, "step_unclaimed", 0),
+            (_claimed, "validation_missing", 0),
+            (_timeout_then_rerun, "attempt_timed_out", 0),
+            (lambda r: _closed_amendment(r, "fail-step", timeout=False), "step_amendment_needed", 1),
+            (_completed_step, "run_unverified", 0),
+            (lambda r: (_completed_step(r), _build_verified_proof(r)), "complete", 0),
+            (unrecorded_edit, "file_receipts_missing", 0),
+            (_validated, "step_unverified", 0),
+            (verified, "step_uncompleted", 0),
+            (drifting, "drift_failing", 0),
+            (run_verified, "proof_missing", 0),
+            (stale_proof, "proof_stale", 0),
+            (corrupt_proof, "proof_failing", 0),
+        ]
+        covered = set()
+        for setup, state, count in cases:
+            with self.subTest(state=state), TemporaryDirectory() as d:
+                root = Path(d)
+                setup(root)
+                payload = porcelain.next_action(root).to_dict()
+                self.assertEqual(payload["state"], state)
+                self.assertIsInstance(payload["recorded_blockers"], list)
+                self.assertEqual(len(payload["recorded_blockers"]), count)
+                covered.add(payload["state"])
+        self.assertEqual(
+            covered,
+            set(porcelain.NEXT_ACTION_STATES)
+            - {"uninitialized", "plan_unlocked", "execution_uninitialized", "state_invalid"},
+        )
+
+    def test_block_on_never_completed_step_is_a_current_blocker(self):
+        with TemporaryDirectory() as d:
+            root = Path(d)
+            _claimed(root)
+            self._cli(root, "block-step", "P1", "--reason", "waiting on upstream API key", "--agent", "tester")
+            payload = porcelain.next_action(root).to_dict()
+            self.assertEqual((payload["state"], payload["blocking"]), ("step_unclaimed", True))
+            self.assertEqual(payload["recorded_blockers"], [{
+                "step_id": "P1", "attempt_id": "A1", "event": "blocked",
+                "reason": "waiting on upstream API key", "recorded_at": self._last_time(root),
+                "attempt_owner": "tester", "superseded_by": None,
+            }])
+
+    def test_claim_after_block_supersedes_the_blocker(self):
+        with TemporaryDirectory() as d:
+            root = Path(d)
+            _claimed(root)
+            self._cli(root, "block-step", "P1", "--reason", "waiting on upstream API key", "--agent", "tester")
+            self._cli(root, "claim-step", "P1", "--agent", "tester")
+            (entry,) = self._blockers(root)
+            self.assertEqual((entry["attempt_id"], entry["superseded_by"]), ("A1", "A2"))
+
+    def test_break_glass_fail_records_the_opener_not_the_operator(self):
+        with TemporaryDirectory() as d:
+            root = Path(d)
+            _claimed(root)
+            self._cli(root, "fail-step", "P1", "--reason", "break glass", "--agent", "operator")
+            (entry,) = self._blockers(root)
+            self.assertEqual(set(entry), self.KEYS)
+            self.assertEqual((entry["event"], entry["attempt_owner"]), ("failed", "tester"))
+
+    def test_standalone_fail_without_opener_has_no_owner(self):
+        with TemporaryDirectory() as d:
+            root = Path(d)
+            _ready_repo(root)
+            self._cli(root, "fail-step", "P1", "--attempt", "A9", "--reason", "no opener")
+            (entry,) = self._blockers(root)
+            self.assertEqual(
+                (entry["attempt_id"], entry["event"], entry["attempt_owner"], entry["superseded_by"]),
+                ("A9", "failed", None, None),
+            )
+            self._cli(root, "claim-step", "P1", "--agent", "tester")
+            (entry,) = self._blockers(root)
+            self.assertEqual(entry["superseded_by"], "A1")
+
+    def test_blocked_amendment_is_current_and_leaves_state_alone(self):
+        with TemporaryDirectory() as d:
+            root = Path(d)
+            _closed_amendment(root, "block-step", timeout=False)
+            payload = porcelain.next_action(root).to_dict()
+            self.assertEqual(payload["state"], "run_unverified")
+            self.assertEqual(
+                [(e["attempt_id"], e["event"], e["reason"], e["attempt_owner"], e["superseded_by"])
+                 for e in payload["recorded_blockers"]],
+                [("A2", "blocked", "closed", "tester", None)],
+            )
+
+    def test_reclaimed_lease_is_not_a_blocker(self):
+        with TemporaryDirectory() as d:
+            root = Path(d)
+            _enforced_claim(root)
+            _set_attempt_lease(root, "A1", "2000-01-01T00:00:00+00:00")
+            self._cli(root, "reclaim-step", "P1", "--agent", "worker-8", "--reason", "expired")
+            rows = [json.loads(line) for line in (root / ".agent/step-runs.jsonl").read_text().splitlines()]
+            self.assertIn("abandoned", [row["event"] for row in rows])
+            self.assertEqual(self._blockers(root, agent_id="worker-8"), [])
+
+    def test_superseded_by_follows_ledger_order_not_id_order(self):
+        events = [
+            self._row("claimed", "WT9-A1", agent_id="w9"),
+            self._row("lease_renewed", "WT9-A1", agent_id="w9"),
+            self._row("blocked", "WT9-A1", reason="r9"),
+            self._row("claimed", "WT5-A1", step="P2", agent_id="w5"),
+            self._row("claimed", "WT1-A1", agent_id="w1"),
+            self._row("blocked", "WT1-A1", reason="r1"),
+            self._row("claimed", "WT0-A1", agent_id="w0"),
+        ]
+        self.assertEqual(
+            [(e["attempt_id"], e["attempt_owner"], e["superseded_by"])
+             for e in porcelain._recorded_blockers(events)],
+            [("WT9-A1", "w9", "WT1-A1"), ("WT1-A1", "w1", "WT0-A1")],
+        )
+
+    def test_non_string_reason_and_time_become_null(self):
+        events = [
+            self._row("claimed", "A1", agent_id="a"),
+            {"event": "failed", "step_id": "P1", "attempt_id": "A1", "reason": 7},
+        ]
+        (entry,) = porcelain._recorded_blockers(events)
+        self.assertIsNone(entry["reason"])
+        self.assertIsNone(entry["recorded_at"])
+
+    def test_key_absent_without_a_validated_ledger(self):
+        def init_only(root):
+            self._cli(root, "init")
+
+        def unlocked_contract(root):
+            cli.main(["init", "--root", str(root)])
+            plan_path = root / ".agent/plan.lock.json"
+            plan_path.write_text(json.dumps(_plan([_step()])))
+            cli.main(["lock-plan", str(plan_path)])
+
+        def ambiguous_after_block(root):
+            _ready_repo(root)
+            self._cli(root, "claim-step", "P1", "--agent", "agent-a")
+            self._cli(root, "block-step", "P1", "--reason", "r", "--agent", "agent-a")
+            self._cli(root, "claim-step", "P1", "--agent", "agent-a")
+            self._cli(root, "claim-step", "P1", "--agent", "agent-b")
+
+        def malformed_ledger(root):
+            _claimed(root)
+            self._cli(root, "block-step", "P1", "--reason", "r", "--agent", "tester")
+            with (root / ".agent/step-runs.jsonl").open("a", encoding="utf-8") as handle:
+                handle.write('"not an object"\n')
+
+        cases = [
+            (lambda root: None, "uninitialized"),
+            (init_only, "plan_unlocked"),
+            (unlocked_contract, "execution_uninitialized"),
+            (ambiguous_after_block, "state_invalid"),
+            (malformed_ledger, "state_invalid"),
+        ]
+        for setup, state in cases:
+            with self.subTest(state=state, setup=getattr(setup, "__name__", "empty")), TemporaryDirectory() as d:
+                root = Path(d)
+                setup(root)
+                payload = porcelain.next_action(root).to_dict()
+                self.assertEqual(payload["state"], state)
+                self.assertNotIn("recorded_blockers", payload)
+
+    def test_json_keeps_a_raw_reason(self):
+        raw = "line\nnext\x1b[31m" + "x" * 300
+        with TemporaryDirectory() as d:
+            root = Path(d)
+            _claimed(root)
+            self._cli(root, "block-step", "P1", "--reason", raw, "--agent", "tester")
+            (entry,) = self._blockers(root)
+            self.assertEqual(entry["reason"], raw)
+            self.assertIn("\\u001b", json.dumps(porcelain.next_action(root).to_dict()))
+
+    def test_mcp_next_action_carries_recorded_blockers(self):
+        with TemporaryDirectory() as d:
+            root = Path(d)
+            _claimed(root)
+            self._cli(root, "block-step", "P1", "--reason", "waiting on upstream API key", "--agent", "tester")
+            result = mcp_server.handle_message({
+                "jsonrpc": "2.0", "id": 1, "method": "tools/call",
+                "params": {"name": "next_action", "arguments": {"root": str(root)}},
+            })
+            blockers = result["result"]["structuredContent"]["data"]["recorded_blockers"]
+            self.assertEqual(blockers, self._blockers(root))
+            self.assertEqual(len(blockers), 1)
+
+
+class TestRecordedBlockerHumanOutput(unittest.TestCase):
+    """#72: human next-action prints one sanitized line per current blocker."""
+
+    def _human(self, root):
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            self.assertEqual(cli.main(["next-action", "--root", str(root)]), 0)
+        return out.getvalue().splitlines()
+
+    def _blocked(self, root, reason):
+        _claimed(root)
+        self.assertEqual(cli.main(["block-step", "P1", "--reason", reason, "--agent", "tester",
+                                   "--root", str(root)]), 0)
+        return json.loads((root / ".agent/step-runs.jsonl").read_text().splitlines()[-1])["recorded_at"]
+
+    def test_current_blocker_prints_one_line(self):
+        with TemporaryDirectory() as d:
+            root = Path(d)
+            at = self._blocked(root, "waiting on upstream API key")
+            self.assertEqual(
+                self._human(root)[-1],
+                f"  recorded blocker: P1/A1 blocked at {at}: waiting on upstream API key",
+            )
+
+    def test_blocker_lines_follow_diagnostics(self):
+        with TemporaryDirectory() as d:
+            root = Path(d)
+            _closed_amendment(root, "fail-step", timeout=False)
+            diags = porcelain.next_action(root).diagnostics
+            self.assertTrue(diags)
+            lines = self._human(root)
+            self.assertEqual(lines[-2], f"  {diags[-1]}")
+            self.assertTrue(lines[-1].startswith("  recorded blocker: P1/A2 failed at "), lines[-1])
+
+    def test_history_is_not_printed(self):
+        with TemporaryDirectory() as d:
+            root = Path(d)
+            self._blocked(root, "first")
+            self.assertEqual(cli.main(["claim-step", "P1", "--agent", "tester", "--root", str(root)]), 0)
+            self.assertEqual(cli.main(["block-step", "P1", "--reason", "second", "--agent", "tester",
+                                       "--root", str(root)]), 0)
+            blocker_lines = [line for line in self._human(root) if "recorded blocker:" in line]
+            self.assertEqual(len(blocker_lines), 1, blocker_lines)
+            self.assertTrue(blocker_lines[0].startswith("  recorded blocker: P1/A2 blocked at "))
+            self.assertTrue(blocker_lines[0].endswith(": second"))
+
+    def test_reason_is_sanitized_and_capped(self):
+        cases = {
+            "controls": (
+                "a\nb\rc\x1bd\x9be\x7ff\u202eg\u2028h" + "x" * 300,
+                ("a?b?c?d?e?f?g?h" + "x" * 300)[:200] + "...",
+            ),
+            "exactly_200": ("y" * 200, "y" * 200),
+        }
+        for name, (reason, shown) in cases.items():
+            with self.subTest(case=name), TemporaryDirectory() as d:
+                root = Path(d)
+                at = self._blocked(root, reason)
+                self.assertEqual(
+                    self._human(root)[-1],
+                    f"  recorded blocker: P1/A1 blocked at {at}: {shown}",
+                )
+
+    def test_null_reason_ends_at_the_timestamp(self):
+        with TemporaryDirectory() as d:
+            root = Path(d)
+            at = self._blocked(root, "to be replaced")
+            path = root / ".agent/step-runs.jsonl"
+            rows = [json.loads(line) for line in path.read_text().splitlines()]
+            rows[-1]["reason"] = 7
+            path.write_text("".join(json.dumps(row) + "\n" for row in rows))
+            self.assertEqual(self._human(root)[-1], f"  recorded blocker: P1/A1 blocked at {at}")
+            rows[-1].pop("recorded_at")
+            path.write_text("".join(json.dumps(row) + "\n" for row in rows))
+            self.assertEqual(self._human(root)[-1], "  recorded blocker: P1/A1 blocked at ?")
+
+
 def _explain_plan(depends: bool = True, steps: bool = True) -> dict:
     plan = {
         "schema_version": PLAN_SCHEMA_VERSION,

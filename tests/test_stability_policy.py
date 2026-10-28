@@ -313,6 +313,16 @@ class StabilityPolicyTests(unittest.TestCase):
             {"action", "allowed", "automatic", "break_glass", "reason"},
         )
 
+    def test_next_action_contract_documents_recorded_blockers(self) -> None:
+        blockers = JSON_OUTPUTS["next-action"][0]["keys"]["recorded_blockers"]
+        self.assertEqual(blockers["type"], "array|null")
+        self.assertEqual(set(blockers["items"]["keys"]), {
+            "step_id", "attempt_id", "event", "reason", "recorded_at", "attempt_owner", "superseded_by"})
+        entry = {"step_id": "P1", "attempt_id": "A1", "event": "failed", "reason": None,
+                 "recorded_at": None, "attempt_owner": None, "superseded_by": "A2"}
+        self.assertJsonContract("next-action", Action(
+            "step_unclaimed", "x", step_id="P1", recorded_blockers=[entry]).to_dict())
+
     def test_cli_contract_lists_next_action_value_sets(self) -> None:
         from agentflow import porcelain
 

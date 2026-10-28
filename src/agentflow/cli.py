@@ -1319,6 +1319,16 @@ def command_events(args: argparse.Namespace) -> int:
     return 0
 
 
+def _terminal_safe(text: str, limit: Optional[int] = None) -> str:
+    """Make agent-written text safe for one terminal line: every character
+    `str.isprintable()` rejects (newlines, ESC, C1 controls, DEL, bidi
+    overrides, U+2028) becomes `?`, then text over `limit` is cut and marked."""
+    text = "".join(ch if ch.isprintable() else "?" for ch in text)
+    if limit is not None and len(text) > limit:
+        return text[:limit] + "..."
+    return text
+
+
 def command_next_action(args: argparse.Namespace) -> int:
     root = Path(args.root).resolve()
     action = porcelain.next_action(
@@ -1334,6 +1344,16 @@ def command_next_action(args: argparse.Namespace) -> int:
             print(action.command)
         for line in action.diagnostics:
             print(f"  {line}")
+        for blocker in action.recorded_blockers or []:
+            if blocker["superseded_by"] is not None:
+                continue
+            line = _terminal_safe(
+                f"  recorded blocker: {blocker['step_id']}/{blocker['attempt_id']} "
+                f"{blocker['event']} at {blocker['recorded_at'] or '?'}"
+            )
+            if blocker["reason"] is not None:
+                line += ": " + _terminal_safe(blocker["reason"], 200)
+            print(line)
     return 0
 
 

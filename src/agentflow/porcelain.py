@@ -91,6 +91,7 @@ class Action:
     diagnostics: List[str] = field(default_factory=list)
     blocking: bool = True
     resumability: Optional[Dict[str, Any]] = None
+    recorded_blockers: Optional[List[Dict[str, Any]]] = None
 
     def __post_init__(self) -> None:
         if self.state not in NEXT_ACTION_STATES:
@@ -112,6 +113,8 @@ class Action:
             data["gate"] = self.gate
         if self.resumability is not None:
             data["resumability"] = self.resumability
+        if self.recorded_blockers is not None:
+            data["recorded_blockers"] = list(self.recorded_blockers)
         return data
 
 
@@ -160,6 +163,10 @@ class _Selection:
     kind is inflight, timed_out (close: block, reclaim or None), claim, amend,
     or None (diagnostic or run-level flow). needs/unrecoverable are filled only
     when no attempt is open and no step is eligible.
+
+    recorded_blockers is set (possibly []) only on the clean returns after the
+    step-runs ledger has been validated; None keeps the recorded_blockers key
+    absent from next-action.
     """
 
     kind: Optional[str]
@@ -169,6 +176,7 @@ class _Selection:
     timed_out: List[Dict[str, Any]] = field(default_factory=list)
     needs: List[Dict[str, Any]] = field(default_factory=list)
     unrecoverable: List[Dict[str, Any]] = field(default_factory=list)
+    recorded_blockers: Optional[List[Dict[str, Any]]] = None
 
 
 def _timeout_close(
@@ -374,6 +382,40 @@ def _validate_step_event_identity(
                 )
         if event_kind in TERMINAL_EVENTS:
             terminal_attempts.add(attempt_id)
+
+
+def _recorded_blockers(events: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """#72: one entry per blocked/failed event of validated step-runs rows.
+
+    superseded_by is the first later opener of the same step in ledger order
+    (ids are only compared for equality: aggregated WT<sid>- ids do not sort by
+    time), so None marks a current blocker.
+    """
+    def text(value: Any) -> Optional[str]:
+        return value if isinstance(value, str) else None
+
+    owners: Dict[str, Optional[str]] = {}
+    pending: Dict[str, List[Dict[str, Any]]] = {}
+    blockers: List[Dict[str, Any]] = []
+    for event in events:
+        kind, step_id, attempt_id = event.get("event"), event.get("step_id"), event.get("attempt_id")
+        if kind in ATTEMPT_OPENING_EVENTS:
+            owners[attempt_id] = text(event.get("agent_id"))
+            for blocker in pending.pop(step_id, []):
+                blocker["superseded_by"] = attempt_id
+        elif kind in ("blocked", "failed"):
+            blocker = {
+                "step_id": step_id,
+                "attempt_id": attempt_id,
+                "event": kind,
+                "reason": text(event.get("reason")),
+                "recorded_at": text(event.get("recorded_at")),
+                "attempt_owner": owners.get(attempt_id),
+                "superseded_by": None,
+            }
+            blockers.append(blocker)
+            pending.setdefault(step_id, []).append(blocker)
+    return blockers
 
 
 def _base_resumability(
@@ -720,6 +762,7 @@ def _resumability(
         })
         ledgers = _projection_ledgers(root)
         _validate_step_event_identity(ledgers["step-runs"], policy)
+        blockers = _recorded_blockers(ledgers["step-runs"])
         state = read_step_state(root)
         plan_steps = {
             step["id"]: step
@@ -785,6 +828,7 @@ def _resumability(
                 policy,
                 "not_applicable",
             )
+            selection.recorded_blockers = blockers
             return projection, selection
 
         step_id, attempt_id = open_attempts[0]
@@ -864,6 +908,7 @@ def _resumability(
             policy,
             lease_state,
         )
+        selection.recorded_blockers = blockers
         return projection, selection
     except (
         AttributeError,
@@ -1171,6 +1216,19 @@ def next_action(
     projection, selection = _resumability(root, plan, agent_id, strict)
     if projection["diagnostics"]:
         return _invalid_action(projection)
+    action = _selected_action(root, plan, projection, selection, agent_id, strict)
+    action.recorded_blockers = selection.recorded_blockers  # #72
+    return action
+
+
+def _selected_action(
+    root: Path,
+    plan: Dict[str, Any],
+    projection: Dict[str, Any],
+    selection: _Selection,
+    agent_id: Optional[str],
+    strict: bool,
+) -> Action:
     step_id = selection.step_id
     agent_args = _agent_args(agent_id) if agent_id else []
     strict_args = ["--strict"] if strict else []

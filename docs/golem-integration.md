@@ -98,7 +98,13 @@ Notes for the adapter:
   `amend`, break-glass `fail`) instead of reconstructing those rules. It
   always exits zero; malformed or ambiguous state has diagnostics and no
   allowed action, while `fail` is explicitly marked as non-automatic
-  break-glass.
+  break-glass. `recorded_blockers` lists attempts closed by
+  `block-step`/`fail-step`; filter on `superseded_by == null` for current
+  blockers, and count the rest as history. A current blocker does not by
+  itself mean the run is blocked (a blocked amendment can leave the run
+  `complete`); use `state` and `blocking` for that. A retry, time or cost
+  budget, or an operator-approved pause, is the adapter's responsibility:
+  Agentflow records the blocker but never treats it as satisfying a gate.
 - Record file changes as they happen, not batched at the end. Hunk-level
   attribution fingerprints each diff hunk; an unrecorded edit inside an
   allowed file fails drift under the default `enforce` policy.
@@ -270,6 +276,7 @@ inventing its own locking on top of `.agent/`.
 | Completed step needs a replacement attempt | `next-action` reports `step_amendment_needed`; take the allowed `amend` action (`amend-step`). A completed step rejects a fresh `claim-step` |
 | `finish-run` stops at `build-proof` with `review policy floor kept from existing proof` | An earlier proof in this root was built stricter (or by a stricter contract). Meet that floor, or have the operator archive `.agent/proof-pack.json` on purpose; the adapter never removes it. The guarantee covers the proof retained in this root only: `aggregate-ledgers`, and a deleted, archived or replaced proof, reset the floor |
 | `finish-run` stops at a gate | `--json` reports `stopped_at`; resolve that gate before re-running |
+| Worker records a blocker (`block-step` / `fail-step`) on a step that never completed | `next-action` keeps reporting the step (usually `step_unclaimed`) and lists the blocker in `recorded_blockers` with `superseded_by: null`; `verify-run` and the stop gate keep failing. Apply the adapter's budget or operator-approved pause, then re-plan, reassign or stop; Agentflow adds no escape hatch |
 
 ## Related Issues
 

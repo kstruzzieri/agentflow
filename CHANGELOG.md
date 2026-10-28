@@ -9,6 +9,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `next-action --json` reports `recorded_blockers`. It has one entry per
+  attempt closed by `block-step` or `fail-step`, in ledger order, with
+  `step_id`, `attempt_id`, `event` (`blocked` or `failed`), `reason`,
+  `recorded_at`, `attempt_owner` and `superseded_by` (the first later attempt
+  of the same step, or `null` for a current blocker). It is derived from the
+  validated step ledger and absent for `uninitialized`, `plan_unlocked`,
+  `execution_uninitialized` and `state_invalid`. `state`, `blocking` and the
+  recovery actions are unchanged. The MCP `next_action` tool carries the field.
+  Human `next-action` output adds one `recorded blocker:` line per current
+  blocker, with control characters shown as `?` and the reason cut at 200
+  characters. (#72)
+
 - `next-step --explain` reports why no step is eligible. With `--json` it
   prints `{step, reason_code, diagnostics}`, where `reason_code` is
   `eligible`, `dependencies_unmet`, `open_attempts` or `steps_complete`.
@@ -18,6 +30,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   like a finished run. Plain `next-step` and `next-step --json` are
   unchanged. `docs/cli-contract.json` lists the codes in `value_sets`. MCP
   `next_step` takes an optional `explain` input. (#71)
+
+### Changed
+
+- `hooks/stop-gate.sh` prints `agentflow next-action` (the next action and any
+  current recorded blocker) and a fixed line pointing to operator interruption
+  to stderr when it refuses a stop. Stdout and exit codes are unchanged, and a
+  recorded blocker still does not satisfy the gate. (#72)
 
 ## [1.1.1] - 2026-10-26
 
