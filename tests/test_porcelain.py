@@ -2211,6 +2211,152 @@ class TestRecordedBlockerHumanOutput(unittest.TestCase):
             self.assertEqual(self._human(root)[-1], "  recorded blocker: P1/A1 blocked at ?")
 
 
+_HOSTILE = "ok\x1b[31mred\rcr\nnl\u202ertl"
+_SHOWN = "ok?[31mred?cr?nl?rtl"
+
+
+class TestHumanOutputIsTerminalSafe(unittest.TestCase):
+    """Agent-written ledger text reaches human output only through
+    cli._terminal_safe; --json keeps the raw value."""
+
+    def _run(self, root, *argv):
+        out, err = io.StringIO(), io.StringIO()
+        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+            cli.main([*argv, "--root", str(root)])
+        text = out.getvalue() + err.getvalue()
+        for raw in ("\x1b", "\r", "\u202e"):
+            self.assertNotIn(raw, text)
+        return text.splitlines()
+
+    def _json(self, root, *argv):
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            cli.main([*argv, "--json", "--root", str(root)])
+        return json.loads(out.getvalue())
+
+    def _copy_last_row(self, root, ledger, **changes):
+        path = root / f".agent/{ledger}.jsonl"
+        row = json.loads(path.read_text().splitlines()[-1])
+        append_jsonl(path, {**row, **changes})
+        return row
+
+    def _run_hostile_gate(self, root, code):
+        cli.main(["run", "--step", "P1", "--gate", 'python3 -c "print(1)"', "--root", str(root),
+                  "--", "python3", "-c", code, _HOSTILE])
+
+    def test_events(self):
+        reason = _HOSTILE + "x" * 300
+        with TemporaryDirectory() as d:
+            root = Path(d)
+            _ready_repo(root)
+            cli.main(["claim-step", "P1", "--agent", _HOSTILE, "--root", d])
+            self._copy_last_row(root, "step-runs", attempt_id=_HOSTILE, agent_id="a")
+            self._run_hostile_gate(root, "print(1)")
+            (root / "src").mkdir()
+            (root / "src/feature.py").write_text("x = 1\n")
+            cli.main(["record-file-change", "--step", "P1", "--path", "src/feature.py",
+                      "--agent", _HOSTILE, "--root", d])
+            kind = self._copy_last_row(root, "file-receipts", id="F9", path=_HOSTILE)["change_kind"]
+            cli.main(["block-step", "P1", "--reason", reason, "--agent", _HOSTILE, "--root", d])
+            lines = self._run(root, "events")
+            for tail in (
+                f"step.claimed  P1/A1  {_SHOWN}",
+                f"step.claimed  P1/{_SHOWN}  a",
+                f"command.recorded  P1/A1  exit=0 python3 -c print(1) {_SHOWN}",
+                f"file.changed  P1/A1  {kind} {_SHOWN}",
+                f"step.blocked  P1/A1  {(_SHOWN + 'x' * 300)[:200]}...",
+            ):
+                self.assertTrue(any(line.endswith(tail) for line in lines), (tail, lines))
+            reasons = [event["data"].get("reason") for event in self._json(root, "events")]
+            self.assertIn(reason, reasons)
+
+    def test_next_action_diagnostics(self):
+        with TemporaryDirectory() as d:
+            root = Path(d)
+            _enforced_claim(root, agent=_HOSTILE)
+            self.assertIn(f"  attempt is owned by {_SHOWN}",
+                          self._run(root, "next-action", "--agent", "other"))
+            self.assertIn(f"attempt is owned by {_HOSTILE}",
+                          self._json(root, "next-action", "--agent", "other")["diagnostics"])
+
+    def test_next_action_reason_and_command(self):
+        with TemporaryDirectory() as d:
+            root = Path(d)
+            _claimed(root)
+            _time_out_open_attempt(root)
+            for ledger in ("step-runs", "command-receipts"):
+                path = root / f".agent/{ledger}.jsonl"
+                path.write_text(path.read_text().replace('"A1"', json.dumps(_HOSTILE)))
+            self.assertEqual(self._run(root, "next-action", "--agent", "tester")[:2], [
+                f"next-action attempt_timed_out: attempt {_SHOWN} of step P1 holds a "
+                "timed-out command receipt and cannot complete",
+                f"agentflow block-step P1 --attempt '{_SHOWN}' --reason 'gate timed out' "
+                "--agent tester",
+            ])
+            payload = self._json(root, "next-action", "--agent", "tester")
+            self.assertIn(_HOSTILE, payload["reason"])
+            self.assertIn(_HOSTILE, payload["args"])
+
+    def test_next_step_explain(self):
+        with TemporaryDirectory() as d:
+            root = Path(d)
+            _ready_repo(root)
+            cli.main(["claim-step", "P1", "--agent", _HOSTILE, "--root", d])
+            self.assertIn(f"  step P1 has open attempt A1 (owner {_SHOWN})",
+                          self._run(root, "next-step", "--explain"))
+            self.assertEqual(self._json(root, "next-step", "--explain")["diagnostics"],
+                             [f"step P1 has open attempt A1 (owner {_HOSTILE})"])
+
+    def test_verify_step_and_finish_step(self):
+        with TemporaryDirectory() as d:
+            root = Path(d)
+            _validated(root)
+            self._copy_last_row(root, "file-receipts", id="F9", path=_HOSTILE)
+            message = f"{_SHOWN} is outside effective file scope for P1"
+            self.assertIn(f"error: {message}", self._run(root, "verify-step", "P1"))
+            self.assertIn(f"  {message}", self._run(root, "finish-step", "P1"))
+            raw = f"{_HOSTILE} is outside effective file scope for P1"
+            self.assertIn(raw, [f["message"] for f in self._json(root, "verify-step", "P1")["errors"]])
+            self.assertIn(raw, self._json(root, "finish-step", "P1")["diagnostics"])
+
+    def test_finish_run(self):
+        with TemporaryDirectory() as d:
+            root = Path(d)
+            _validated(root)
+            self._copy_last_row(root, "command-receipts", id=_HOSTILE, attempt_id="A9")
+            lines = self._run(root, "finish-run")
+            # finish_run splits captured gate output on line breaks, CR included.
+            for line in ("  error: receipt references unknown attempt: ok?[31mred", "  cr", "  nl?rtl"):
+                self.assertIn(line, lines)
+            self.assertIn("error: receipt references unknown attempt: ok\x1b[31mred",
+                          self._json(root, "finish-run")["diagnostics"])
+
+    def test_detect_stuck(self):
+        with TemporaryDirectory() as d:
+            root = Path(d)
+            _claimed(root)
+            for _ in range(3):
+                self._run_hostile_gate(root, "import sys; sys.exit(1)")
+            command = f"python3 -c import sys; sys.exit(1) {_SHOWN}"
+            self.assertIn(
+                f"warning [P1/A1]: Command `{command}` failed 3x in P1/A1 with no change in outcome.",
+                self._run(root, "detect-stuck"),
+            )
+            (finding,) = self._json(root, "detect-stuck")["findings"]
+            self.assertIn(_HOSTILE, finding["message"])
+
+    def test_replay_gates(self):
+        with TemporaryDirectory() as d:
+            root = Path(d)
+            _claimed(root)
+            self._run_hostile_gate(root, "print(1)")
+            self._copy_last_row(root, "command-receipts", id=_HOSTILE, provenance="attested",
+                                command="not a list")
+            self.assertIn(f"error: {_SHOWN} has malformed command", self._run(root, "replay-gates"))
+            errors = self._json(root, "replay-gates")["errors"]
+            self.assertIn(f"{_HOSTILE} has malformed command", [f["message"] for f in errors])
+
+
 def _explain_plan(depends: bool = True, steps: bool = True) -> dict:
     plan = {
         "schema_version": PLAN_SCHEMA_VERSION,

@@ -667,7 +667,7 @@ def command_next_step(args: argparse.Namespace) -> int:
             print(step["id"] if step else "no eligible step")
             print(f"reason: {result['reason_code']}")
             for line in result["diagnostics"]:
-                print(f"  {line}")
+                print(f"  {_terminal_safe(line)}")
         return 0
     plan = _load_root_plan(root)
     step = next_step(root, plan)
@@ -949,7 +949,7 @@ def command_verify_step(args: argparse.Namespace) -> int:
     else:
         print(f"verify-step {result['status']}")
         for finding in [*result["errors"], *result["warnings"]]:
-            print(f"{finding['severity']}: {finding['message']}")
+            print(_terminal_safe(f"{finding['severity']}: {finding['message']}"))
     return 1 if result["status"] == "failed" else 0
 
 
@@ -1043,7 +1043,7 @@ def command_detect_stuck(args: argparse.Namespace) -> int:
         print(f"detect-stuck {report['status']}")
         for finding in report["findings"]:
             location = f"{finding['step_id']}/{finding['attempt_id']}"
-            print(f"warning [{location}]: {finding['message']}")
+            print(_terminal_safe(f"warning [{location}]: {finding['message']}"))
             print(f"  -> {finding['suggested_action']}")
     return 1 if (args.strict and report["findings"]) else 0
 
@@ -1098,7 +1098,7 @@ def command_replay_gates(args: argparse.Namespace) -> int:
     else:
         print(f"replay-gates {result['status']}")
         for finding in [*result["errors"], *result["warnings"]]:
-            print(f"{finding['severity']}: {finding['message']}")
+            print(_terminal_safe(f"{finding['severity']}: {finding['message']}"))
     return 1 if result["status"] == "failed" else 0
 
 
@@ -1294,7 +1294,9 @@ def _event_detail(event: Dict[str, Any]) -> str:
         return f"{data.get('change_kind')} {data.get('path')}".strip()
     if event_type == "verification.run":
         return f"{data.get('scope')} {data.get('status')}".strip()
-    return str(data.get("reason") or data.get("agent_id") or "")
+    if data.get("reason"):
+        return _terminal_safe(str(data["reason"]), 200)
+    return str(data.get("agent_id") or "")
 
 
 def command_events(args: argparse.Namespace) -> int:
@@ -1315,7 +1317,7 @@ def command_events(args: argparse.Namespace) -> int:
             step = event.get("step_id") or "-"
             attempt = event.get("attempt_id") or "-"
             line = f"{event['timestamp']}  {event['type']}  {step}/{attempt}  {_event_detail(event)}"
-            print(line.rstrip())
+            print(_terminal_safe(line).rstrip())
     return 0
 
 
@@ -1339,11 +1341,11 @@ def command_next_action(args: argparse.Namespace) -> int:
     if args.json:
         print(json.dumps(action.to_dict(), indent=2, sort_keys=True))
     else:
-        print(f"next-action {action.state}: {action.reason}")
+        print(_terminal_safe(f"next-action {action.state}: {action.reason}"))
         if action.command:
-            print(action.command)
+            print(_terminal_safe(action.command))
         for line in action.diagnostics:
-            print(f"  {line}")
+            print(f"  {_terminal_safe(line)}")
         for blocker in action.recorded_blockers or []:
             if blocker["superseded_by"] is not None:
                 continue
@@ -1378,7 +1380,7 @@ def command_finish_step(args: argparse.Namespace) -> int:
         print(f"finish-step {result['verification_status']} "
               f"verified={result['verified']} completed={result['completed']}")
         for line in result["diagnostics"]:
-            print(f"  {line}")
+            print(f"  {_terminal_safe(line)}")
     return 0 if result["completed"] else 1
 
 
@@ -1399,7 +1401,7 @@ def command_finish_run(args: argparse.Namespace) -> int:
         if not result["ok"]:
             print(f"stopped at {result['stopped_at']}")
             for line in result["diagnostics"]:
-                print(f"  {line}")
+                print(f"  {_terminal_safe(line)}")
     return 0 if result["ok"] else 1
 
 

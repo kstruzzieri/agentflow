@@ -38,6 +38,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   to stderr when it refuses a stop. Stdout and exit codes are unchanged, and a
   recorded blocker still does not satisfy the gate. (#72)
 
+### Fixed
+
+- Standard output of `events`, `next-action`, `next-step --explain`,
+  `finish-step`, `finish-run`, `verify-step`, `detect-stuck` and
+  `replay-gates` shows non-printable characters in agent-written ledger text
+  (reasons, agent, attempt and receipt ids, recorded argv, recorded paths) as
+  `?`, as the `recorded blocker:` lines already did, so ANSI escapes, line
+  breaks and bidi overrides written to `.agent/` no longer reach the terminal
+  through these commands. `events` cuts a reason at 200 characters. `--json`
+  and `--jsonl` output is unchanged. Error messages on stderr, and the output
+  of `audit-drift`, `verify-run`, `build-proof` and `verify-proof` (which
+  `finish-run --json` and MCP results capture verbatim), still print ledger
+  text as recorded.
+
 ## [1.1.1] - 2026-10-26
 
 Agentflow 1.1.1 closes two gaps through which a step could complete, and a

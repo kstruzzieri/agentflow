@@ -229,6 +229,9 @@ agentflow events --json          # single JSON array
 agentflow events --since 2026-06-18T10:00:00+00:00   # inclusive lower bound
 ```
 
+Human output shows non-printable characters in ledger text as `?` and cuts a reason
+at 200 characters; `--json` and `--jsonl` keep the raw values.
+
 ## Agent Task Loop
 
 All agent front ends should follow the same local loop. Use the installed
