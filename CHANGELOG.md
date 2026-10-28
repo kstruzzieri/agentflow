@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `next-step --explain` reports why no step is eligible. With `--json` it
+  prints `{step, reason_code, diagnostics}`, where `reason_code` is
+  `eligible`, `dependencies_unmet`, `open_attempts` or `steps_complete`.
+  `steps_complete` requires that no attempt is open anywhere, amendments
+  included; it does not mean the run verifies (use `next-action`). With
+  `--explain`, an invalid plan, contract or ledger exits 1 instead of looking
+  like a finished run. Plain `next-step` and `next-step --json` are
+  unchanged. `docs/cli-contract.json` lists the codes in `value_sets`. MCP
+  `next_step` takes an optional `explain` input. (#71)
+
 ## [1.1.1] - 2026-10-26
 
 Agentflow 1.1.1 closes two gaps through which a step could complete, and a

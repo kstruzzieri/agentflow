@@ -58,7 +58,9 @@ feature is deprecated, its output includes a machine-readable top-level
 `deprecations` array; stderr prose alone is not a deprecation signal.
 
 The manifest's `value_sets` section lists the values `next-action` can report
-in `state` and in `resumability.recovery_actions[].action`.
+in `state` and in `resumability.recovery_actions[].action`, and, as
+`next-step.reason_code`, the `reason_code` values `next-step --explain` can
+report.
 A minor release may add values to these sets. A consumer that acts on these
 values must treat an unknown value as not actionable and fail closed.
 
@@ -68,7 +70,8 @@ The supported tool names and arguments are:
 
 | Tool | Arguments |
 | --- | --- |
-| `status`, `doctor`, `next_step` | optional `root` |
+| `status`, `doctor` | optional `root` |
+| `next_step` | optional `explain`, `root` |
 | `claim_step` | `step`, `agent`; optional `lease_minutes`, `root` |
 | `amend_step` | `step`, `agent`, `reason`; optional `reason_code`, `finding_refs`, `lease_minutes`, `root` |
 | `reclaim_step` | `step`, `agent`, `reason`; optional `lease_minutes`, `root` |

@@ -350,6 +350,31 @@ class StabilityPolicyTests(unittest.TestCase):
             },
         )
 
+    def test_next_step_explain_variant_and_reason_code_value_set(self) -> None:
+        from agentflow import porcelain
+
+        manifest = json.loads((ROOT / "docs/cli-contract.json").read_text(encoding="utf-8"))
+        self.assertEqual(manifest["schema_version"], "1.1.0")
+        self.assertEqual(manifest["value_sets"]["next-step.reason_code"],
+                         list(porcelain.NEXT_STEP_REASON_CODES))
+        self.assertEqual(len(JSON_OUTPUTS["next-step"]), 3)
+        self.assertEqual(JSON_OUTPUTS["next-step"][2], {"type": "object", "keys": {
+            "step": "object|null", "reason_code": "string", "diagnostics": "array"}})
+        p2 = {"id": "P2", "action": "Inspect.", "files": ["x"], "preconditions": [],
+              "validation": ["v"], "expected_diff": ["x"], "evidence_ids": [], "depends_on": ["P1"]}
+        self.assertJsonContract("next-step", {"step": p2, "reason_code": "eligible", "diagnostics": []})
+        self.assertJsonContract("next-step", {"step": None, "reason_code": "dependencies_unmet",
+                                              "diagnostics": ["step P2 waits on unmet dependencies: P1"]})
+        self.assertJsonContract("next-step", None)
+
+    def test_next_step_reason_codes_fall_under_the_fail_closed_rule(self) -> None:  # C3
+        policy = (ROOT / "docs/stability.md").read_text(encoding="utf-8")
+        self.assertIn("A minor release may add values to these sets.", policy)
+        self.assertIn("must treat an unknown value as not actionable and fail closed", policy)
+        self.assertIn("`next-step.reason_code`", policy)
+        self.assertIn("| `next_step` | optional `explain`, `root` |", policy)
+        self.assertIn("| `status`, `doctor` | optional `root` |", policy)
+
     def test_cli_contract_manifest_matches_parser_and_covers_json_modes(self) -> None:
         manifest = json.loads((ROOT / "docs/cli-contract.json").read_text(encoding="utf-8"))
         self.assertEqual(
