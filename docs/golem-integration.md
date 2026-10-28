@@ -192,6 +192,16 @@ in-process CLI; MCP returns parsed JSON in `structuredContent.data`, which is
 usually more convenient for an adapter. The `next_action` MCP tool accepts the
 same optional `agent` identity and returns the same `resumability` projection.
 
+Escape agent-written values before you display them. Human text from Agentflow
+(stdout and stderr, MCP `content` text, `structuredContent.stdout` and
+`structuredContent.stderr`, and `finish_run` `diagnostics`) shows non-printable
+characters as `?`, but that rendering is lossy and is not a stable format.
+Other values in `structuredContent.data`, and values in `.agent/` files, stay
+as recorded: agent, attempt and receipt ids, reasons, recorded argv and paths
+can contain ANSI escapes, line breaks or bidi controls once decoded. Match on
+those structured values, never on captured human text, and escape them before
+they reach a terminal or UI.
+
 All eighteen MCP tools are state-transition or read-only operations on
 `.agent/` and are safe for Golem to call autonomously:
 

@@ -153,7 +153,7 @@ def _command_init_with_pack(
         template_id = find_profile(pack.manifest, profile_id)["plan_template"]
         plan = template_to_plan(pack.manifest, template_id)
     except PackError as exc:
-        print(f"error: {exc}", file=sys.stderr)
+        print(_terminal_safe(f"error: {exc}"), file=sys.stderr)
         return 1
 
     plan_path = root / ".agent" / "plan.lock.json"
@@ -174,7 +174,7 @@ def _command_init_with_pack(
         print(f"created {path}")
     write_json(plan_path, plan)
     write_workflow_contract(root, profile)
-    print(f"seeded .agent/plan.lock.json from template {template_id}")
+    print(_terminal_safe(f"seeded .agent/plan.lock.json from template {template_id}"))
     print(f"wrote {WORKFLOW_CONTRACT_PATH}")
     return 0
 
@@ -195,7 +195,7 @@ def command_pack_inspect(args: argparse.Namespace) -> int:
                 )
             )
         else:
-            print(f"error: {exc}", file=sys.stderr)
+            print(_terminal_safe(f"error: {exc}"), file=sys.stderr)
         return 1
     summary = inspect_summary(pack)
     if args.json:
@@ -223,7 +223,7 @@ def command_doctor(args: argparse.Namespace) -> int:
     else:
         print(f"doctor {result['status']}")
         for finding in result["findings"]:
-            print(f"{finding['severity']}: {finding['message']}")
+            print(_terminal_safe(f"{finding['severity']}: {finding['message']}"))
     return 1 if result["status"] == "failed" else 0
 
 
@@ -313,7 +313,7 @@ def command_validate_plan(args: argparse.Namespace) -> int:
     except (FileNotFoundError, ValueError) as exc:
         # One presentation for every unreadable plan (missing, malformed JSON,
         # or schema_version policy rejection): stderr + exit 1.
-        print(f"invalid plan: {exc}", file=sys.stderr)
+        print(_terminal_safe(f"invalid plan: {exc}"), file=sys.stderr)
         return 1
 
     errors = validate_plan(plan)
@@ -354,7 +354,7 @@ def command_lock_plan(args: argparse.Namespace) -> int:
                 errors=[_plan_diagnostic("input_not_found", str(exc))],
             )
         else:
-            print(f"invalid plan: {exc}", file=sys.stderr)
+            print(_terminal_safe(f"invalid plan: {exc}"), file=sys.stderr)
         return 1
     except ValueError as exc:
         code = (
@@ -365,7 +365,7 @@ def command_lock_plan(args: argparse.Namespace) -> int:
         if args.json:
             _print_plan_result("invalid", errors=[_plan_diagnostic(code, str(exc))])
         else:
-            print(f"invalid plan: {exc}", file=sys.stderr)
+            print(_terminal_safe(f"invalid plan: {exc}"), file=sys.stderr)
         return 1
 
     errors = validate_plan(plan)
@@ -424,7 +424,7 @@ def command_workflow_contract(args: argparse.Namespace) -> int:
         try:
             contract = _load_json_object(source, "workflow contract")
         except (FileNotFoundError, ValueError) as exc:
-            print(f"workflow contract invalid: {exc}", file=sys.stderr)
+            print(_terminal_safe(f"workflow contract invalid: {exc}"), file=sys.stderr)
             return 1
         errors = validate_workflow_contract(contract)
         if errors:
@@ -440,7 +440,7 @@ def command_workflow_contract(args: argparse.Namespace) -> int:
     try:
         contract = _load_json_object(target, "workflow contract")
     except (FileNotFoundError, ValueError) as exc:
-        print(f"workflow contract invalid: {exc}", file=sys.stderr)
+        print(_terminal_safe(f"workflow contract invalid: {exc}"), file=sys.stderr)
         return 1
     errors = validate_workflow_contract(contract)
     if errors:
@@ -464,7 +464,7 @@ def command_amend_plan(args: argparse.Namespace) -> int:
         "created_at": utc_now(),
     }
     append_jsonl(root / ".agent/amendments.jsonl", amendment)
-    print(f"recorded amendment {args.id}")
+    print(_terminal_safe(f"recorded amendment {args.id}"))
     return 0
 
 
@@ -483,7 +483,7 @@ def command_record_evidence(args: argparse.Namespace) -> int:
     if args.supports:
         evidence["supports"] = args.supports
     append_jsonl(root / ".agent/evidence.jsonl", evidence)
-    print(f"recorded evidence {args.id}")
+    print(_terminal_safe(f"recorded evidence {args.id}"))
     return 0
 
 
@@ -495,7 +495,7 @@ def command_record_review(args: argparse.Namespace) -> int:
     try:
         record = record_review_run(root, manifest_path)
     except ValueError as exc:
-        print(f"invalid review manifest: {exc}", file=sys.stderr)
+        print(_terminal_safe(f"invalid review manifest: {exc}"), file=sys.stderr)
         return 1
     if args.emit_evidence:
         for entry in review_evidence_entries(record):
@@ -503,7 +503,7 @@ def command_record_review(args: argparse.Namespace) -> int:
     if args.json:
         print(json.dumps(record, indent=2, sort_keys=True))
     else:
-        print(f"recorded review run {record['review_run_id']}")
+        print(_terminal_safe(f"recorded review run {record['review_run_id']}"))
     return 0
 
 
@@ -519,10 +519,10 @@ def command_record_capability(args: argparse.Namespace) -> int:
             evidence=args.evidence,
         )
     except ValueError as exc:
-        print(f"invalid capability receipt: {exc}", file=sys.stderr)
+        print(_terminal_safe(f"invalid capability receipt: {exc}"), file=sys.stderr)
         return 1
     append_capability_receipt(root, row)
-    print(f"recorded capability {row['id']}")
+    print(_terminal_safe(f"recorded capability {row['id']}"))
     return 0
 
 
@@ -538,10 +538,10 @@ def command_waive_capability(args: argparse.Namespace) -> int:
             evidence=args.evidence,
         )
     except ValueError as exc:
-        print(f"invalid capability receipt: {exc}", file=sys.stderr)
+        print(_terminal_safe(f"invalid capability receipt: {exc}"), file=sys.stderr)
         return 1
     append_capability_receipt(root, row)
-    print(f"waived capability {row['id']}")
+    print(_terminal_safe(f"waived capability {row['id']}"))
     return 0
 
 
@@ -560,7 +560,7 @@ def command_review_manifest(args: argparse.Namespace) -> int:
             depth_profile=args.depth_profile,
         )
     except ValueError as exc:
-        print(f"review-manifest failed: {exc}", file=sys.stderr)
+        print(_terminal_safe(f"review-manifest failed: {exc}"), file=sys.stderr)
         return 1
     if args.write:
         out_dir = (root / args.state_dir).resolve()
@@ -592,7 +592,7 @@ def command_record_context(args: argparse.Namespace) -> int:
     if args.bytes is not None:
         receipt["bytes"] = args.bytes
     append_jsonl(root / ".agent/context-receipts.jsonl", receipt)
-    print(f"recorded context receipt {args.id}")
+    print(_terminal_safe(f"recorded context receipt {args.id}"))
     return 0
 
 
@@ -608,7 +608,7 @@ def command_record_failure(args: argparse.Namespace) -> int:
         "created_at": utc_now(),
     }
     append_jsonl(root / ".agent/failures.jsonl", failure)
-    print(f"recorded failure signature for {args.command}")
+    print(_terminal_safe(f"recorded failure signature for {args.command}"))
     return 0
 
 
@@ -621,7 +621,7 @@ def command_audit_drift(args: argparse.Namespace) -> int:
     try:
         plan = _load_plan(plan_path)
     except (FileNotFoundError, json.JSONDecodeError) as exc:
-        print(f"invalid plan: {exc}", file=sys.stderr)
+        print(_terminal_safe(f"invalid plan: {exc}"), file=sys.stderr)
         return 1
 
     report = audit_drift(root, plan)
@@ -630,10 +630,10 @@ def command_audit_drift(args: argparse.Namespace) -> int:
     print(f"drift audit {report['status']}")
     if report["out_of_scope_files"]:
         print("out of scope:")
-        print_lines([f"- {path}" for path in report["out_of_scope_files"]])
+        print_lines([_terminal_safe(f"- {path}") for path in report["out_of_scope_files"]])
     if report["blocked_files_changed"]:
         print("blocked files changed:")
-        print_lines([f"- {path}" for path in report["blocked_files_changed"]])
+        print_lines([_terminal_safe(f"- {path}") for path in report["blocked_files_changed"]])
     if report.get("unmapped_hunks"):
         print("unmapped hunks:")
         hunk_lines = []
@@ -646,9 +646,9 @@ def command_audit_drift(args: argparse.Namespace) -> int:
                 )
             else:
                 hunk_lines.append(f"- {entry}")
-        print_lines(hunk_lines)
+        print_lines([_terminal_safe(line) for line in hunk_lines])
     for note in report["notes"]:
-        print(f"note: {note}")
+        print(_terminal_safe(f"note: {note}"))
     return 1 if report["status"] == "fail" else 0
 
 
@@ -658,7 +658,7 @@ def command_next_step(args: argparse.Namespace) -> int:
         try:
             result = porcelain.explain_next_step(root)
         except ValueError as exc:
-            print(str(exc), file=sys.stderr)
+            print(_terminal_safe(str(exc)), file=sys.stderr)
             return 1
         if args.json:
             print(json.dumps(result, indent=2, sort_keys=True))
@@ -686,12 +686,12 @@ def command_claim_step(args: argparse.Namespace) -> int:
     try:
         event = claim_step(root, plan, args.step, args.agent, args.lease_minutes)
     except ValueError as exc:
-        print(str(exc), file=sys.stderr)
+        print(_terminal_safe(str(exc)), file=sys.stderr)
         return 2
     if args.json:
         print(json.dumps(event, indent=2, sort_keys=True))
     else:
-        print(f"claimed {event['step_id']} as {event['attempt_id']}")
+        print(_terminal_safe(f"claimed {event['step_id']} as {event['attempt_id']}"))
     return 0
 
 
@@ -703,7 +703,7 @@ def command_amend_step(args: argparse.Namespace) -> int:
         try:
             finding_refs.append(parse_finding_ref(raw))
         except ValueError as exc:
-            print(str(exc), file=sys.stderr)
+            print(_terminal_safe(str(exc)), file=sys.stderr)
             return 2
     try:
         event = amend_step(
@@ -717,15 +717,15 @@ def command_amend_step(args: argparse.Namespace) -> int:
             lease_minutes=args.lease_minutes,
         )
     except ValueError as exc:
-        print(str(exc), file=sys.stderr)
+        print(_terminal_safe(str(exc)), file=sys.stderr)
         return 2
     if args.json:
         print(json.dumps(event, indent=2, sort_keys=True))
     else:
-        print(
+        print(_terminal_safe(
             f"amended {event['step_id']} as {event['attempt_id']} "
             f"(amends {event['amends_attempt']})"
-        )
+        ))
     return 0
 
 
@@ -736,15 +736,15 @@ def command_complete_step(args: argparse.Namespace) -> int:
             root, args.step, args.attempt, strict_mode(False), agent_id=args.agent,
         )
     except ValueError as exc:
-        print(str(exc), file=sys.stderr)
+        print(_terminal_safe(str(exc)), file=sys.stderr)
         return 2
     except RuntimeError as exc:
-        print(str(exc), file=sys.stderr)
+        print(_terminal_safe(str(exc)), file=sys.stderr)
         return 1
     if args.json:
         print(json.dumps(event, indent=2, sort_keys=True))
     else:
-        print(f"completed {event['step_id']} {event['attempt_id']}")
+        print(_terminal_safe(f"completed {event['step_id']} {event['attempt_id']}"))
     return 0
 
 
@@ -753,15 +753,15 @@ def command_block_step(args: argparse.Namespace) -> int:
     try:
         event = block_step(root, args.step, args.attempt, args.reason, agent_id=args.agent)
     except ValueError as exc:
-        print(str(exc), file=sys.stderr)
+        print(_terminal_safe(str(exc)), file=sys.stderr)
         return 2
     except RuntimeError as exc:
-        print(str(exc), file=sys.stderr)
+        print(_terminal_safe(str(exc)), file=sys.stderr)
         return 1
     if args.json:
         print(json.dumps(event, indent=2, sort_keys=True))
     else:
-        print(f"blocked {event['step_id']} {event['attempt_id']}")
+        print(_terminal_safe(f"blocked {event['step_id']} {event['attempt_id']}"))
     return 0
 
 
@@ -770,15 +770,15 @@ def command_fail_step(args: argparse.Namespace) -> int:
     try:
         event = fail_step(root, args.step, args.attempt, args.reason, agent_id=args.agent)
     except ValueError as exc:
-        print(str(exc), file=sys.stderr)
+        print(_terminal_safe(str(exc)), file=sys.stderr)
         return 2
     except RuntimeError as exc:
-        print(str(exc), file=sys.stderr)
+        print(_terminal_safe(str(exc)), file=sys.stderr)
         return 1
     if args.json:
         print(json.dumps(event, indent=2, sort_keys=True))
     else:
-        print(f"failed {event['step_id']} {event['attempt_id']}")
+        print(_terminal_safe(f"failed {event['step_id']} {event['attempt_id']}"))
     return 0
 
 
@@ -790,15 +790,15 @@ def command_reclaim_step(args: argparse.Namespace) -> int:
             root, plan, args.step, args.agent, args.reason, args.lease_minutes
         )
     except ValueError as exc:
-        print(str(exc), file=sys.stderr)
+        print(_terminal_safe(str(exc)), file=sys.stderr)
         return 2
     except RuntimeError as exc:
-        print(str(exc), file=sys.stderr)
+        print(_terminal_safe(str(exc)), file=sys.stderr)
         return 1
     if args.json:
         print(json.dumps(event, indent=2, sort_keys=True))
     else:
-        print(f"reclaimed {event['step_id']} as {event['attempt_id']}")
+        print(_terminal_safe(f"reclaimed {event['step_id']} as {event['attempt_id']}"))
     return 0
 
 
@@ -807,13 +807,13 @@ def command_renew_lease(args: argparse.Namespace) -> int:
     try:
         event = renew_lease(root, args.step, args.attempt, args.agent, args.minutes)
     except ValueError as exc:
-        print(str(exc), file=sys.stderr)
+        print(_terminal_safe(str(exc)), file=sys.stderr)
         return 2
     if args.json:
         print(json.dumps(event, indent=2, sort_keys=True))
     else:
-        print(f"renewed {event['step_id']} {event['attempt_id']} "
-              f"until {event['lease_expires_at']}")
+        print(_terminal_safe(f"renewed {event['step_id']} {event['attempt_id']} "
+                             f"until {event['lease_expires_at']}"))
     return 0
 
 
@@ -841,7 +841,7 @@ def command_run(args: argparse.Namespace) -> int:
             agent_id=args.agent,
         )
     except ValueError as exc:
-        print(str(exc), file=sys.stderr)
+        print(_terminal_safe(str(exc)), file=sys.stderr)
         return 2
     if receipt.get("decision") == "blocked":
         categories = sorted({f["category"] for f in receipt["risk"]["findings"]})
@@ -866,7 +866,7 @@ def command_run(args: argparse.Namespace) -> int:
     if args.json:
         print(json.dumps(receipt, indent=2, sort_keys=True))
     else:
-        print(f"recorded {receipt['id']} exit {receipt['exit_code']}")
+        print(_terminal_safe(f"recorded {receipt['id']} exit {receipt['exit_code']}"))
     return int(receipt["exit_code"])
 
 
@@ -889,12 +889,12 @@ def command_record_command(args: argparse.Namespace) -> int:
             agent_id=args.agent,
         )
     except ValueError as exc:
-        print(str(exc), file=sys.stderr)
+        print(_terminal_safe(str(exc)), file=sys.stderr)
         return 2
     if args.json:
         print(json.dumps(receipt, indent=2, sort_keys=True))
     else:
-        print(f"recorded {receipt['id']} attested exit {receipt['exit_code']}")
+        print(_terminal_safe(f"recorded {receipt['id']} attested exit {receipt['exit_code']}"))
     return 0
 
 
@@ -908,13 +908,13 @@ def command_record_file_change(args: argparse.Namespace) -> int:
                 record_file_change(root, plan, args.step, args.attempt, path, agent_id=args.agent)
             )
     except ValueError as exc:
-        print(str(exc), file=sys.stderr)
+        print(_terminal_safe(str(exc)), file=sys.stderr)
         return 1
     if args.json:
         print(json.dumps(receipts, indent=2, sort_keys=True))
     else:
         for receipt in receipts:
-            print(f"recorded {receipt['id']} {receipt['path']}")
+            print(_terminal_safe(f"recorded {receipt['id']} {receipt['path']}"))
     return 0
 
 
@@ -942,7 +942,7 @@ def command_verify_step(args: argparse.Namespace) -> int:
                 agent_id=args.agent,
             )
     except ValueError as exc:
-        print(str(exc), file=sys.stderr)
+        print(_terminal_safe(str(exc)), file=sys.stderr)
         return 2
     if args.json:
         print(json.dumps(result, indent=2, sort_keys=True))
@@ -961,7 +961,7 @@ def command_verify_run(args: argparse.Namespace) -> int:
     try:
         plan = _load_plan(plan_path)
     except (FileNotFoundError, json.JSONDecodeError) as exc:
-        print(f"invalid plan: {exc}", file=sys.stderr)
+        print(_terminal_safe(f"invalid plan: {exc}"), file=sys.stderr)
         return 1
     result = verify_run(root, plan, strict_mode(args.strict), record=args.record)
     if args.json:
@@ -969,7 +969,7 @@ def command_verify_run(args: argparse.Namespace) -> int:
     else:
         print(f"verify-run {result['status']}")
         for finding in [*result["errors"], *result["warnings"]]:
-            print(f"{finding['severity']}: {finding['message']}")
+            print(_terminal_safe(f"{finding['severity']}: {finding['message']}"))
     return 1 if result["status"] == "failed" else 0
 
 
@@ -1054,7 +1054,7 @@ def command_export_handoff(args: argparse.Namespace) -> int:
     try:
         rendered = export_handoff(plan, args.step, args.format)
     except ValueError as exc:
-        print(str(exc), file=sys.stderr)
+        print(_terminal_safe(str(exc)), file=sys.stderr)
         return 1
     if args.output:
         output = Path(args.output)
@@ -1083,7 +1083,7 @@ def command_lint_handoff(args: argparse.Namespace) -> int:
         print(json.dumps(result, indent=2, sort_keys=True))
     else:
         for finding in findings:
-            print(f"{finding['severity']}: {finding['message']}")
+            print(_terminal_safe(f"{finding['severity']}: {finding['message']}"))
         if not findings:
             print("handoff valid")
     return 1 if findings else 0
@@ -1135,11 +1135,11 @@ def command_runtime_status(args: argparse.Namespace) -> int:
         print(json.dumps(snapshot, indent=2, sort_keys=True))
     else:
         for runtime in snapshot["runtimes"]:
-            print(f"{runtime['id']} {runtime['status']}")
+            print(_terminal_safe(f"{runtime['id']} {runtime['status']}"))
         for server in snapshot.get("mcp_servers", []):
-            print(f"mcp {server['id']} {server['status']}")
+            print(_terminal_safe(f"mcp {server['id']} {server['status']}"))
         for finding in snapshot.get("findings", []):
-            print(f"{finding['severity']}: {finding['message']}")
+            print(_terminal_safe(f"{finding['severity']}: {finding['message']}"))
     has_error = any(item.get("severity") == "error" for item in snapshot.get("findings", []))
     has_warning = any(item.get("severity") == "warning" for item in snapshot.get("findings", []))
     return 1 if has_error or (strict_mode(args.strict) and has_warning) else 0
@@ -1174,19 +1174,19 @@ def command_build_proof(args: argparse.Namespace) -> int:
     try:
         plan = _load_plan(plan_path)
     except (FileNotFoundError, json.JSONDecodeError) as exc:
-        print(f"invalid plan: {exc}", file=sys.stderr)
+        print(_terminal_safe(f"invalid plan: {exc}"), file=sys.stderr)
         return 1
     traceability_errors = validate_requirement_traceability(plan)
     if traceability_errors:
         print("invalid requirement traceability", file=sys.stderr)
         for error in traceability_errors:
-            print(f"- {error}", file=sys.stderr)
+            print(_terminal_safe(f"- {error}"), file=sys.stderr)
         return 1
     design_errors = validate_design_decision_traceability(plan)
     if design_errors:
         print("invalid design decision traceability", file=sys.stderr)
         for error in design_errors:
-            print(f"- {error}", file=sys.stderr)
+            print(_terminal_safe(f"- {error}"), file=sys.stderr)
         return 1
 
     try:
@@ -1209,13 +1209,13 @@ def command_build_proof(args: argparse.Namespace) -> int:
         # in place rather than replacing it with one built from invalid input.
         print(f"invalid working state: {exc.subject}:", file=sys.stderr)
         for error in exc.errors:
-            print(f"- {error}", file=sys.stderr)
+            print(_terminal_safe(f"- {error}"), file=sys.stderr)
         return 1
     except ValueError as exc:
-        print(f"invalid ledger: {exc}", file=sys.stderr)
+        print(_terminal_safe(f"invalid ledger: {exc}"), file=sys.stderr)
         return 1
     except OSError as exc:
-        print(f"could not publish proof: {exc}", file=sys.stderr)
+        print(_terminal_safe(f"could not publish proof: {exc}"), file=sys.stderr)
         return 1
     print(f"created {output.relative_to(root)}")
     print("created .agent/proof-pack.json")
@@ -1232,7 +1232,7 @@ def command_build_proof(args: argparse.Namespace) -> int:
     warnings = [check for check in proof["checks"] if check.get("status") == "warning"]
     if recorded_strict:
         for check in warnings:
-            print(f"{check['id']}: {check.get('message') or 'warning'}")
+            print(_terminal_safe(f"{check['id']}: {check.get('message') or 'warning'}"))
     has_failed = any(check.get("status") == "failed" for check in proof["checks"])
     return 1 if has_failed or (recorded_strict and warnings) else 0
 
@@ -1247,7 +1247,7 @@ def command_verify_proof(args: argparse.Namespace) -> int:
         return 1
     findings = verify_proof(root, proof_path, replay=args.replay, strict=strict_mode(args.strict))
     for finding in findings:
-        print(f"{finding['severity']}: {finding['message']}")
+        print(_terminal_safe(f"{finding['severity']}: {finding['message']}"))
     if any(finding.get("severity") == "error" for finding in findings):
         return 1
     print("proof verified")
@@ -1275,7 +1275,7 @@ def command_view_proof(args: argparse.Namespace) -> int:
     try:
         model = collect_view_model(root, proof_path, output)
     except ValueError as exc:
-        print(str(exc), file=sys.stderr)
+        print(_terminal_safe(str(exc)), file=sys.stderr)
         return 1
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(render_html(model), encoding="utf-8")
@@ -1369,10 +1369,10 @@ def command_finish_step(args: argparse.Namespace) -> int:
             agent_id=args.agent,
         )
     except ValueError as exc:
-        print(str(exc), file=sys.stderr)
+        print(_terminal_safe(str(exc)), file=sys.stderr)
         return 2
     except RuntimeError as exc:
-        print(str(exc), file=sys.stderr)
+        print(_terminal_safe(str(exc)), file=sys.stderr)
         return 1
     if args.json:
         print(json.dumps(result, indent=2, sort_keys=True))
@@ -1430,7 +1430,7 @@ def command_status(args: argparse.Namespace) -> int:
     except ValueError as exc:
         # Covers malformed JSON (JSONDecodeError is a ValueError) and
         # schema_version policy rejections: status must report, never traceback.
-        print(f"status invalid: {exc}")
+        print(_terminal_safe(f"status invalid: {exc}"))
         return 1
 
     problems = False
@@ -1443,9 +1443,9 @@ def command_status(args: argparse.Namespace) -> int:
             return str(len(read_jsonl(path)))
         except ValueError as exc:
             problems = True
-            return f"unreadable: {exc}"
+            return _terminal_safe(f"unreadable: {exc}")
 
-    print(f"objective {plan.get('objective') or 'TBD'}")
+    print(_terminal_safe(f"objective {plan.get('objective') or 'TBD'}"))
     print(f"locked {bool(plan.get('locked'))}")
     print(f"steps {len(plan.get('steps', []))}")
     print(f"evidence {count(evidence_path)}")
@@ -1453,10 +1453,10 @@ def command_status(args: argparse.Namespace) -> int:
     if drift_path.exists():
         try:
             drift = read_json(drift_path)
-            print(f"drift {drift.get('status', 'unknown')}")
+            print(_terminal_safe(f"drift {drift.get('status', 'unknown')}"))
         except ValueError as exc:
             problems = True
-            print(f"drift unreadable: {exc}")
+            print(_terminal_safe(f"drift unreadable: {exc}"))
     else:
         print("drift missing")
     print(f"runtime config {'present' if runtime_config_path.exists() else 'missing'}")
@@ -1491,7 +1491,7 @@ def _recommend_fail(code: str, message: str, *, json_mode: bool, exit_code: int)
     if json_mode:
         _print_plan_result("invalid", errors=[_plan_diagnostic(code, message)])
     else:
-        print(message if exit_code == 2 else f"invalid brief: {message}", file=sys.stderr)
+        print(_terminal_safe(message if exit_code == 2 else f"invalid brief: {message}"), file=sys.stderr)
     return exit_code
 
 
@@ -1550,7 +1550,7 @@ def _draft_fail(code: str, message: str, *, json_mode: bool, exit_code: int) -> 
     if json_mode:
         _print_plan_result("invalid", errors=[_plan_diagnostic(code, message)])
     else:
-        print(message, file=sys.stderr)
+        print(_terminal_safe(message), file=sys.stderr)
     return exit_code
 
 
@@ -1568,7 +1568,7 @@ def _print_draft_warnings(warnings: List[Dict[str, str]]) -> None:
     # Non-fatal diagnostics (e.g. #89 greenfield candidate_file_missing) go to
     # stderr so machine consumers reading stdout JSON stay unaffected.
     for warning in warnings:
-        print(f"warning [{warning['code']}]: {warning['message']}", file=sys.stderr)
+        print(_terminal_safe(f"warning [{warning['code']}]: {warning['message']}"), file=sys.stderr)
 
 
 def _render_draft_summary(payload: Dict[str, Any]) -> List[str]:
@@ -1682,7 +1682,7 @@ def command_draft_plan(args: argparse.Namespace) -> int:
                 "errors": [],
             }, indent=2, sort_keys=True))
         else:
-            print(f"drafted .agent/plan.lock.json from {selected['pack']}/{selected['profile']}")
+            print(_terminal_safe(f"drafted .agent/plan.lock.json from {selected['pack']}/{selected['profile']}"))
             print(f"wrote {WORKFLOW_CONTRACT_PATH}")
             _print_draft_warnings(warnings)
         return 0
@@ -2204,5 +2204,5 @@ def main(argv: Optional[List[str]] = None) -> int:
         # Safety net for reader-gate errors (artifact schema_version policy
         # rejections raise ValueError): cross-version .agent state must surface
         # as a clean diagnostic, never a traceback.
-        print(f"error: {exc}", file=sys.stderr)
+        print(_terminal_safe(f"error: {exc}"), file=sys.stderr)
         return 1
