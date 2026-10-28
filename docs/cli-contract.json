@@ -1285,6 +1285,17 @@
         "nargs": 0,
         "required": false,
         "takes_value": false
+      },
+      {
+        "choices": null,
+        "default": false,
+        "multiple": false,
+        "names": [
+          "--explain"
+        ],
+        "nargs": 0,
+        "required": false,
+        "takes_value": false
       }
     ],
     "pack": [],
@@ -3057,6 +3068,14 @@
       },
       {
         "type": "null"
+      },
+      {
+        "keys": {
+          "diagnostics": "array",
+          "reason_code": "string",
+          "step": "object|null"
+        },
+        "type": "object"
       }
     ],
     "pack inspect": [
@@ -3339,6 +3358,12 @@
       "proof_stale",
       "proof_failing",
       "complete"
+    ],
+    "next-step.reason_code": [
+      "eligible",
+      "dependencies_unmet",
+      "open_attempts",
+      "steps_complete"
     ]
   }
 }

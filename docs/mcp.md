@@ -26,7 +26,7 @@ its `dependencies = []` invariant.
 | --- | --- | --- |
 | `status` | `status` | Summarize current workflow state |
 | `doctor` | `doctor` | Check shell runtime readiness |
-| `next_step` | `next-step` | Next eligible plan step (JSON) |
+| `next_step` | `next-step` | Next eligible plan step (JSON); optional `explain` adds `reason_code` and `diagnostics` |
 | `claim_step` | `claim-step` | Claim a plan step (`step`, `agent`) |
 | `amend_step` | `amend-step` | Open an auditable amendment on a completed step (`step`, `agent`, `reason`, optional `reason_code`, optional `finding_refs` array of `RR-...#ID` strings) |
 | `reclaim_step` | `reclaim-step` | Abandon an expired attempt and open a fresh claim |

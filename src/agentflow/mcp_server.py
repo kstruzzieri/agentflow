@@ -115,7 +115,8 @@ def _argv_doctor(a: Dict[str, Any]) -> List[str]:
 
 
 def _argv_next_step(a: Dict[str, Any]) -> List[str]:
-    return ["next-step", "--json", *_root(a)]
+    explain = ["--explain"] if a.get("explain") is True else []
+    return ["next-step", "--json", *explain, *_root(a)]
 
 
 def _argv_claim_step(a: Dict[str, Any]) -> List[str]:
@@ -285,7 +286,15 @@ TOOLS: List[Tool] = [
     Tool(
         "next_step",
         "Show the next eligible plan step as JSON.",
-        _object_schema(dict(_ROOT_PROP)),
+        _object_schema(
+            {
+                **_ROOT_PROP,
+                "explain": {
+                    "type": "boolean",
+                    "description": "Wrap the step with reason_code and diagnostics.",
+                },
+            }
+        ),
         _argv_next_step,
     ),
     Tool(

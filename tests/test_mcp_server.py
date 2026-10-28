@@ -570,5 +570,20 @@ class PorcelainToolTests(unittest.TestCase):
         self.assertIn("ok", result["structuredContent"]["data"])
 
 
+class NextStepExplainToolTests(unittest.TestCase):
+    def test_explain_is_optional_and_only_true_adds_the_flag(self) -> None:  # C4
+        tool = m.TOOLS_BY_NAME["next_step"]
+        self.assertEqual(tool.input_schema["properties"]["explain"]["type"], "boolean")
+        self.assertEqual(tool.input_schema["required"], [])
+        plain = ["next-step", "--json", "--root", "."]
+        self.assertEqual(tool.argv({"root": "."}), plain)
+        self.assertEqual(tool.argv({"root": ".", "explain": False}), plain)
+        self.assertEqual(tool.argv({"root": ".", "explain": "true"}), plain)
+        self.assertEqual(tool.argv({"root": ".", "explain": 1}), plain)
+        self.assertEqual(tool.argv({"root": ".", "explain": True}),
+                         ["next-step", "--json", "--explain", "--root", "."])
+        self.assertEqual(len(m.TOOLS), 18)
+
+
 if __name__ == "__main__":
     unittest.main()

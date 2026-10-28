@@ -654,6 +654,21 @@ def command_audit_drift(args: argparse.Namespace) -> int:
 
 def command_next_step(args: argparse.Namespace) -> int:
     root = Path(args.root).resolve()
+    if args.explain:
+        try:
+            result = porcelain.explain_next_step(root)
+        except ValueError as exc:
+            print(str(exc), file=sys.stderr)
+            return 1
+        if args.json:
+            print(json.dumps(result, indent=2, sort_keys=True))
+        else:
+            step = result["step"]
+            print(step["id"] if step else "no eligible step")
+            print(f"reason: {result['reason_code']}")
+            for line in result["diagnostics"]:
+                print(f"  {line}")
+        return 0
     plan = _load_root_plan(root)
     step = next_step(root, plan)
     if args.json:
@@ -1919,6 +1934,12 @@ def build_parser() -> argparse.ArgumentParser:
     next_step_parser = subparsers.add_parser("next-step", help="show the next eligible plan step")
     next_step_parser.add_argument("--root", default=".")
     next_step_parser.add_argument("--json", action="store_true")
+    next_step_parser.add_argument(
+        "--explain",
+        action="store_true",
+        help="also report why no step is eligible (reason_code, diagnostics); "
+        "with --json, wrap the step in {step, reason_code, diagnostics}",
+    )
     next_step_parser.set_defaults(func=command_next_step)
 
     claim = subparsers.add_parser("claim-step", help="claim a plan step")

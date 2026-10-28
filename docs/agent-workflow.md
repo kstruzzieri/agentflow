@@ -287,6 +287,15 @@ agentflow verify-proof
   records evidence only; it never invokes the practice. `build-proof` compares
   these against the contract's `required_capabilities`.
 - `init-execution` creates the execution contract and additive ledgers.
+- `next-step` prints the next claimable step id or `no eligible step`; `--json`
+  prints the raw locked step object or `null`. `--explain` adds a `reason_code`
+  (`eligible`, `dependencies_unmet`, `open_attempts` or `steps_complete`) and
+  one diagnostic line per blocking fact; with `--json` it prints
+  `{step, reason_code, diagnostics}`. `steps_complete` means nothing can be
+  claimed and no attempt is open anywhere, not that the run verifies. With
+  `--explain`, an invalid plan, contract or ledger exits 1 with the message on
+  stderr. `next-action` is the broader alternative: one run-level state with
+  recovery commands.
 - `claim-step` records which agent owns the step attempt.
 - `run` executes a command with the configured timeout and records the observed
   command receipt. A timed-out command records `decision: "timeout"`,

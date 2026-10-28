@@ -19,15 +19,18 @@ from agentflow.execution import (
     claim_step,
     complete_step,
     current_step_attempt,
+    eligible_step,
     fail_step,
     init_execution_artifacts,
     latest_completed_attempt,
     mark_step_verified,
     next_step,
+    read_step_events,
     read_step_state,
     renew_lease,
     require_lifecycle_owner,
     resolve_attempt,
+    step_state_from_events,
 )
 
 
@@ -464,6 +467,41 @@ class ExecutionStateTests(unittest.TestCase):
 
             self.assertEqual(state["steps"]["P1"]["status"], "failed")
             self.assertEqual(state["steps"]["P1"]["completed"], False)
+
+
+class StepReducerSplitTests(unittest.TestCase):
+    """#71: the wrappers equal the pure reducers they now delegate to."""
+
+    def _root(self, tmp: str) -> Path:
+        root = Path(tmp)
+        create_initial_artifacts(root)
+        init_execution_artifacts(root)
+        write_json(root / ".agent/plan.lock.json", plan())
+        return root
+
+    def test_wrappers_equal_the_pure_reducers(self) -> None:
+        def fresh(root): pass
+        def p1_open(root): claim_step(root, plan(), "P1", "agent-a")
+        def p1_renewed(root):
+            claim_step(root, plan(), "P1", "agent-a")
+            renew_lease(root, "P1", None, "agent-a")
+        def p1_done_p2_open(root):
+            attempt = claim_step(root, plan(), "P1", "agent-a")["attempt_id"]
+            mark_step_verified(root, "P1", attempt, [])
+            complete_step(root, "P1", attempt)
+            claim_step(root, plan(), "P2", "agent-b")
+        def standalone_fail(root): fail_step(root, "P1", "A1", "operator")
+        for build in (fresh, p1_open, p1_renewed, p1_done_p2_open, standalone_fail):
+            with self.subTest(build.__name__), tempfile.TemporaryDirectory() as tmp:
+                root = self._root(tmp)
+                build(root)
+                self.assertEqual(read_step_state(root), step_state_from_events(read_step_events(root)))
+                self.assertEqual(next_step(root, plan()), eligible_step(read_step_state(root), plan()))
+
+    def test_reducers_take_rows_not_a_root(self) -> None:
+        empty = step_state_from_events([])
+        self.assertEqual(empty, {"steps": {}, "attempts": {}})
+        self.assertEqual(eligible_step(empty, plan())["id"], "P1")
 
 
 if __name__ == "__main__":

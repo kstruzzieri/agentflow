@@ -25,6 +25,7 @@ from .execution import (
     _complete_step,
     complete_step,
     completion_lock,
+    eligible_step,
     lease_grace_seconds,
     lease_policy,
     lease_ttl_minutes,
@@ -34,6 +35,7 @@ from .execution import (
     read_step_state,
     refuse_timed_out_attempt,
     require_lifecycle_owner,
+    step_state_from_events,
     timed_out_receipts,
     validate_execution_contract,
 )
@@ -67,6 +69,14 @@ NEXT_ACTION_STATES = (
     "proof_stale",
     "proof_failing",
     "complete",
+)
+
+# #71: first match wins, in this order. See explain_next_step.
+NEXT_STEP_REASON_CODES = (
+    "eligible",
+    "dependencies_unmet",
+    "open_attempts",
+    "steps_complete",
 )
 
 
@@ -924,6 +934,129 @@ def resumability_projection(
     now: Optional[datetime] = None,
 ) -> Dict[str, Any]:
     return _resumability(root, plan, agent_id, strict, now)[0]
+
+
+def _explain_snapshot(
+    root: Path,
+) -> Tuple[Dict[str, Any], List[Dict[str, Any]], Dict[str, Any]]:
+    """Validate the execution state as `next-action` does (#71).
+
+    Returns (plan, validated step-runs rows, state reduced from those rows).
+    Mirrors `_resumability`'s structural checks call for call, so a message is
+    the text `next-action` reports; a test pins the two against drift. Raises
+    ValueError with that message.
+    """
+    try:
+        if not (root / ".agent/plan.lock.json").exists():
+            raise ValueError("no .agent/plan.lock.json; run init")
+        plan = _load_plan(root)
+        if not isinstance(plan, dict):
+            raise ValueError(
+                ".agent/plan.lock.json top-level value must be a JSON object"
+            )
+        if plan.get("locked") is not True:
+            raise ValueError("plan exists but is not locked; run lock-plan")
+        try:
+            plan_errors = validate_plan(plan)
+        except (AttributeError, KeyError, TypeError, ValueError) as exc:
+            plan_errors = [f"plan structure is invalid: {exc}"]
+        locked_at = plan.get("locked_at")
+        if locked_at is not None and not isinstance(locked_at, str):
+            plan_errors.append("locked_at must be a string or null")
+        if plan_errors:
+            raise ValueError("; ".join(plan_errors))
+        if not (root / ".agent/execution.contract.json").exists():
+            raise ValueError(".agent/execution.contract.json is missing")
+        contract = load_execution_contract(root)
+        if not isinstance(contract, dict):
+            raise ValueError("execution contract must be a JSON object")
+        contract_errors = validate_execution_contract(contract)
+        if contract_errors:
+            raise ValueError("; ".join(item["message"] for item in contract_errors))
+        policy = lease_policy(root)
+        lease_ttl_minutes(root)
+        lease_grace_seconds(root)
+        rows = _projection_ledgers(root)["step-runs"]
+        _validate_step_event_identity(rows, policy)
+        state = step_state_from_events(rows)
+        plan_ids = {
+            step["id"]
+            for step in plan.get("steps", [])
+            if isinstance(step, dict) and isinstance(step.get("id"), str)
+        }
+        unknown_steps = sorted(set(state["steps"]) - plan_ids)
+        if unknown_steps:
+            raise ValueError(
+                f"execution ledger references unknown steps: {', '.join(unknown_steps)}"
+            )
+        return plan, rows, state
+    except (
+        AttributeError,
+        KeyError,
+        OSError,
+        TypeError,
+        ValueError,
+        json.JSONDecodeError,
+    ) as exc:
+        raise ValueError(str(exc)) from None
+
+
+def explain_next_step(root: Path) -> Dict[str, Any]:
+    """#71: why `next-step` has, or lacks, an eligible step.
+
+    Classifies the rows `_explain_snapshot` validated, never a fresh read, so
+    `step` and `reason_code` cannot disagree. Raises ValueError for an invalid
+    state. Diagnostics are filled only when no step is eligible.
+    """
+    plan, rows, state = _explain_snapshot(root)
+    step = eligible_step(state, plan)
+    if step is not None:
+        return {"step": step, "reason_code": "eligible", "diagnostics": []}
+    steps = state["steps"]
+    attempts = state["attempts"]
+    completed = {step_id for step_id, item in steps.items() if item.get("completed")}
+    diagnostics: List[str] = []
+    waiting = False
+    if not plan.get("steps"):
+        diagnostics.append("plan has no steps")
+    for plan_step in plan.get("steps", []):
+        step_id = plan_step.get("id") if isinstance(plan_step, dict) else None
+        if not isinstance(step_id, str):
+            continue
+        item = steps.get(step_id, {})
+        open_ids = item.get("open_attempts", [])
+        has_work = bool(item.get("completed"))
+        for attempt_id in open_ids:
+            owner = attempts[attempt_id].get("agent_id")
+            who = f"owner {owner}" if owner else "no owner"
+            prefix = "has completed work and open attempt" if has_work else "has open attempt"
+            diagnostics.append(f"step {step_id} {prefix} {attempt_id} ({who})")
+        if open_ids:
+            continue
+        if not has_work:
+            unmet = [d for d in plan_step.get("depends_on", []) if d not in completed]
+            diagnostics.append(
+                f"step {step_id} waits on unmet dependencies: {', '.join(unmet)}"
+            )
+            waiting = True
+        elif item.get("status") in {"blocked", "failed", "abandoned"}:
+            # The latest non-lease row, not item["attempts"][-1] (first-appearance order).
+            latest = next(
+                row["attempt_id"]
+                for row in reversed(rows)
+                if row["step_id"] == step_id and row["event"] not in LEASE_EVENTS
+            )
+            diagnostics.append(
+                f"step {step_id} has completed work but its latest attempt {latest} "
+                f"ended {item['status']}; run next-action to see whether it needs amend-step"
+            )
+    if waiting:
+        code = "dependencies_unmet"
+    elif any(attempt.get("open") for attempt in attempts.values()):
+        code = "open_attempts"
+    else:
+        code = "steps_complete"
+    return {"step": None, "reason_code": code, "diagnostics": diagnostics}
 
 
 def _scoped_unrecorded_paths(root: Path, plan: Dict[str, Any], step_id: str,

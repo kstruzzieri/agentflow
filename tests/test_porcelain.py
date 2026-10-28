@@ -9,7 +9,13 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest import mock
 
-from agentflow.artifacts import append_jsonl
+from agentflow.artifacts import append_jsonl, create_initial_artifacts, write_json
+from agentflow.cli_contract import JSON_OUTPUTS
+from agentflow.execution import (
+    amend_step, block_step, claim_step, complete_step, eligible_step, fail_step,
+    init_execution_artifacts, mark_step_verified, next_step, read_step_events,
+    read_step_state, reclaim_step, renew_lease, step_state_from_events,
+)
 from agentflow.contracts import (
     COMMAND_RECEIPTS_SCHEMA_VERSION,
     FILE_RECEIPTS_SCHEMA_VERSION,
@@ -2203,6 +2209,640 @@ class TestRecordedBlockerHumanOutput(unittest.TestCase):
             rows[-1].pop("recorded_at")
             path.write_text("".join(json.dumps(row) + "\n" for row in rows))
             self.assertEqual(self._human(root)[-1], "  recorded blocker: P1/A1 blocked at ?")
+
+
+def _explain_plan(depends: bool = True, steps: bool = True) -> dict:
+    plan = {
+        "schema_version": PLAN_SCHEMA_VERSION,
+        "objective": "Exercise state machine.",
+        "scope": ["State machine fixture."],
+        "non_goals": [],
+        "invariants": ["Ledgers are append-only."],
+        "allowed_files": ["fixture.txt", ".agent/"],
+        "blocked_files": [],
+        "validation_gates": ["python3 -c \"print('ok')\""],
+        "rollback_plan": "Delete fixture.txt.",
+        "risk_level": "low",
+        "drift_budget": {
+            "unrelated_edits": 0,
+            "new_dependencies": 0,
+            "formatting_drift": "minimal",
+            "architecture_drift": "requires_approval",
+            "test_weakening": 0,
+        },
+        "steps": [
+            {
+                "id": "P1",
+                "action": "Create fixture.",
+                "files": ["fixture.txt"],
+                "preconditions": ["Plan locked."],
+                "expected_diff": ["fixture.txt exists."],
+                "validation": ["python3 -c \"print('ok')\""],
+                "evidence_ids": [],
+            },
+            {
+                "id": "P2",
+                "action": "Inspect fixture.",
+                "files": ["fixture.txt"],
+                "preconditions": ["P1 complete."],
+                "expected_diff": ["No additional changes."],
+                "validation": ["manual inspection"],
+                "evidence_ids": [],
+                "depends_on": ["P1"],
+            },
+        ],
+        "evidence_ids": [],
+        "locked": True,
+        "locked_at": "2026-06-01T00:00:00+00:00",
+    }
+    if not depends:
+        del plan["steps"][1]["depends_on"]
+    if not steps:
+        plan["steps"] = []
+    return plan
+
+
+def _explain_root(root: Path, plan: dict, enforce: bool = False) -> dict:
+    create_initial_artifacts(root)
+    init_execution_artifacts(root)
+    write_json(root / ".agent/plan.lock.json", plan)
+    if enforce:
+        _set_concurrency(root, lease_policy="enforce")
+    return plan
+
+
+def _step_row(root: Path, **row) -> None:
+    append_jsonl(root / ".agent/step-runs.jsonl", {
+        "schema_version": STEP_RUNS_SCHEMA_VERSION,
+        "recorded_at": "2026-10-27T00:00:00+00:00",
+        **row,
+    })
+
+
+def _done(root: Path, plan: dict, step_id: str, agent: str = "agent-a", now=None) -> str:
+    attempt = claim_step(root, plan, step_id, agent, now=now)["attempt_id"]
+    mark_step_verified(root, step_id, attempt, [], agent_id=agent, now=now)
+    complete_step(root, step_id, attempt, agent_id=agent, now=now)
+    return attempt
+
+
+_PAST = datetime(2026, 1, 1, tzinfo=timezone.utc)
+
+
+def _plan_of(root: Path) -> dict:
+    return json.loads((root / ".agent/plan.lock.json").read_text())
+
+
+def _ledger_text(root: Path, name: str, text: str) -> None:
+    with (root / ".agent" / name).open("a", encoding="utf-8") as handle:
+        handle.write(text)
+
+
+def _r1(root):
+    _explain_root(root, _explain_plan())
+    return root
+
+
+def _r2(root):
+    plan = _explain_root(root, _explain_plan())
+    claim_step(root, plan, "P1", "agent-a")
+    fail_step(root, "P1", None, "x")
+    return root
+
+
+def _r3(root):
+    plan = _explain_root(root, _explain_plan())
+    claim_step(root, plan, "P1", "agent-a")
+    return root
+
+
+def _r4(root):
+    plan = _explain_root(root, _explain_plan())
+    _done(root, plan, "P1")
+    claim_step(root, plan, "P2", "agent-b")
+    return root
+
+
+def _r5(root):
+    plan = _explain_root(root, _explain_plan(depends=False))
+    claim_step(root, plan, "P1", "agent-a")
+    claim_step(root, plan, "P2", "agent-b")
+    return root
+
+
+def _r6(root):
+    plan = _explain_root(root, _explain_plan())
+    _done(root, plan, "P1")
+    _done(root, plan, "P2")
+    amend_step(root, plan, "P1", "agent-b", "fix")
+    return root
+
+
+def _r7(root):
+    plan = _explain_root(root, _explain_plan(), enforce=True)
+    _done(root, plan, "P1")
+    claim_step(root, plan, "P2", "agent-b", now=_PAST)
+    return root
+
+
+def _r7b(root):
+    plan = _explain_root(root, _explain_plan(), enforce=True)
+    claim_step(root, plan, "P1", "agent-a", now=_PAST)
+    return root
+
+
+def _r8(root):
+    plan = _explain_root(root, _explain_plan())
+    _done(root, plan, "P1")
+    _done(root, plan, "P2")
+    return root
+
+
+def _r9(root):
+    _r8(root)
+    amend_step(root, _plan_of(root), "P1", "agent-b", "fix")
+    fail_step(root, "P1", None, "x")
+    return root
+
+
+def _r10(root):
+    plan = _explain_root(root, _explain_plan())
+    _done(root, plan, "P1")
+    claim_step(root, plan, "P2", "agent-b")
+    claim_step(root, plan, "P2", "agent-c")
+    return root
+
+
+def _r11(root):
+    _explain_root(root, _explain_plan(steps=False))
+    return root
+
+
+def _r12(root):
+    _explain_root(root, _explain_plan())
+    fail_step(root, "P1", "A1", "x")
+    return root
+
+
+def _r13(root):
+    plan = _explain_root(root, _explain_plan(depends=False))
+    claim_step(root, plan, "P1", "agent-a")
+    return root
+
+
+def _r14(root):
+    plan = _explain_root(root, _explain_plan())
+    _done(root, plan, "P1")
+    amend_step(root, plan, "P1", "agent-b", "fix")
+    return root
+
+
+def _r15(root):
+    plan = _explain_root(root, _explain_plan(), enforce=True)
+    _done(root, plan, "P1")
+    claim_step(root, plan, "P2", "agent-b", now=_PAST)
+    reclaim_step(root, plan, "P2", "agent-c", "expired")
+    return root
+
+
+def _r16(root):
+    _r3(root)
+    renew_lease(root, "P1", None, "agent-a")
+    return root
+
+
+def _r17(root):
+    _explain_root(root, _explain_plan())
+    _step_row(root, event="claimed", step_id="P1", attempt_id="A1", agent_id=None)
+    return root
+
+
+def _r18(root):
+    plan = _explain_root(root, _explain_plan(depends=False))
+    claim_step(root, plan, "P1", "agent-a")
+    claim_step(root, plan, "P1", "agent-b")
+    mark_step_verified(root, "P1", "A2", [], agent_id="agent-b")
+    complete_step(root, "P1", "A2", agent_id="agent-b")
+    fail_step(root, "P1", "A1", "late")
+    _done(root, plan, "P2")
+    return root
+
+
+def _r19(root):
+    _explain_root(root, _explain_plan())
+    _step_row(root, event="claimed", step_id="P1", attempt_id="WTw2-A1", agent_id="w2")
+    _step_row(root, event="claimed", step_id="P1", attempt_id="WTw1-A1", agent_id="w1")
+    return root
+
+
+def _r20(root):
+    _r6(root)
+    mark_step_verified(root, "P1", "A3", [])
+    return root
+
+
+def _r21(root):
+    plan = _explain_plan(depends=False)
+    plan["steps"].append({
+        **json.loads(json.dumps(plan["steps"][0])),
+        "id": "P3",
+        "depends_on": ["P1", "P2"],
+    })
+    _explain_root(root, plan)
+    claim_step(root, plan, "P1", "agent-a")
+    _done(root, plan, "P2")
+    return root
+
+
+def _r22(root):
+    _explain_root(root, _explain_plan())
+    _step_row(root, event="claimed", step_id="P1", attempt_id="A1", agent_id="")
+    return root
+
+
+def _r23(root):
+    _r8(root)
+    amend_step(root, _plan_of(root), "P1", "agent-b", "fix")
+    block_step(root, "P1", None, "x", agent_id="agent-b")
+    return root
+
+
+def _r24(root):
+    _r8(root)
+    _step_row(root, event="amendment_started", step_id="P1", attempt_id="A3", agent_id="agent-b")
+    _step_row(root, event="abandoned", step_id="P1", attempt_id="A3")
+    return root
+
+
+_R3_LINES = (
+    ("step P1 has open attempt A1", "agent-a"),
+    ("step P2 waits on unmet dependencies: P1",),
+)
+
+# name: (build, reason_code, step id, one needle tuple per diagnostic, absent needles)
+_EXPLAIN_CASES = {
+    "R1": (_r1, "eligible", "P1", (), ()),
+    "R2": (_r2, "eligible", "P1", (), ()),
+    "R3": (_r3, "dependencies_unmet", None, _R3_LINES, ()),
+    "R4": (_r4, "open_attempts", None, (("P2", "A2", "agent-b"),), ()),
+    "R5": (_r5, "open_attempts", None, (("P1", "A1"), ("P2", "A2")), ()),
+    "R6": (_r6, "open_attempts", None,
+           (("completed work and open attempt A3", "agent-b"),), ()),
+    "R7": (_r7, "open_attempts", None, (("P2", "A2"),), ()),
+    "R7b": (_r7b, "dependencies_unmet", None, (("P1", "A1"), ("P2 waits",)), ()),
+    "R8": (_r8, "steps_complete", None, (), ()),
+    "R9": (_r9, "steps_complete", None, (("P1", "A3", "failed", "next-action"),), ()),
+    "R10": (_r10, "open_attempts", None, (("P2", "A2"), ("P2", "A3")), ()),
+    "R11": (_r11, "steps_complete", None, (("plan has no steps",),), ()),
+    "R12": (_r12, "eligible", "P1", (), ()),
+    "R13": (_r13, "eligible", "P2", (), ()),
+    "R14": (_r14, "eligible", "P2", (), ()),
+    "R15": (_r15, "open_attempts", None, (("P2", "A3", "agent-c"),), ("A2",)),
+    "R16": (_r16, "dependencies_unmet", None, _R3_LINES, ()),
+    "R17": (_r17, "dependencies_unmet", None, (("A1", "(no owner)"), ("P2 waits",)), ()),
+    "R18": (_r18, "steps_complete", None, (("P1", "A1", "failed"),), ("A2",)),
+    "R19": (_r19, "dependencies_unmet", None,
+            (("WTw2-A1",), ("WTw1-A1",), ("P2 waits",)), ()),
+    "R20": (_r20, "open_attempts", None, (("completed work and open attempt A3",),), ()),
+    "R21": (_r21, "dependencies_unmet", None,
+            (("P1", "A1"), ("step P3 waits on unmet dependencies: P1",)), ("P2",)),
+    "R22": (_r22, "dependencies_unmet", None, (("A1", "(no owner)"), ("P2 waits",)), ()),
+    "R23": (_r23, "steps_complete", None, (("P1", "A3", "blocked", "next-action"),), ()),
+    "R24": (_r24, "steps_complete", None, (("P1", "A3", "abandoned", "next-action"),), ()),
+}
+
+
+def _planned(change):
+    """D with `change(plan)` applied to the plan dict before it is written."""
+    def build(root):
+        plan = _explain_plan()
+        change(plan)
+        _explain_root(root, plan)
+        return root
+    return build
+
+
+def _with_row(base, **row):
+    def build(root):
+        base(root)
+        _step_row(root, **row)
+        return root
+    return build
+
+
+def _overwrite(relative, text):
+    def build(root):
+        _r1(root)
+        (root / relative).write_text(text, encoding="utf-8")
+        return root
+    return build
+
+
+def _inv_malformed_jsonl(root):
+    _r1(root)
+    _ledger_text(root, "step-runs.jsonl", "{not json\n")
+    return root
+
+
+def _inv_receipt_missing_field(root):
+    _r1(root)
+    append_jsonl(root / ".agent/command-receipts.jsonl",
+                 {"schema_version": COMMAND_RECEIPTS_SCHEMA_VERSION, "id": "CR1"})
+    return root
+
+
+def _inv_missing_ledger(root):
+    _r1(root)
+    (root / ".agent/file-receipts.jsonl").unlink()
+    return root
+
+
+def _inv_missing_plan(root):
+    return root / "missing"
+
+
+def _inv_missing_contract(root):
+    _r1(root)
+    (root / ".agent/execution.contract.json").unlink()
+    return root
+
+
+def _inv_invalid_contract(root):
+    _r1(root)
+    path = root / ".agent/execution.contract.json"
+    contract = json.loads(path.read_text())
+    del contract["shell"]
+    path.write_text(json.dumps(contract), encoding="utf-8")
+    return root
+
+
+def _inv_non_object_ledger_row(root):
+    _r1(root)
+    _ledger_text(root, "step-runs.jsonl", "[]\n")
+    return root
+
+
+def _inv_wrong_owner_renewal(root):
+    plan = _explain_root(root, _explain_plan(), enforce=True)
+    claim_step(root, plan, "P1", "agent-a")
+    _step_row(root, event="lease_renewed", step_id="P1", attempt_id="A1", agent_id="agent-b")
+    return root
+
+
+def _inv_plan_before_ledger(root):
+    _planned(lambda plan: plan.update(locked_at=5))(root)
+    _step_row(root, event="bogus", step_id="P1", attempt_id="A1")
+    return root
+
+
+def _set_cycle(plan):
+    plan["steps"][0]["depends_on"] = ["P2"]
+
+
+def _set_unknown_dependency(plan):
+    plan["steps"][1]["depends_on"] = ["P9"]
+
+
+# name: (build, message needle, next-action reports the same message as state_invalid)
+_EXPLAIN_INVALID = {
+    "bogus-event": (_with_row(_r3, event="bogus", step_id="P1", attempt_id="A1"),
+                    "invalid event 'bogus'", True),
+    "attempt-in-two-steps": (_with_row(_r3, event="in_progress", step_id="P2", attempt_id="A1"),
+                             "belongs to multiple steps", True),
+    "after-terminal": (_with_row(_r8, event="verified", step_id="P1", attempt_id="A1"),
+                       "events after a terminal event", True),
+    "bogus-after-open-amendment": (_with_row(_r6, event="bogus", step_id="P1", attempt_id="A3"),
+                                   "invalid event 'bogus'", True),
+    "malformed-jsonl": (_inv_malformed_jsonl, "invalid JSONL", True),
+    "receipt-missing-field": (_inv_receipt_missing_field,
+                              "receipt step_id must be a non-empty string", True),
+    "unknown-step": (_with_row(_r1, event="claimed", step_id="P9", attempt_id="A1", agent_id="x"),
+                     "execution ledger references unknown steps: P9", True),
+    "missing-ledger": (_inv_missing_ledger, ".agent/file-receipts.jsonl is missing", True),
+    "plan-cycle": (_planned(_set_cycle), "depends_on cycle detected", True),
+    "non-object-plan": (_overwrite(".agent/plan.lock.json", "[]"),
+                        "top-level value must be a JSON object", True),
+    "missing-plan": (_inv_missing_plan, "no .agent/plan.lock.json; run init", False),
+    "unlocked-plan": (_planned(lambda plan: plan.update(locked=False)),
+                      "plan exists but is not locked; run lock-plan", False),
+    "missing-contract": (_inv_missing_contract,
+                         ".agent/execution.contract.json is missing", False),
+    "null-plan": (_overwrite(".agent/plan.lock.json", "null"),
+                  ".agent/plan.lock.json top-level value must be a JSON object", False),
+    "bad-locked-at": (_planned(lambda plan: plan.update(locked_at=5)),
+                      "locked_at must be a string or null", True),
+    "unknown-dependency": (_planned(_set_unknown_dependency),
+                           "depends_on references unknown step id: P9", True),
+    "non-object-contract": (_overwrite(".agent/execution.contract.json", "[]"),
+                            "execution contract must be a JSON object", True),
+    "contract-version": (_overwrite(".agent/execution.contract.json", "{}"),
+                         "execution-contract schema_version must be MAJOR.MINOR.PATCH", True),
+    "invalid-contract": (_inv_invalid_contract, "missing required field: shell", True),
+    "non-object-ledger-row": (_inv_non_object_ledger_row,
+                              ".agent/step-runs.jsonl:1: ledger entry must be a JSON object",
+                              True),
+    "empty-attempt-id": (_with_row(_r3, event="claimed", step_id="P2", attempt_id="", agent_id="x"),
+                         "attempt_id must be a non-empty string", True),
+    "owner-not-string": (_with_row(_r1, event="claimed", step_id="P1", attempt_id="A1", agent_id=7),
+                         "agent_id must be a string", True),
+    "deadline-not-string": (_with_row(_r1, event="claimed", step_id="P1", attempt_id="A1",
+                                      agent_id="a", lease_expires_at=5),
+                            "lease_expires_at must be a string or null", True),
+    "duplicate-opener": (_with_row(_r3, event="claimed", step_id="P1", attempt_id="A1", agent_id="x"),
+                         "attempt A1 has multiple opening events", True),
+    "missing-opener": (_with_row(_r1, event="verified", step_id="P1", attempt_id="A1"),
+                       "attempt A1 has no opening event before verified", True),
+    "wrong-owner-renewal": (_inv_wrong_owner_renewal,
+                            "attempt A1 renewed by agent-b instead of agent-a", True),
+    "plan-before-ledger": (_inv_plan_before_ledger,
+                           "locked_at must be a string or null", True),
+}
+
+
+class TestNextStepExplain(unittest.TestCase):
+    """#71: next-step --explain classifies exactly the rows it validated."""
+
+    def test_reason_code_matrix(self):
+        seen = set()
+        for name, (build, code, step_id, lines, absent) in _EXPLAIN_CASES.items():
+            with self.subTest(name), TemporaryDirectory() as d:
+                root = build(Path(d))
+                result = porcelain.explain_next_step(root)
+                seen.add(result["reason_code"])
+                self.assertEqual(result["reason_code"], code)
+                self.assertEqual((result["step"] or {}).get("id"), step_id)
+                self.assertIsInstance(result["diagnostics"], list)
+                self.assertEqual(len(result["diagnostics"]), len(lines), result["diagnostics"])
+                for line, needles in zip(result["diagnostics"], lines):
+                    for needle in needles:
+                        self.assertIn(needle, line)
+                for needle in absent:
+                    self.assertNotIn(needle, "\n".join(result["diagnostics"]))
+                plan = json.loads((root / ".agent/plan.lock.json").read_text())
+                self.assertEqual(result["step"], next_step(root, plan))
+                # E5: the wrappers equal the pure reducers on every R ledger
+                self.assertEqual(read_step_state(root), step_state_from_events(read_step_events(root)))
+                self.assertEqual(next_step(root, plan), eligible_step(read_step_state(root), plan))
+        self.assertEqual(seen, set(porcelain.NEXT_STEP_REASON_CODES))  # C2
+
+    def test_parallel_open_attempts_are_what_next_action_refuses(self):
+        with TemporaryDirectory() as d:
+            root = _EXPLAIN_CASES["R5"][0](Path(d))
+            self.assertEqual(porcelain.next_action(root).state, "state_invalid")
+            self.assertEqual(porcelain.explain_next_step(root)["reason_code"], "open_attempts")
+
+    def test_invalid_state_raises_with_next_action_parity(self):
+        for name, (build, needle, parity) in _EXPLAIN_INVALID.items():
+            with self.subTest(name), TemporaryDirectory() as d:
+                root = build(Path(d))
+                with self.assertRaises(ValueError) as ctx:
+                    porcelain.explain_next_step(root)
+                self.assertIn(needle, str(ctx.exception))
+                if parity:
+                    action = porcelain.next_action(root)
+                    self.assertEqual((action.state, action.diagnostics),
+                                     ("state_invalid", [str(ctx.exception)]))
+
+    @unittest.skipIf(os.geteuid() == 0, "root can read a mode-000 file")
+    def test_unreadable_ledger_raises_with_next_action_parity(self):
+        with TemporaryDirectory() as d:
+            root = Path(d)
+            _explain_root(root, _explain_plan())
+            ledger = root / ".agent/command-receipts.jsonl"
+            ledger.chmod(0)
+            try:
+                with self.assertRaises(ValueError) as ctx:
+                    porcelain.explain_next_step(root)
+                self.assertIn("Permission denied", str(ctx.exception))
+                self.assertEqual(porcelain.next_action(root).diagnostics, [str(ctx.exception)])
+            finally:
+                ledger.chmod(0o644)
+
+    def test_classifies_the_validated_rows_not_a_later_append(self):
+        """Review Focus 1: a row landing after validation is never classified."""
+        with TemporaryDirectory() as d:
+            root = _EXPLAIN_CASES["R6"][0](Path(d))
+            real = porcelain._projection_ledgers
+
+            def read_then_append(r):
+                ledgers = real(r)
+                _step_row(r, event="bogus", step_id="P1", attempt_id="A3")
+                return ledgers
+
+            with mock.patch.object(porcelain, "_projection_ledgers", side_effect=read_then_append):
+                result = porcelain.explain_next_step(root)
+            self.assertEqual(result["reason_code"], "open_attempts")
+            self.assertIn("A3", result["diagnostics"][0])
+
+
+def _run_next_step(root: Path, *flags: str):
+    out, err = io.StringIO(), io.StringIO()
+    with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+        rc = cli.main(["next-step", *flags, "--root", str(root)])
+    return rc, out.getvalue(), err.getvalue()
+
+
+class TestNextStepExplainCli(unittest.TestCase):
+    def _case(self, d, name):
+        return _EXPLAIN_CASES[name][0](Path(d))
+
+    def test_plain_output_is_unchanged(self):  # D1
+        with TemporaryDirectory() as d:
+            root = self._case(d, "R1")
+            p1 = json.dumps(_explain_plan()["steps"][0], indent=2, sort_keys=True) + "\n"
+            self.assertEqual(_run_next_step(root), (0, "P1\n", ""))
+            self.assertEqual(_run_next_step(root, "--json"), (0, p1, ""))
+        with TemporaryDirectory() as d:
+            root = self._case(d, "R8")
+            self.assertEqual(_run_next_step(root), (0, "no eligible step\n", ""))
+            self.assertEqual(_run_next_step(root, "--json"), (0, "null\n", ""))
+
+    def test_bogus_row_still_prints_null_without_explain(self):  # D2
+        with TemporaryDirectory() as d:
+            root = self._case(d, "R8")
+            _step_row(root, event="bogus", step_id="P1", attempt_id="A1")
+            self.assertEqual(_run_next_step(root, "--json"), (0, "null\n", ""))
+            rc, out, err = _run_next_step(root, "--explain", "--json")
+            self.assertEqual((rc, out), (1, ""))
+            self.assertIn("invalid event 'bogus'", err)
+
+    def test_explain_json_wraps_the_plain_payload(self):  # D3, C1
+        variant = JSON_OUTPUTS["next-step"][2]
+        for name in _EXPLAIN_CASES:
+            with self.subTest(name), TemporaryDirectory() as d:
+                root = self._case(d, name)
+                rc, out, err = _run_next_step(root, "--explain", "--json")
+                self.assertEqual((rc, err), (0, ""))
+                payload = json.loads(out)
+                self.assertEqual(out, json.dumps(payload, indent=2, sort_keys=True) + "\n")
+                self.assertEqual(set(payload), set(variant["keys"]))
+                self.assertIn(payload["reason_code"], porcelain.NEXT_STEP_REASON_CODES)
+                self.assertIsInstance(payload["diagnostics"], list)
+                self.assertTrue(all(isinstance(line, str) for line in payload["diagnostics"]))
+                self.assertIsInstance(payload["step"], (dict, type(None)))
+                self.assertEqual(payload["step"], json.loads(_run_next_step(root, "--json")[1]))
+
+    def test_human_explain_output(self):  # H1
+        with TemporaryDirectory() as d:
+            self.assertEqual(_run_next_step(self._case(d, "R1"), "--explain"),
+                             (0, "P1\nreason: eligible\n", ""))
+        with TemporaryDirectory() as d:
+            rc, out, _ = _run_next_step(self._case(d, "R3"), "--explain")
+            lines = out.splitlines()
+            self.assertEqual(lines[:2], ["no eligible step", "reason: dependencies_unmet"])
+            self.assertEqual(len(lines), 4)
+            self.assertTrue(all(line.startswith("  step ") for line in lines[2:]))
+            self.assertIn("A1", lines[2])
+        with TemporaryDirectory() as d:
+            self.assertEqual(_run_next_step(self._case(d, "R8"), "--explain"),
+                             (0, "no eligible step\nreason: steps_complete\n", ""))
+
+    def test_invalid_state_exits_1_with_the_message_on_stderr(self):  # E1, E2, Review Focus 3
+        for name, (build, needle, _parity) in _EXPLAIN_INVALID.items():
+            with self.subTest(name), TemporaryDirectory() as d:
+                root = build(Path(d))
+                with self.assertRaises(ValueError) as ctx:
+                    # the CLI resolves --root (/var -> /private/var on macOS); path-bearing
+                    # messages such as invalid JSONL must be compared on the same path
+                    porcelain.explain_next_step(root.resolve())
+                for flags in (["--explain"], ["--explain", "--json"]):
+                    self.assertEqual(_run_next_step(root, *flags), (1, "", f"{ctx.exception}\n"))
+
+    @unittest.skipIf(os.geteuid() == 0, "root can read a mode-000 file")
+    def test_unreadable_ledger_exits_1_in_both_modes(self):  # E1
+        with TemporaryDirectory() as d:
+            root = Path(d)
+            _explain_root(root, _explain_plan())
+            ledger = root / ".agent/command-receipts.jsonl"
+            ledger.chmod(0)
+            try:
+                for flags in (["--explain"], ["--explain", "--json"]):
+                    rc, out, err = _run_next_step(root, *flags)
+                    self.assertEqual((rc, out), (1, ""))
+                    self.assertIn("Permission denied", err)
+            finally:
+                ledger.chmod(0o644)
+
+    def test_explain_flag_defaults_to_false(self):  # D4
+        self.assertIs(cli.build_parser().parse_args(["next-step"]).explain, False)
+
+    def _mcp_next_step(self, root):
+        return mcp_server.handle_message({
+            "jsonrpc": "2.0", "id": 1, "method": "tools/call",
+            "params": {"name": "next_step", "arguments": {"root": str(root), "explain": True}},
+        })["result"]
+
+    def test_mcp_next_step_explain(self):  # C4
+        with TemporaryDirectory() as d:
+            result = self._mcp_next_step(self._case(d, "R3"))
+            self.assertFalse(result["isError"])
+            self.assertEqual(result["structuredContent"]["data"]["reason_code"], "dependencies_unmet")
+        with TemporaryDirectory() as d:
+            result = self._mcp_next_step(_EXPLAIN_INVALID["bogus-event"][0](Path(d)))
+            self.assertTrue(result["isError"])
+            self.assertEqual(result["structuredContent"]["exit_code"], 1)
+            self.assertNotIn("data", result["structuredContent"])
+            self.assertIn("invalid event 'bogus'", result["structuredContent"]["stderr"])
 
 
 if __name__ == "__main__":
