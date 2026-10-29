@@ -2324,6 +2324,399 @@ class TestRecordedBlockerHumanOutput(unittest.TestCase):
             self.assertEqual(self._human(root)[-1], "  recorded blocker: P1/A1 blocked at ?")
 
 
+_HOSTILE = "ok\x1b[31mred\rcr\nnl\u202ertl"
+_SHOWN = "ok?[31mred?cr?nl?rtl"
+
+
+class TestHumanOutputIsTerminalSafe(unittest.TestCase):
+    """Agent-written ledger text reaches human output only through
+    cli._terminal_safe; --json keeps the raw value."""
+
+    def _run(self, root, *argv):
+        return self._capture(*argv, "--root", str(root))
+
+    def _capture(self, *argv):
+        out, err = io.StringIO(), io.StringIO()
+        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+            cli.main(list(argv))
+        text = out.getvalue() + err.getvalue()
+        for raw in ("\x1b", "\r", "\u202e"):
+            self.assertNotIn(raw, text)
+        return text.splitlines()
+
+    def _json(self, root, *argv):
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            cli.main([*argv, "--json", "--root", str(root)])
+        return json.loads(out.getvalue())
+
+    def _copy_last_row(self, root, ledger, **changes):
+        path = root / f".agent/{ledger}.jsonl"
+        row = json.loads(path.read_text().splitlines()[-1])
+        append_jsonl(path, {**row, **changes})
+        return row
+
+    def _run_hostile_gate(self, root, code):
+        cli.main(["run", "--step", "P1", "--gate", 'python3 -c "print(1)"', "--root", str(root),
+                  "--", "python3", "-c", code, _HOSTILE])
+
+    def test_events(self):
+        reason = _HOSTILE + "x" * 300
+        with TemporaryDirectory() as d:
+            root = Path(d)
+            _ready_repo(root)
+            cli.main(["claim-step", "P1", "--agent", _HOSTILE, "--root", d])
+            self._copy_last_row(root, "step-runs", attempt_id=_HOSTILE, agent_id="a")
+            self._run_hostile_gate(root, "print(1)")
+            (root / "src").mkdir()
+            (root / "src/feature.py").write_text("x = 1\n")
+            cli.main(["record-file-change", "--step", "P1", "--path", "src/feature.py",
+                      "--agent", _HOSTILE, "--root", d])
+            kind = self._copy_last_row(root, "file-receipts", id="F9", path=_HOSTILE)["change_kind"]
+            cli.main(["block-step", "P1", "--reason", reason, "--agent", _HOSTILE, "--root", d])
+            lines = self._run(root, "events")
+            for tail in (
+                f"step.claimed  P1/A1  {_SHOWN}",
+                f"step.claimed  P1/{_SHOWN}  a",
+                f"command.recorded  P1/A1  exit=0 python3 -c print(1) {_SHOWN}",
+                f"file.changed  P1/A1  {kind} {_SHOWN}",
+                f"step.blocked  P1/A1  {(_SHOWN + 'x' * 300)[:200]}...",
+            ):
+                self.assertTrue(any(line.endswith(tail) for line in lines), (tail, lines))
+            reasons = [event["data"].get("reason") for event in self._json(root, "events")]
+            self.assertIn(reason, reasons)
+
+    def test_next_action_diagnostics(self):
+        with TemporaryDirectory() as d:
+            root = Path(d)
+            _enforced_claim(root, agent=_HOSTILE)
+            self.assertIn(f"  attempt is owned by {_SHOWN}",
+                          self._run(root, "next-action", "--agent", "other"))
+            self.assertIn(f"attempt is owned by {_HOSTILE}",
+                          self._json(root, "next-action", "--agent", "other")["diagnostics"])
+
+    def test_next_action_reason_and_command(self):
+        with TemporaryDirectory() as d:
+            root = Path(d)
+            _claimed(root)
+            _time_out_open_attempt(root)
+            for ledger in ("step-runs", "command-receipts"):
+                path = root / f".agent/{ledger}.jsonl"
+                path.write_text(path.read_text().replace('"A1"', json.dumps(_HOSTILE)))
+            self.assertEqual(self._run(root, "next-action", "--agent", "tester")[:2], [
+                f"next-action attempt_timed_out: attempt {_SHOWN} of step P1 holds a "
+                "timed-out command receipt and cannot complete",
+                f"agentflow block-step P1 --attempt '{_SHOWN}' --reason 'gate timed out' "
+                "--agent tester",
+            ])
+            payload = self._json(root, "next-action", "--agent", "tester")
+            self.assertIn(_HOSTILE, payload["reason"])
+            self.assertIn(_HOSTILE, payload["args"])
+
+    def test_next_step_explain(self):
+        with TemporaryDirectory() as d:
+            root = Path(d)
+            _ready_repo(root)
+            cli.main(["claim-step", "P1", "--agent", _HOSTILE, "--root", d])
+            self.assertIn(f"  step P1 has open attempt A1 (owner {_SHOWN})",
+                          self._run(root, "next-step", "--explain"))
+            self.assertEqual(self._json(root, "next-step", "--explain")["diagnostics"],
+                             [f"step P1 has open attempt A1 (owner {_HOSTILE})"])
+
+    def test_verify_step_and_finish_step(self):
+        with TemporaryDirectory() as d:
+            root = Path(d)
+            _validated(root)
+            self._copy_last_row(root, "file-receipts", id="F9", path=_HOSTILE)
+            message = f"{_SHOWN} is outside effective file scope for P1"
+            self.assertIn(f"error: {message}", self._run(root, "verify-step", "P1"))
+            self.assertIn(f"  {message}", self._run(root, "finish-step", "P1"))
+            raw = f"{_HOSTILE} is outside effective file scope for P1"
+            self.assertIn(raw, [f["message"] for f in self._json(root, "verify-step", "P1")["errors"]])
+            self.assertIn(raw, self._json(root, "finish-step", "P1")["diagnostics"])
+
+    def test_finish_run(self):
+        with TemporaryDirectory() as d:
+            root = Path(d)
+            _validated(root)
+            self._copy_last_row(root, "command-receipts", id=_HOSTILE, attempt_id="A9")
+            line = f"error: receipt references unknown attempt: {_SHOWN}"
+            self.assertIn(f"  {line}", self._run(root, "finish-run"))
+            # Gate output is sanitized before finish_run splits it into lines,
+            # so a recorded CR/LF no longer adds diagnostics entries.
+            self.assertIn(line, self._json(root, "finish-run")["diagnostics"])
+
+    def test_verify_run(self):
+        with TemporaryDirectory() as d:
+            root = Path(d)
+            _validated(root)
+            self._copy_last_row(root, "command-receipts", id=_HOSTILE, attempt_id="A9")
+            self.assertIn(f"error: receipt references unknown attempt: {_SHOWN}",
+                          self._run(root, "verify-run", "--no-record"))
+            errors = self._json(root, "verify-run", "--no-record")["errors"]
+            self.assertIn(f"receipt references unknown attempt: {_HOSTILE}",
+                          [f["message"] for f in errors])
+
+    def test_audit_drift(self):
+        with TemporaryDirectory() as d:
+            root = Path(d)
+            _enforced_claim(root, agent=_HOSTILE)
+            _set_attempt_lease(root, "A1", "2000-01-01T00:00:00+00:00")
+            note = f"stale attempt A1 owned by {{}} expired at 2000-01-01T00:00:00+00:00; reclaim or fail"
+            self.assertIn(f"note: {note.format(_SHOWN)}", self._run(root, "audit-drift"))
+            report = json.loads((root / ".agent/drift-report.json").read_text())
+            self.assertIn(note.format(_HOSTILE), report["notes"])
+
+    def test_build_proof(self):
+        with TemporaryDirectory() as d:
+            root = Path(d)
+            _claimed(root)
+            path = root / ".agent/step-runs.jsonl"
+            path.write_text(path.read_text().replace('"A1"', json.dumps(_HOSTILE)))
+            self.assertIn(f"- P1 has open attempt {_SHOWN}", self._run(root, "build-proof"))
+            errors = self._json(root, "verify-run", "--no-record")["errors"]
+            self.assertIn(f"P1 has open attempt {_HOSTILE}", [f["message"] for f in errors])
+
+    def test_verify_proof(self):
+        with TemporaryDirectory() as d:
+            root = Path(d)
+            _completed_step(root)
+            cli.main(["audit-drift", "--root", d])
+            cli.main(["build-proof", "--root", d])
+            path = root / ".agent/proof-pack.json"
+            proof = json.loads(path.read_text())
+            proof["files"][0]["path"] = _HOSTILE
+            path.write_text(json.dumps(proof))
+            self.assertIn(f"error: missing source {_SHOWN}", self._run(root, "verify-proof"))
+
+    def test_status(self):
+        with TemporaryDirectory() as d:
+            root = Path(d)
+            _ready_repo(root)
+            path = root / ".agent/plan.lock.json"
+            plan = json.loads(path.read_text())
+            path.write_text(json.dumps({**plan, "objective": _HOSTILE}))
+            self.assertIn(f"objective {_SHOWN}", self._run(root, "status"))
+
+    def test_doctor(self):
+        with TemporaryDirectory() as d:
+            root = Path(d)
+            _ready_repo(root)
+            path = root / ".agent/execution.contract.json"
+            contract = json.loads(path.read_text())
+            contract["concurrency"]["writer_model"] = _HOSTILE
+            path.write_text(json.dumps(contract))
+            message = "writer_model {} is not supported in v0.3"
+            self.assertIn(f"error: {message.format(_SHOWN)}", self._run(root, "doctor"))
+            findings = self._json(root, "doctor")["findings"]
+            self.assertIn(message.format(_HOSTILE), [f["message"] for f in findings])
+
+    def test_runtime_status(self):
+        with TemporaryDirectory() as d:
+            root = Path(d)
+            _ready_repo(root)
+            (root / ".agent/runtime.config.json").write_text(json.dumps(
+                {"schema_version": "0.3.0", "runtimes": {_HOSTILE: {}}, "mcp_servers": {_HOSTILE: {}}}
+            ))
+            lines = self._run(root, "runtime-status")
+            for line in (f"{_SHOWN} unavailable", f"mcp {_SHOWN} unavailable",
+                         f"error: runtime {_SHOWN}.enabled must be boolean"):
+                self.assertIn(line, lines)
+            self.assertEqual([r["id"] for r in self._json(root, "runtime-status")["runtimes"]],
+                             [_HOSTILE])
+
+    def test_lifecycle_acknowledgement(self):
+        with TemporaryDirectory() as d:
+            root = Path(d)
+            _claimed(root)
+            path = root / ".agent/step-runs.jsonl"
+            path.write_text(path.read_text().replace('"A1"', json.dumps(_HOSTILE)))
+            self.assertIn(f"blocked P1 {_SHOWN}", self._run(
+                root, "block-step", "P1", "--attempt", _HOSTILE, "--reason", "r"))
+            self.assertEqual(json.loads(path.read_text().splitlines()[-1])["attempt_id"], _HOSTILE)
+
+    def test_recorded_path(self):
+        step = {**_step(), "files": ["src/"]}
+        with TemporaryDirectory() as d:
+            root = Path(d)
+            _ready_repo_with_steps(root, [step], extra_allowed=("src/",))
+            cli.main(["claim-step", "P1", "--agent", "tester", "--root", d])
+            (root / "src").mkdir()
+            (root / f"src/{_HOSTILE}.py").write_text("x = 1\n")
+            self.assertIn(f"recorded FR1 src/{_SHOWN}.py", self._run(
+                root, "record-file-change", "--step", "P1", "--path", f"src/{_HOSTILE}.py"))
+
+    def test_stderr_exception_text(self):
+        with TemporaryDirectory() as d:
+            root = Path(d)
+            _enforced_claim(root, agent=_HOSTILE)
+            lines = self._run(root, "claim-step", "P1", "--agent", "other")
+            self.assertTrue(lines[0].startswith(f"step P1 is leased to {_SHOWN} until "), lines)
+            # main()'s ValueError safety net.
+            with mock.patch.object(cli, "project_events", side_effect=ValueError(_HOSTILE)):
+                self.assertEqual(self._run(root, "events"), [f"error: {_SHOWN}"])
+
+    def test_mcp_unexpected_exception_text(self):
+        with mock.patch.object(cli, "main", side_effect=RuntimeError(_HOSTILE)):
+            self.assertEqual(mcp_server.run_cli(["status"]), (1, "", f"RuntimeError: {_SHOWN}"))
+
+    def test_print_sites(self):
+        # One row per print site: patch the call that feeds it to raise or
+        # return hostile text, then _capture fails on any raw control character.
+        event = {"step_id": "P1", "attempt_id": _HOSTILE, "amends_attempt": _HOSTILE,
+                 "lease_expires_at": _HOSTILE, "id": _HOSTILE, "path": _HOSTILE,
+                 "exit_code": 0, "review_run_id": _HOSTILE}
+        value, runtime = ValueError(_HOSTILE), RuntimeError(_HOSTILE)
+        missing = FileNotFoundError(_HOSTILE)
+        real_build_proof = cli.build_proof
+
+        def strict_warning(*args, **kwargs):
+            proof = real_build_proof(*args, **kwargs)
+            proof["checks"].append({"id": _HOSTILE, "status": "warning", "message": _HOSTILE})
+            return proof
+
+        def drift_unreadable(path):
+            if path.name == "drift-report.json":
+                raise value
+            return {}
+
+        with TemporaryDirectory() as d:
+            root, r = Path(d), ["--root", d]
+            _completed_step(root)
+            cli.main(["audit-drift", *r])
+            (root / "handoff.md").write_text("")
+            lifecycle = [
+                ("complete-step", "porcelain.complete_step_rechecked", ["P1"]),
+                ("block-step", "block_step", ["P1", "--reason", "r"]),
+                ("fail-step", "fail_step", ["P1", "--reason", "r"]),
+                ("reclaim-step", "reclaim_step", ["P1", "--reason", "r"]),
+            ]
+            rows = [
+                ("build_proof", strict_warning, ["build-proof", *r, "--strict"]),
+                ("_load_plan", missing, ["build-proof", *r]),
+                ("validate_requirement_traceability", [_HOSTILE], ["build-proof", *r]),
+                ("validate_design_decision_traceability", [_HOSTILE], ["build-proof", *r]),
+                ("build_proof", value, ["build-proof", *r]),
+                ("build_proof", OSError(_HOSTILE), ["build-proof", *r]),
+                ("audit_drift", {"status": "fail", "out_of_scope_files": [_HOSTILE],
+                                 "blocked_files_changed": [_HOSTILE],
+                                 "unmapped_hunks": [_HOSTILE], "notes": []}, ["audit-drift", *r]),
+                ("_load_plan", missing, ["audit-drift", *r]),
+                ("_load_plan", missing, ["verify-run", *r]),
+                ("read_json", value, ["status", *r]),
+                ("read_jsonl", value, ["status", *r]),
+                ("read_json", {"status": _HOSTILE}, ["status", *r]),
+                ("read_json", drift_unreadable, ["status", *r]),
+                ("lint_handoff_text", [{"severity": "error", "message": _HOSTILE}],
+                 ["lint-handoff", *r, "--input", "handoff.md"]),
+                ("load_pack", cli.PackError(_HOSTILE), ["init", *r, "--pack", "x", "--profile", "p"]),
+                ("load_pack", cli.PackError(_HOSTILE), ["pack", "inspect", "x"]),
+                ("_load_plan", value, ["validate-plan", "x"]),
+                ("_load_plan_from_path", missing, ["lock-plan", "x"]),
+                ("_load_plan_from_path", value, ["lock-plan", "x"]),
+                ("_load_json_object", value, ["workflow-contract", *r, "--from-json", "x"]),
+                ("_load_json_object", value, ["workflow-contract", *r]),
+                ("_load_brief_from_path", missing, ["recommend-workflow", "--brief", "x"]),
+                ("_load_brief_from_path", missing,
+                 ["draft-plan", *r, "--brief", "x", "--workflow", "x"]),
+                ("record_review_run", value, ["record-review", *r, "--manifest", "m"]),
+                ("record_review_run", event, ["record-review", *r, "--manifest", "m"]),
+                ("build_capability_receipt", value, ["record-capability", *r, "--id", "c",
+                 "--capability", "k", "--provider", "p", "--reason", "r"]),
+                ("build_capability_receipt", event, ["record-capability", *r, "--id", "c",
+                 "--capability", "k", "--provider", "p", "--reason", "r"]),
+                ("build_capability_receipt", value, ["waive-capability", *r, "--id", "c",
+                 "--capability", "k", "--reason", "r"]),
+                ("build_capability_receipt", event, ["waive-capability", *r, "--id", "c",
+                 "--capability", "k", "--reason", "r"]),
+                ("produce_manifest", value, ["review-manifest", *r, "--state-dir", "s"]),
+                ("porcelain.explain_next_step", value, ["next-step", *r, "--explain"]),
+                ("claim_step", event, ["claim-step", *r, "P1", "--agent", "a"]),
+                ("parse_finding_ref", value,
+                 ["amend-step", *r, "P1", "--agent", "a", "--reason", "r", "--finding", "f"]),
+                ("amend_step", value, ["amend-step", *r, "P1", "--agent", "a", "--reason", "r"]),
+                ("amend_step", event, ["amend-step", *r, "P1", "--agent", "a", "--reason", "r"]),
+                *[(name, effect, [command, *r, *rest]) for command, name, rest in lifecycle
+                  for effect in (value, runtime, event)],
+                ("porcelain.finish_step", value, ["finish-step", *r, "P1"]),
+                ("porcelain.finish_step", runtime, ["finish-step", *r, "P1"]),
+                ("renew_lease", value, ["renew-lease", *r, "P1"]),
+                ("renew_lease", event, ["renew-lease", *r, "P1"]),
+                ("run_command", value, ["run", *r, "--step", "P1", "--", "true"]),
+                ("run_command", event, ["run", *r, "--step", "P1", "--", "true"]),
+                ("record_command", value,
+                 ["record-command", *r, "--step", "P1", "--exit-code", "0", "--", "true"]),
+                ("record_command", event,
+                 ["record-command", *r, "--step", "P1", "--exit-code", "0", "--", "true"]),
+                ("record_file_change", value, ["record-file-change", *r, "--step", "P1", "--path", "x"]),
+                ("require_lifecycle_owner", value, ["verify-step", *r, "P1"]),
+                ("export_handoff", value, ["export-handoff", *r, "--step", "P1"]),
+                ("collect_view_model", value, ["view-proof", *r, "--html"]),
+                (None, None, ["amend-plan", *r, "--id", _HOSTILE, "--reason", "r"]),
+                (None, None, ["record-evidence", *r, "--id", _HOSTILE, "--claim", "c", "--source", "s"]),
+                (None, None, ["record-context", *r, "--id", _HOSTILE, "--source", "s", "--reason", "r"]),
+                (None, None, ["record-failure", *r, "--command", _HOSTILE, "--failure-type", "t",
+                              "--suspected-cause", "c", "--next-action", "n"]),
+            ]
+            for name, effect, argv in rows:
+                with self.subTest(argv=argv[0], patched=name, effect=type(effect).__name__):
+                    with contextlib.ExitStack() as stack:
+                        if name:
+                            owner, _, attr = name.rpartition(".")
+                            kind = "return_value" if isinstance(effect, (dict, list)) else "side_effect"
+                            stack.enter_context(mock.patch.object(
+                                porcelain if owner else cli, attr, **{kind: effect}))
+                        self.assertIn(_SHOWN, "\n".join(self._capture(*argv)))
+
+    def test_pack_acknowledgements(self):
+        demo = Path(__file__).resolve().parents[1] / "examples/packs/agentflow-draft-demo"
+        manifest = json.loads((demo / ".agentflow-pack/pack.json").read_text())
+        manifest["id"] = _HOSTILE
+        manifest["plan_templates"][_HOSTILE] = manifest["plan_templates"].pop("feature")
+        for profile in manifest["profiles"]:
+            if profile["plan_template"] == "feature":
+                profile["plan_template"] = _HOSTILE
+        brief = demo.parent.parent / "briefs/medium-feature.brief.json"
+        with TemporaryDirectory() as d:
+            root, pack = Path(d), Path(d) / "pack"
+            (pack / ".agentflow-pack").mkdir(parents=True)
+            (pack / ".agentflow-pack/pack.json").write_text(json.dumps(manifest))
+            self.assertIn(f"seeded .agent/plan.lock.json from template {_SHOWN}", self._run(
+                root, "init", "--pack", str(pack), "--profile", "medium-feature"))
+            self.assertIn(f"drafted .agent/plan.lock.json from {_SHOWN}/medium-feature", self._run(
+                root, "draft-plan", "--brief", str(brief), "--workflow", str(pack),
+                "--objective", "o", "--write", "--force"))
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err):
+            cli._print_draft_warnings([{"code": "c", "message": _HOSTILE}])
+        self.assertEqual(err.getvalue(), f"warning [c]: {_SHOWN}\n")
+
+    def test_detect_stuck(self):
+        with TemporaryDirectory() as d:
+            root = Path(d)
+            _claimed(root)
+            for _ in range(3):
+                self._run_hostile_gate(root, "import sys; sys.exit(1)")
+            command = f"python3 -c import sys; sys.exit(1) {_SHOWN}"
+            self.assertIn(
+                f"warning [P1/A1]: Command `{command}` failed 3x in P1/A1 with no change in outcome.",
+                self._run(root, "detect-stuck"),
+            )
+            (finding,) = self._json(root, "detect-stuck")["findings"]
+            self.assertIn(_HOSTILE, finding["message"])
+
+    def test_replay_gates(self):
+        with TemporaryDirectory() as d:
+            root = Path(d)
+            _claimed(root)
+            self._run_hostile_gate(root, "print(1)")
+            self._copy_last_row(root, "command-receipts", id=_HOSTILE, provenance="attested",
+                                command="not a list")
+            self.assertIn(f"error: {_SHOWN} has malformed command", self._run(root, "replay-gates"))
+            errors = self._json(root, "replay-gates")["errors"]
+            self.assertIn(f"{_HOSTILE} has malformed command", [f["message"] for f in errors])
+
+
 def _explain_plan(depends: bool = True, steps: bool = True) -> dict:
     plan = {
         "schema_version": PLAN_SCHEMA_VERSION,

@@ -55,6 +55,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   downstream checks produce the same diagnostic. A claim offer comes from the
   snapshot alone and is unaffected. (#72 follow-up)
 
+- Standard output of `events`, `next-action`, `next-step --explain`,
+  `finish-step`, `finish-run`, `verify-step`, `detect-stuck` and
+  `replay-gates` shows non-printable characters in agent-written ledger text
+  (reasons, agent, attempt and receipt ids, recorded argv, recorded paths) as
+  `?`, as the `recorded blocker:` lines already did, so ANSI escapes, line
+  breaks and bidi overrides written to `.agent/` no longer reach the terminal
+  through these commands. `events` cuts a reason at 200 characters. `--json`
+  and `--jsonl` output is unchanged. The next entry covers the remaining
+  human output and error messages.
+
+- Human output of `audit-drift`, `verify-run`, `build-proof`, `verify-proof`,
+  `status`, `doctor`, `runtime-status` and `lint-handoff`, the acknowledgement
+  lines of commands that write `.agent/` ledgers, and error messages on stderr
+  also show non-printable characters as `?`. So does that text where it is
+  captured: `finish-run --json` `diagnostics`, and MCP `content` text,
+  `structuredContent.stdout` and `structuredContent.stderr` (the `status`,
+  `audit_drift`, `build_proof` and `verify_proof` tools return human output,
+  and a failing tool returns its stderr), including the error text the MCP
+  server builds for an unexpected exception. The rendering is deliberately
+  lossy: tab, NBSP and ZWJ also become `?`, and a multi-line message such as
+  git's own stderr prints as one line. Gate output is sanitized before
+  `finish-run` splits it into lines, so a recorded line break no longer adds
+  `diagnostics` entries. Captured human text has no byte-stability guarantee.
+  JSON keys and types, raw values in other `--json` output and in `.agent/`
+  files, flags and exit codes are unchanged.
+
 ## [1.1.1] - 2026-10-26
 
 Agentflow 1.1.1 closes two gaps through which a step could complete, and a
