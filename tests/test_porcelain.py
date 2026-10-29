@@ -2110,6 +2110,27 @@ class TestRecordedBlockers(unittest.TestCase):
                 self.assertEqual(payload["state"], state)
                 self.assertNotIn("recorded_blockers", payload)
 
+    def test_state_reduces_the_validated_rows_not_a_later_append(self):
+        """S72-02: a row landing after validation never reaches the reduced state."""
+        with TemporaryDirectory() as d:
+            root = Path(d)
+            _claimed(root)
+            self._cli(root, "block-step", "P1", "--reason", "r", "--agent", "tester")
+            real = porcelain._projection_ledgers
+
+            def read_then_append(r):
+                ledgers = real(r)
+                # No opener: fails identity validation, and would complete P1.
+                _step_row(r, event="completed", step_id="P1", attempt_id="A9")
+                return ledgers
+
+            with mock.patch.object(porcelain, "_projection_ledgers", side_effect=read_then_append):
+                payload = porcelain.next_action(root).to_dict()
+            self.assertEqual(payload["state"], "step_unclaimed")
+            self.assertEqual([e["attempt_id"] for e in payload["recorded_blockers"]], ["A1"])
+            # The appended row landed and fails validation on a fresh read.
+            self.assertEqual(porcelain.next_action(root).state, "state_invalid")
+
     def test_json_keeps_a_raw_reason(self):
         raw = "line\nnext\x1b[31m" + "x" * 300
         with TemporaryDirectory() as d:
@@ -2132,6 +2153,98 @@ class TestRecordedBlockers(unittest.TestCase):
             blockers = result["result"]["structuredContent"]["data"]["recorded_blockers"]
             self.assertEqual(blockers, self._blockers(root))
             self.assertEqual(len(blockers), 1)
+
+
+def _append_after_snapshot(append):
+    """Patch _projection_ledgers so `append(root)` lands right after each read."""
+    real = porcelain._projection_ledgers
+
+    def read_then_append(root):
+        ledgers = real(root)
+        append(root)
+        return ledgers
+
+    return mock.patch.object(porcelain, "_projection_ledgers", side_effect=read_then_append)
+
+
+class TestNextActionSnapshot(unittest.TestCase):
+    """A ledger row landing after next-action's validated snapshot never steers it."""
+
+    def _assert_fails_closed(self, root, append):
+        with _append_after_snapshot(append):
+            action = porcelain.next_action(root)
+        self.assertEqual(action.state, "state_invalid")
+        self.assertEqual(len(action.diagnostics), 1)
+        self.assertIn("changed during next-action", action.diagnostics[0])
+        # The appended row landed and fails validation on a fresh read.
+        self.assertEqual(porcelain.next_action(root).state, "state_invalid")
+
+    def test_amend_path_judges_the_snapshot(self):
+        # replacement_needs would read the failed row and offer amend-step.
+        with TemporaryDirectory() as d:
+            root = Path(d)
+            _completed_step(root)
+            self.assertEqual(porcelain.next_action(root).state, "run_unverified")
+            self._assert_fails_closed(root, lambda r: _step_row(
+                r, event="failed", step_id="P1", attempt_id="A1"))
+
+    def test_inflight_path_judges_the_snapshot(self):
+        receipt = {"schema_version": COMMAND_RECEIPTS_SCHEMA_VERSION, "id": "CR9",
+                   "step_id": "P1", "attempt_id": "A1", "timed_out": True}
+        cases = {
+            # attempt_is_verified would read it: step_uncompleted.
+            "verified-row": lambda r: _step_row(
+                r, event="verified", step_id="P1", attempt_id="A1", agent_id=7),
+            # timed_out_receipts would read it: attempt_timed_out.
+            "timed-out-receipt": lambda r: append_jsonl(
+                r / ".agent/command-receipts.jsonl", receipt),
+        }
+        for name, append in cases.items():
+            with self.subTest(name), TemporaryDirectory() as d:
+                root = Path(d)
+                _validated(root)
+                self.assertEqual(porcelain.next_action(root).state, "step_unverified")
+                self._assert_fails_closed(root, append)
+
+    def test_run_level_path_judges_the_snapshot(self):
+        # verify_run would read the row after the terminal event: run_unverified.
+        with TemporaryDirectory() as d:
+            root = Path(d)
+            _completed_step(root)
+            cli.main(["verify-run", "--root", str(root)])
+            self.assertEqual(porcelain.next_action(root).state, "proof_missing")
+            self._assert_fails_closed(root, lambda r: _step_row(
+                r, event="claimed", step_id="P1", attempt_id="A1"))
+
+    def test_late_ledger_read_failure_fails_closed(self):
+        # A writer can leave partial JSON, or a ledger can become unreadable,
+        # after resumability but before the action's downstream readers run.
+        for setup in (_validated, _completed_step):
+            for ledger in ("step-runs", "command-receipts", "file-receipts", "verification-runs"):
+                for failure in ("partial-json", "non-object", "directory"):
+                    with self.subTest(setup=setup.__name__, ledger=ledger, failure=failure), TemporaryDirectory() as d:
+                        root = Path(d)
+                        setup(root)
+                        real = porcelain._selected_action
+
+                        def change_then_select(*args, **kwargs):
+                            path = root / ".agent" / f"{ledger}.jsonl"
+                            if failure == "directory":
+                                path.unlink()
+                                path.mkdir()
+                            else:
+                                with path.open("a") as handle:
+                                    handle.write("{\n" if failure == "partial-json" else "[]\n")
+                            return real(*args, **kwargs)
+
+                        with mock.patch.object(porcelain, "_selected_action", side_effect=change_then_select):
+                            action = porcelain.next_action(root)
+                        self.assertEqual(action.state, "state_invalid")
+                        self.assertTrue(action.blocking)
+                        self.assertIsNone(action.command)
+                        self.assertEqual(action.diagnostics, [
+                            "execution ledgers changed during next-action; run it again",
+                        ])
 
 
 class TestRecordedBlockerHumanOutput(unittest.TestCase):
