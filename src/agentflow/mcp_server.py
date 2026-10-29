@@ -510,7 +510,7 @@ def run_cli(argv: List[str]) -> Tuple[int, str, str]:
         except SystemExit as exc:  # argparse errors call sys.exit()
             code = exc.code if isinstance(exc.code, int) else 1
         except Exception as exc:  # never crash the server on a tool failure
-            detail = f"{type(exc).__name__}: {exc}"
+            detail = cli._terminal_safe(f"{type(exc).__name__}: {exc}")
             err_text = err.getvalue()
             return 1, out.getvalue(), f"{err_text}\n{detail}" if err_text else detail
     return int(code or 0), out.getvalue(), err.getvalue()
