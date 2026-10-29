@@ -1,8 +1,8 @@
 # Agentflow Roadmap
 
-Last updated: 2026-10-25
+Last updated: 2026-10-29
 
-Agentflow `1.1.1` is a standard-library-only Python CLI for plan-locked,
+Agentflow `1.2.0` is a standard-library-only Python CLI for plan-locked,
 auditable agent work. It supports Python 3.11–3.13 and ships as the
 `agentflow-proof` distribution on PyPI, as source, and as single-file CLI and
 MCP zipapps through GitHub Releases.
