@@ -1186,24 +1186,24 @@ def next_action(
     projection, selection = _resumability(root, plan, agent_id, strict)
     if projection["diagnostics"]:
         return _invalid_action(projection)
-    action = _selected_action(root, plan, projection, selection, agent_id, strict)
     # #72 follow-up: claim is judged from the snapshot alone. Every other path
     # read .agent/ again (receipts, verify_step/verify_run, drift, proof), so
     # its answer stands only while the ledgers still equal the validated
     # snapshot. A re-read, not rows threaded through those helpers (proof
     # hashes the files): a concurrent append fails closed until a rerun.
-    if selection.kind != "claim":
-        try:
-            changed = _projection_ledgers(root) != selection.ledgers
-        except (OSError, ValueError):
-            changed = True
-        if changed:
-            return _invalid_action(_diagnose(
-                projection,
-                "execution_state_invalid",
-                "execution ledgers changed during next-action; run it again",
-                "execution ledgers",
-            ))
+    try:
+        action = _selected_action(root, plan, projection, selection, agent_id, strict)
+        changed = selection.kind != "claim" and _projection_ledgers(root) != selection.ledgers
+    except (AttributeError, KeyError, OSError, TypeError, ValueError):
+        # A downstream reader can fail before the final comparison is reached.
+        changed = True
+    if changed:
+        return _invalid_action(_diagnose(
+            projection,
+            "execution_state_invalid",
+            "execution ledgers changed during next-action; run it again",
+            "execution ledgers",
+        ))
     action.recorded_blockers = selection.recorded_blockers  # #72
     return action
 

@@ -2216,6 +2216,36 @@ class TestNextActionSnapshot(unittest.TestCase):
             self._assert_fails_closed(root, lambda r: _step_row(
                 r, event="claimed", step_id="P1", attempt_id="A1"))
 
+    def test_late_ledger_read_failure_fails_closed(self):
+        # A writer can leave partial JSON, or a ledger can become unreadable,
+        # after resumability but before the action's downstream readers run.
+        for setup in (_validated, _completed_step):
+            for ledger in ("step-runs", "command-receipts", "file-receipts", "verification-runs"):
+                for failure in ("partial-json", "non-object", "directory"):
+                    with self.subTest(setup=setup.__name__, ledger=ledger, failure=failure), TemporaryDirectory() as d:
+                        root = Path(d)
+                        setup(root)
+                        real = porcelain._selected_action
+
+                        def change_then_select(*args, **kwargs):
+                            path = root / ".agent" / f"{ledger}.jsonl"
+                            if failure == "directory":
+                                path.unlink()
+                                path.mkdir()
+                            else:
+                                with path.open("a") as handle:
+                                    handle.write("{\n" if failure == "partial-json" else "[]\n")
+                            return real(*args, **kwargs)
+
+                        with mock.patch.object(porcelain, "_selected_action", side_effect=change_then_select):
+                            action = porcelain.next_action(root)
+                        self.assertEqual(action.state, "state_invalid")
+                        self.assertTrue(action.blocking)
+                        self.assertIsNone(action.command)
+                        self.assertEqual(action.diagnostics, [
+                            "execution ledgers changed during next-action; run it again",
+                        ])
+
 
 class TestRecordedBlockerHumanOutput(unittest.TestCase):
     """#72: human next-action prints one sanitized line per current blocker."""

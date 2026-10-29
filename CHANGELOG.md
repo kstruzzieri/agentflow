@@ -51,8 +51,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the step, command or file receipt ledgers no longer equal the validated read
   it now reports `state_invalid` ("execution ledgers changed during
   next-action; run it again") instead of an answer steered by a row that never
-  passed validation. A claim offer comes from the snapshot alone and is
-  unaffected. (#72 follow-up)
+  passed validation. Malformed or unreadable ledgers encountered by the
+  downstream checks produce the same diagnostic. A claim offer comes from the
+  snapshot alone and is unaffected. (#72 follow-up)
 
 ## [1.1.1] - 2026-10-26
 
