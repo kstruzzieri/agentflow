@@ -44,8 +44,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `.agent/step-runs.jsonl` rows it validates and derives `recorded_blockers`
   from. It used to read the ledger again for both, so a row appended during
   the call could change the step state or the step offered to claim without
-  passing validation. The run, drift, proof and in-flight checks that follow
-  still read the ledgers themselves. (#72 follow-up)
+  passing validation. (#72 follow-up)
+
+- `next-action` answers from that validated snapshot or not at all. The
+  amend, in-flight, run, drift and proof checks read `.agent/` again, so when
+  the step, command or file receipt ledgers no longer equal the validated read
+  it now reports `state_invalid` ("execution ledgers changed during
+  next-action; run it again") instead of an answer steered by a row that never
+  passed validation. Malformed or unreadable ledgers encountered by the
+  downstream checks produce the same diagnostic. A claim offer comes from the
+  snapshot alone and is unaffected. (#72 follow-up)
 
 ## [1.1.1] - 2026-10-26
 

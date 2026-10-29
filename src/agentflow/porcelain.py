@@ -164,7 +164,8 @@ class _Selection:
 
     recorded_blockers is set (possibly []) only on the clean returns after the
     step-runs ledger has been validated; None keeps the recorded_blockers key
-    absent from next-action.
+    absent from next-action. ledgers is the validated snapshot they came from,
+    set on the same returns.
     """
 
     kind: Optional[str]
@@ -175,6 +176,7 @@ class _Selection:
     needs: List[Dict[str, Any]] = field(default_factory=list)
     unrecoverable: List[Dict[str, Any]] = field(default_factory=list)
     recorded_blockers: Optional[List[Dict[str, Any]]] = None
+    ledgers: Optional[Dict[str, List[Dict[str, Any]]]] = None
 
 
 def _timeout_close(
@@ -380,6 +382,85 @@ def _validate_step_event_identity(
                 )
         if event_kind in TERMINAL_EVENTS:
             terminal_attempts.add(attempt_id)
+
+
+class _InvalidState(ValueError):
+    """A structural check failed, as next-action reports it (code, artifact)."""
+
+    def __init__(self, code: str, message: str, artifact: str) -> None:
+        super().__init__(message)
+        self.code = code
+        self.artifact = artifact
+
+
+def _validated_contract(root: Path, plan: Any) -> Dict[str, Any]:
+    """Plan and execution-contract checks shared by next-action and
+    next-step --explain. Raises _InvalidState."""
+    plan_path, contract_path = ".agent/plan.lock.json", ".agent/execution.contract.json"
+    if not isinstance(plan, dict):
+        raise _InvalidState(
+            "plan_invalid", f"{plan_path} top-level value must be a JSON object", plan_path
+        )
+    try:
+        plan_errors = validate_plan(plan)
+    except (AttributeError, KeyError, TypeError, ValueError) as exc:
+        plan_errors = [f"plan structure is invalid: {exc}"]
+    locked_at = plan.get("locked_at")
+    if locked_at is not None and not isinstance(locked_at, str):
+        plan_errors.append("locked_at must be a string or null")
+    if plan_errors:
+        raise _InvalidState("plan_invalid", "; ".join(plan_errors), plan_path)
+    if not (root / contract_path).exists():
+        raise _InvalidState(
+            "execution_contract_missing", f"{contract_path} is missing", contract_path
+        )
+    try:
+        contract = load_execution_contract(root)
+        if not isinstance(contract, dict):
+            raise ValueError("execution contract must be a JSON object")
+        contract_errors = validate_execution_contract(contract)
+    except (
+        AttributeError,
+        KeyError,
+        OSError,
+        TypeError,
+        ValueError,
+        json.JSONDecodeError,
+    ) as exc:
+        raise _InvalidState("execution_contract_invalid", str(exc), contract_path) from None
+    if contract_errors:
+        raise _InvalidState(
+            "execution_contract_invalid",
+            "; ".join(item["message"] for item in contract_errors),
+            contract_path,
+        )
+    return contract
+
+
+def _validated_ledgers(
+    root: Path,
+    plan: Dict[str, Any],
+    policy: str,
+) -> Tuple[Dict[str, List[Dict[str, Any]]], Dict[str, Any]]:
+    """One validated read of the execution ledgers and the step state reduced
+    from its step-runs rows. Raises _InvalidState, or ValueError/OSError for a
+    malformed or unreadable ledger."""
+    ledgers = _projection_ledgers(root)
+    _validate_step_event_identity(ledgers["step-runs"], policy)
+    state = step_state_from_events(ledgers["step-runs"])
+    plan_ids = {
+        step["id"]
+        for step in plan.get("steps", [])
+        if isinstance(step, dict) and isinstance(step.get("id"), str)
+    }
+    unknown_steps = sorted(set(state["steps"]) - plan_ids)
+    if unknown_steps:
+        raise _InvalidState(
+            "execution_state_invalid",
+            f"execution ledger references unknown steps: {', '.join(unknown_steps)}",
+            ".agent/step-runs.jsonl",
+        )
+    return ledgers, state
 
 
 def _recorded_blockers(events: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
@@ -679,69 +760,8 @@ def _resumability(
     now: Optional[datetime] = None,
 ) -> Tuple[Dict[str, Any], _Selection]:
     projection = _base_resumability(plan, agent_id)
-    if not isinstance(plan, dict):
-        return _diagnose(
-            projection,
-            "plan_invalid",
-            ".agent/plan.lock.json top-level value must be a JSON object",
-            ".agent/plan.lock.json",
-        ), _Selection(None)
     try:
-        plan_errors = validate_plan(plan)
-    except (AttributeError, KeyError, TypeError, ValueError) as exc:
-        plan_errors = [f"plan structure is invalid: {exc}"]
-    locked_at = plan.get("locked_at")
-    if locked_at is not None and not isinstance(locked_at, str):
-        plan_errors.append("locked_at must be a string or null")
-    if plan_errors:
-        return _diagnose(
-            projection,
-            "plan_invalid",
-            "; ".join(plan_errors),
-            ".agent/plan.lock.json",
-        ), _Selection(None)
-    contract_path = root / ".agent/execution.contract.json"
-    if not contract_path.exists():
-        return _diagnose(
-            projection,
-            "execution_contract_missing",
-            ".agent/execution.contract.json is missing",
-            ".agent/execution.contract.json",
-        ), _Selection(None)
-    try:
-        contract = load_execution_contract(root)
-    except (OSError, ValueError, json.JSONDecodeError) as exc:
-        return _diagnose(
-            projection,
-            "execution_contract_invalid",
-            str(exc),
-            ".agent/execution.contract.json",
-        ), _Selection(None)
-    if not isinstance(contract, dict):
-        return _diagnose(
-            projection,
-            "execution_contract_invalid",
-            "execution contract must be a JSON object",
-            ".agent/execution.contract.json",
-        ), _Selection(None)
-    try:
-        contract_errors = validate_execution_contract(contract)
-    except (AttributeError, KeyError, TypeError, ValueError) as exc:
-        return _diagnose(
-            projection,
-            "execution_contract_invalid",
-            str(exc),
-            ".agent/execution.contract.json",
-        ), _Selection(None)
-    if contract_errors:
-        return _diagnose(
-            projection,
-            "execution_contract_invalid",
-            "; ".join(item["message"] for item in contract_errors),
-            ".agent/execution.contract.json",
-        ), _Selection(None)
-
-    try:
+        contract = _validated_contract(root, plan)
         # Inside the fail-closed handler: these re-read .agent files, and a
         # concurrent unlink between the contract load above and here must
         # yield a diagnostic, not a traceback.
@@ -750,7 +770,7 @@ def _resumability(
         grace = lease_grace_seconds(root)
         projection["contract"].update({
             "execution_schema_version": contract.get("schema_version"),
-            "execution_contract_sha256": sha256_path(contract_path),
+            "execution_contract_sha256": sha256_path(root / ".agent/execution.contract.json"),
         })
         projection["lease"].update({
             "policy": policy,
@@ -758,23 +778,8 @@ def _resumability(
             "grace_seconds": grace,
             "exclusive": policy == "enforce",
         })
-        ledgers = _projection_ledgers(root)
-        _validate_step_event_identity(ledgers["step-runs"], policy)
+        ledgers, state = _validated_ledgers(root, plan, policy)
         blockers = _recorded_blockers(ledgers["step-runs"])
-        state = step_state_from_events(ledgers["step-runs"])
-        plan_steps = {
-            step["id"]: step
-            for step in plan.get("steps", [])
-            if isinstance(step, dict) and isinstance(step.get("id"), str)
-        }
-        unknown_steps = sorted(set(state["steps"]) - set(plan_steps))
-        if unknown_steps:
-            return _diagnose(
-                projection,
-                "execution_state_invalid",
-                f"execution ledger references unknown steps: {', '.join(unknown_steps)}",
-                ".agent/step-runs.jsonl",
-            ), _Selection(None)
         open_attempts = [
             (step_id, attempt_id)
             for step_id, step in state["steps"].items()
@@ -826,7 +831,7 @@ def _resumability(
                 policy,
                 "not_applicable",
             )
-            selection.recorded_blockers = blockers
+            selection.recorded_blockers, selection.ledgers = blockers, ledgers
             return projection, selection
 
         step_id, attempt_id = open_attempts[0]
@@ -906,8 +911,10 @@ def _resumability(
             policy,
             lease_state,
         )
-        selection.recorded_blockers = blockers
+        selection.recorded_blockers, selection.ledgers = blockers, ledgers
         return projection, selection
+    except _InvalidState as exc:
+        return _diagnose(projection, exc.code, str(exc), exc.artifact), _Selection(None)
     except (
         AttributeError,
         KeyError,
@@ -940,54 +947,19 @@ def _explain_snapshot(
     """Validate the execution state as `next-action` does (#71).
 
     Returns (plan, validated step-runs rows, state reduced from those rows).
-    Mirrors `_resumability`'s structural checks call for call, so a message is
-    the text `next-action` reports; a test pins the two against drift. Raises
-    ValueError with that message.
+    Runs `_resumability`'s validators, so a message is the text `next-action`
+    reports; a test pins the two against drift. Raises ValueError with that
+    message.
     """
     try:
         if not (root / ".agent/plan.lock.json").exists():
             raise ValueError("no .agent/plan.lock.json; run init")
         plan = _load_plan(root)
-        if not isinstance(plan, dict):
-            raise ValueError(
-                ".agent/plan.lock.json top-level value must be a JSON object"
-            )
-        if plan.get("locked") is not True:
+        if isinstance(plan, dict) and plan.get("locked") is not True:
             raise ValueError("plan exists but is not locked; run lock-plan")
-        try:
-            plan_errors = validate_plan(plan)
-        except (AttributeError, KeyError, TypeError, ValueError) as exc:
-            plan_errors = [f"plan structure is invalid: {exc}"]
-        locked_at = plan.get("locked_at")
-        if locked_at is not None and not isinstance(locked_at, str):
-            plan_errors.append("locked_at must be a string or null")
-        if plan_errors:
-            raise ValueError("; ".join(plan_errors))
-        if not (root / ".agent/execution.contract.json").exists():
-            raise ValueError(".agent/execution.contract.json is missing")
-        contract = load_execution_contract(root)
-        if not isinstance(contract, dict):
-            raise ValueError("execution contract must be a JSON object")
-        contract_errors = validate_execution_contract(contract)
-        if contract_errors:
-            raise ValueError("; ".join(item["message"] for item in contract_errors))
-        policy = lease_policy(root)
-        lease_ttl_minutes(root)
-        lease_grace_seconds(root)
-        rows = _projection_ledgers(root)["step-runs"]
-        _validate_step_event_identity(rows, policy)
-        state = step_state_from_events(rows)
-        plan_ids = {
-            step["id"]
-            for step in plan.get("steps", [])
-            if isinstance(step, dict) and isinstance(step.get("id"), str)
-        }
-        unknown_steps = sorted(set(state["steps"]) - plan_ids)
-        if unknown_steps:
-            raise ValueError(
-                f"execution ledger references unknown steps: {', '.join(unknown_steps)}"
-            )
-        return plan, rows, state
+        _validated_contract(root, plan)  # also rejects a non-object plan
+        ledgers, state = _validated_ledgers(root, plan, lease_policy(root))
+        return plan, ledgers["step-runs"], state
     except (
         AttributeError,
         KeyError,
@@ -1214,7 +1186,24 @@ def next_action(
     projection, selection = _resumability(root, plan, agent_id, strict)
     if projection["diagnostics"]:
         return _invalid_action(projection)
-    action = _selected_action(root, plan, projection, selection, agent_id, strict)
+    # #72 follow-up: claim is judged from the snapshot alone. Every other path
+    # read .agent/ again (receipts, verify_step/verify_run, drift, proof), so
+    # its answer stands only while the ledgers still equal the validated
+    # snapshot. A re-read, not rows threaded through those helpers (proof
+    # hashes the files): a concurrent append fails closed until a rerun.
+    try:
+        action = _selected_action(root, plan, projection, selection, agent_id, strict)
+        changed = selection.kind != "claim" and _projection_ledgers(root) != selection.ledgers
+    except (AttributeError, KeyError, OSError, TypeError, ValueError):
+        # A downstream reader can fail before the final comparison is reached.
+        changed = True
+    if changed:
+        return _invalid_action(_diagnose(
+            projection,
+            "execution_state_invalid",
+            "execution ledgers changed during next-action; run it again",
+            "execution ledgers",
+        ))
     action.recorded_blockers = selection.recorded_blockers  # #72
     return action
 
