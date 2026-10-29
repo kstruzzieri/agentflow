@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-10-29
+
+Agentflow 1.2.0 shows why a run is stuck. `next-step --explain` reports why
+no step is eligible (#71). `next-action` reports the blockers recorded with
+`block-step` and `fail-step`, and the stop hook prints the current ones when it
+refuses a stop (#72). `next-action` now answers only from the ledger rows it
+validated, and agent-written ledger text reaches the terminal with
+non-printable characters shown as `?`. Every change is additive under
+`docs/stability.md`: a new flag, a new `next-action --json` key, new
+`value_sets` codes in `docs/cli-contract.json` and an optional MCP input. No
+artifact schema or schema-version constant changes.
+
 ### Added
 
 - `next-action --json` reports `recorded_blockers`. It has one entry per
@@ -63,7 +75,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   breaks and bidi overrides written to `.agent/` no longer reach the terminal
   through these commands. `events` cuts a reason at 200 characters. `--json`
   and `--jsonl` output is unchanged. The next entry covers the remaining
-  human output and error messages.
+  human output and error messages. (#71 follow-up)
 
 - Human output of `audit-drift`, `verify-run`, `build-proof`, `verify-proof`,
   `status`, `doctor`, `runtime-status` and `lint-handoff`, the acknowledgement
@@ -79,7 +91,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `finish-run` splits it into lines, so a recorded line break no longer adds
   `diagnostics` entries. Captured human text has no byte-stability guarantee.
   JSON keys and types, raw values in other `--json` output and in `.agent/`
-  files, flags and exit codes are unchanged.
+  files, flags and exit codes are unchanged. (#71 follow-up)
 
 ## [1.1.1] - 2026-10-26
 
@@ -335,7 +347,8 @@ repository, so this heading is intentionally unlinked._
 
 - Existing v0.2 proof artifacts remain valid when no execution contract exists.
 
-[Unreleased]: https://github.com/kstruzzieri/agentflow/compare/v1.1.1...HEAD
+[Unreleased]: https://github.com/kstruzzieri/agentflow/compare/v1.2.0...HEAD
+[1.2.0]: https://github.com/kstruzzieri/agentflow/compare/v1.1.1...v1.2.0
 [1.1.1]: https://github.com/kstruzzieri/agentflow/compare/v1.1.0...v1.1.1
 [1.1.0]: https://github.com/kstruzzieri/agentflow/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/kstruzzieri/agentflow/releases/tag/v1.0.0
