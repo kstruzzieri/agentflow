@@ -1196,7 +1196,14 @@ def next_action(
         changed = selection.kind != "claim" and _projection_ledgers(root) != selection.ledgers
     except (AttributeError, KeyError, OSError, TypeError, ValueError):
         # A downstream reader can fail before the final comparison is reached.
-        changed = True
+        # #94: blame the ledgers only if a fresh read differs or fails;
+        # otherwise the error is Agentflow's own and a rerun cannot clear it.
+        try:
+            changed = _projection_ledgers(root) != selection.ledgers
+        except (OSError, ValueError):
+            changed = True
+        if not changed:
+            raise
     if changed:
         return _invalid_action(_diagnose(
             projection,
