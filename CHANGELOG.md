@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- `next-action` reports "execution ledgers changed during next-action; run it
+  again" only when the ledgers really changed. When a check after the
+  validated snapshot raises, `next-action` reads the step, command, file
+  receipt and verification ledgers again. It reports `state_invalid` only if
+  they differ from the snapshot or cannot be read; otherwise the original
+  error propagates with its traceback. It used to report any `AttributeError`,
+  `KeyError`, `TypeError`, `OSError` or `ValueError` raised while choosing the
+  action as a ledger change, on the claim path too, so a deterministic bug
+  looked like a race and the rerun it asked for gave the same answer every
+  time. (#94)
+
 ## [1.2.0] - 2026-10-29
 
 Agentflow 1.2.0 shows why a run is stuck. `next-step --explain` reports why

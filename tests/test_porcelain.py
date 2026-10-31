@@ -2246,6 +2246,23 @@ class TestNextActionSnapshot(unittest.TestCase):
                             "execution ledgers changed during next-action; run it again",
                         ])
 
+    def test_internal_error_with_unchanged_ledgers_propagates(self):
+        # #94: an error in Agentflow's own code is not a ledger change. While a
+        # fresh read still equals the snapshot it must surface, not ask for a
+        # rerun that gives the same answer.
+        for setup, state in ((_ready_repo, "step_unclaimed"), (_validated, "step_unverified")):
+            for error in (TypeError("simulated bug"), KeyError("simulated"), AttributeError("simulated")):
+                with self.subTest(setup=setup.__name__, error=type(error).__name__), TemporaryDirectory() as d:
+                    root = Path(d)
+                    setup(root)
+                    self.assertEqual(porcelain.next_action(root).state, state)
+                    before = porcelain._projection_ledgers(root)
+                    with mock.patch.object(porcelain, "_selected_action", side_effect=error):
+                        with self.assertRaises(type(error)) as raised:
+                            porcelain.next_action(root)
+                    self.assertIs(raised.exception, error)
+                    self.assertEqual(porcelain._projection_ledgers(root), before)
+
 
 class TestRecordedBlockerHumanOutput(unittest.TestCase):
     """#72: human next-action prints one sanitized line per current blocker."""
