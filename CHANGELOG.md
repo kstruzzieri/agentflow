@@ -9,6 +9,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `next-action` guides an edit made after a step completed to `amend-step`
+  instead of a `finish-run` that always fails. When every changed file with no
+  matching receipt is in exactly one step's effective scope and drift reports
+  no out-of-scope or blocked file, it reports `step_amendment_needed` with
+  `amend-step <step> --reason 'record post-completion edit to <path>'`. The
+  `amend` action is `automatic: false` while any changed file lacks a matching
+  receipt, for timeout, failed and strict amendments too, because receipts
+  cannot show who made the edit. Otherwise `drift_failing` and `run_unverified`
+  name each path and the step that could record it. `drift_failing` now lists
+  blocked files and unmapped hunks (path, header and fingerprint) as well as
+  out-of-scope files, and its reason names the categories present; it used to
+  say "changes fall outside plan scope" with no diagnostics for an unmapped
+  hunk. `record-file-change`, `run` and `verify-step` on a completed step with
+  no open attempt say to open one with `amend-step` instead of `claim-step`. A
+  git or file error while inspecting changed files reports `state_invalid`. No
+  state, recovery action, schema or exit-code change. (#73)
 - `next-action` reports "execution ledgers changed during next-action; run it
   again" only when the ledgers really changed. When a check after the
   validated snapshot raises, `next-action` reads the step, command, file

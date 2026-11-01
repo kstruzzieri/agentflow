@@ -38,12 +38,14 @@ from .execution import (
     validate_execution_contract,
 )
 from .execution_coverage import (
+    post_completion_edits,
     replacement_needs,
     timeout_receipt_states,
     verify_run,
     verify_step,
 )
 from .git import changed_file_records
+from .hunks import effective_hunk_policy, format_unmapped_hunk
 from .proof import verify_proof
 from .receipts import command_receipts, file_receipts, sha256_path
 from .validation import audit_drift, path_in_effective_scope, validate_plan
@@ -165,7 +167,8 @@ class _Selection:
     recorded_blockers is set (possibly []) only on the clean returns after the
     step-runs ledger has been validated; None keeps the recorded_blockers key
     absent from next-action. ledgers is the validated snapshot they came from,
-    set on the same returns.
+    set on the same returns. edits is the #73 post_completion_edits result,
+    filled with needs, so projection and rendering share one inspection.
     """
 
     kind: Optional[str]
@@ -177,6 +180,7 @@ class _Selection:
     unrecoverable: List[Dict[str, Any]] = field(default_factory=list)
     recorded_blockers: Optional[List[Dict[str, Any]]] = None
     ledgers: Optional[Dict[str, List[Dict[str, Any]]]] = None
+    edits: Dict[str, Any] = field(default_factory=dict)
 
 
 def _timeout_close(
@@ -661,8 +665,14 @@ def _project_recovery_actions(
                 else "claim requires an agent identity"
             )
         amend_allowed = amend and bool(agent_id)
+        # #73: an amendment records the working tree as the step's work, so
+        # with any unreceipted change someone must say whose it is first.
+        manual = amend and bool(selection.edits.get("pairs"))
         amend_reason = (
-            f"step {step_id} has completed work and needs a replacement attempt"
+            "changed files have no matching file receipt; an operator must attribute "
+            "them with amend-step"
+            if amend_allowed and manual
+            else f"step {step_id} has completed work and needs a replacement attempt"
             if amend_allowed
             else "amend requires an agent identity"
             if amend
@@ -680,7 +690,7 @@ def _project_recovery_actions(
                 automatic=False, break_glass=True,
             ),
             _recovery_action("block", False, "no open attempt"),
-            _recovery_action("amend", amend_allowed, amend_reason),
+            _recovery_action("amend", amend_allowed, amend_reason, automatic=not manual),
         ]
 
     owner = attempt.get("agent_id")
@@ -806,14 +816,26 @@ def _resumability(
             else:
                 # Nothing eligible: replace the first completed step that needs
                 # it, unless an unrecoverable timeout makes the run unprovable.
+                # #73: an unreceipted change is one more cause. Its inspection
+                # reads the working tree, so a git or file error fails closed.
+                try:
+                    edits = post_completion_edits(root, plan, strict=strict)
+                except (RuntimeError, OSError) as exc:
+                    return _diagnose(
+                        projection,
+                        "execution_state_invalid",
+                        f"cannot inspect changed files: {exc}",
+                        "working tree",
+                    ), _Selection(None)
                 selection = _Selection(
                     None,
-                    needs=replacement_needs(root, plan, strict=strict),
+                    needs=replacement_needs(root, plan, strict=strict, edits=edits),
                     unrecoverable=[
                         receipt
                         for receipt, receipt_state, _ in timeout_receipt_states(root, plan)
                         if receipt_state == "unrecoverable"
                     ],
+                    edits=edits,
                 )
                 if selection.needs and not selection.unrecoverable:
                     need = selection.needs[0]
@@ -1103,6 +1125,53 @@ def _latest_run_verification(root: Path) -> Optional[Dict[str, Any]]:
     return latest
 
 
+def _unreceipted_hints(edits: Dict[str, Any]) -> List[str]:
+    """#73: which step could record each unreceipted change no step was offered.
+
+    Nothing when the edits were offered (the cause lines say it) or the run is
+    permanently unprovable. A blocked or out-of-scope change is never presented
+    as something an amendment can accept.
+    """
+    if not edits.get("pairs") or edits.get("offered") or edits.get("permanent"):
+        return []
+    prefix = (
+        "after the out-of-scope and blocked changes are resolved, "
+        if edits.get("scope_violation") else ""
+    )
+    hints = []
+    for path, candidates in edits["candidates"].items():
+        if len(candidates) == 1:
+            hints.append(f"{prefix}{path} is in step {candidates[0]}'s scope; "
+                         f"amend-step {candidates[0]} can record it")
+        elif candidates:
+            hints.append(f"{path} is in the scope of steps {', '.join(candidates)}; "
+                         "amend the step that made the edit and record it there")
+        else:
+            hints.append(f"{path} is in no step's scope; no amendment can record it")
+    return hints
+
+
+def _drift_reason(root: Path, drift: Dict[str, Any]) -> str:
+    """#73: name every failing drift category, not only out-of-scope files."""
+    parts = []
+    if drift.get("out_of_scope_files"):
+        parts.append("changes fall outside plan scope")
+    if drift.get("blocked_files_changed"):
+        parts.append("blocked files changed")
+    # Under observe, unmapped hunks are listed but do not fail drift.
+    if drift.get("unmapped_hunks") and effective_hunk_policy(root) == "enforce":
+        parts.append("changed hunks are not covered by file receipts")
+    return "; ".join(parts) or "changes fall outside plan scope"
+
+
+def _unmapped_hunk_lines(drift: Dict[str, Any]) -> List[str]:
+    return [
+        f"unmapped hunk: {format_unmapped_hunk(entry)}"
+        for entry in drift.get("unmapped_hunks", [])
+        if isinstance(entry, dict)
+    ]
+
+
 def _replacement_cause(
     step_id: str,
     need: Dict[str, Any],
@@ -1118,6 +1187,8 @@ def _replacement_cause(
         )
     if cause["cause"] == "failed_attempt":
         return f"replace failed attempt {need['attempt_id']}", f"{step_id} has failed attempt"
+    if cause["cause"] == "post_completion_edit":
+        return f"record post-completion edit to {cause['path']}", cause["message"]
     return (
         f"replace {need['status']} attempt {need['attempt_id']} (strict)",
         f"{step_id} is not completed",
@@ -1244,7 +1315,9 @@ def _selected_action(
                 command=_cmd(args, user_placeholder=not agent_id), args=args, step_id=step_id,
                 diagnostics=[
                     *(line for _text, line in texts),
+                    *_unmapped_hunk_lines(selection.edits.get("drift") or {}),
                     *(f"also needs a replacement attempt: {other['step_id']}" for other in others),
+                    *_unreceipted_hints(selection.edits),
                 ],
             ),
             projection,
@@ -1258,13 +1331,19 @@ def _selected_action(
             for receipt in selection.unrecoverable
         ]
         finish_args = ["finish-run", *strict_args]
-        drift = audit_drift(root, plan)
+        hints = _unreceipted_hints(selection.edits)
+        drift = selection.edits.get("drift") or audit_drift(root, plan)
         if drift.get("status") == "fail":
             return _attach(
-                Action("drift_failing", "changes fall outside plan scope",
+                Action("drift_failing", _drift_reason(root, drift),
                        command=_cmd(finish_args), args=finish_args,
-                       diagnostics=[*(f"out of scope: {p}" for p in
-                                      drift.get("out_of_scope_files", [])), *stranded]),
+                       diagnostics=[
+                           *(f"out of scope: {p}" for p in drift.get("out_of_scope_files", [])),
+                           *(f"blocked: {p}" for p in drift.get("blocked_files_changed", [])),
+                           *_unmapped_hunk_lines(drift),
+                           *hints,
+                           *stranded,
+                       ]),
                 projection,
             )
         run_result = verify_run(root, plan, strict=strict, record=False)
@@ -1278,7 +1357,7 @@ def _selected_action(
             strict and bool(run_warnings)
         )
         if run_record is None or run_failed:
-            diagnostics = [*(f["message"] for f in run_findings), *stranded]
+            diagnostics = [*(f["message"] for f in run_findings), *hints, *stranded]
             if run_record is None:
                 diagnostics.insert(0, "run verification has not been recorded")
             return _attach(

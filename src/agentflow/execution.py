@@ -604,6 +604,9 @@ def resolve_attempt(root: Path, step_id: str, attempt_id: Optional[str]) -> str:
         return open_attempts[0]
     if len(open_attempts) > 1:
         raise ValueError(f"multiple open attempts for {step_id}; pass --attempt")
+    if state["steps"].get(step_id, {}).get("completed"):
+        # #73: claim-step refuses a completed step, so point at the command that works.
+        raise ValueError(f"step {step_id} has completed work and no open attempt; open one with amend-step")
     raise ValueError(f"{step_id} has no open attempt; run claim-step first")
 
 

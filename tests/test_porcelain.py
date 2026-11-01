@@ -2,6 +2,8 @@ import contextlib
 import io
 import json
 import os
+import re
+import shutil
 import subprocess
 import unittest
 from datetime import datetime, timedelta, timezone
@@ -77,11 +79,12 @@ def _plan(steps):
     }
 
 
-def _ready_repo_with_steps(root: Path, steps, extra_allowed: tuple = ()):
+def _ready_repo_with_steps(root: Path, steps, extra_allowed: tuple = (), blocked: tuple = ()):
     _init_repo(root)
     cli.main(["init", "--root", str(root)])
     plan = _plan(steps)
     plan["allowed_files"].extend(extra_allowed)
+    plan["blocked_files"].extend(blocked)
     (root / ".agent/plan.lock.json").write_text(json.dumps(plan))
     cli.main(["lock-plan", str(root / ".agent/plan.lock.json")])
     cli.main(["init-execution", "--root", str(root)])
@@ -111,6 +114,44 @@ def _completed_step(root: Path):
     _validated(root)
     cli.main(["verify-step", "P1", "--root", str(root)])
     cli.main(["complete-step", "P1", "--root", str(root)])
+
+
+def _set_hunk_policy(root: Path, policy: str) -> None:
+    path = root / ".agent/execution.contract.json"
+    contract = json.loads(path.read_text())
+    contract.setdefault("proof_policy", {})["hunk_attribution"] = policy
+    path.write_text(json.dumps(contract))
+
+
+def _finish(root: Path, step_id: str, *paths: str) -> None:
+    """Claim step_id, write and record each path, pass its gate, finish it."""
+    assert cli.main(["claim-step", step_id, "--agent", "tester", "--root", str(root)]) == 0
+    for path in paths:
+        (root / path).parent.mkdir(parents=True, exist_ok=True)
+        (root / path).write_text("x = 1\n")
+        assert cli.main(["record-file-change", "--step", step_id, "--path", path,
+                         "--root", str(root)]) == 0
+    assert cli.main(["run", "--step", step_id, "--gate", 'python3 -c "print(1)"', "--root", str(root),
+                     "--", "python3", "-c", "print(1)"]) == 0
+    assert cli.main(["finish-step", step_id, "--root", str(root)]) == 0
+
+
+def _edited(root: Path, policy: str = "enforce") -> None:
+    """#73: P1 completes with src/feature.py recorded, then the file changes."""
+    _completed_step(root)
+    _set_hunk_policy(root, policy)
+    (root / "src/feature.py").write_text("x = 2\n")
+
+
+def _terminal_violation(root: Path) -> None:
+    """A copy of P1/A1's file receipt dated after A1 completed (hand-edited ledger)."""
+    path = root / ".agent/file-receipts.jsonl"
+    first = json.loads(path.read_text().splitlines()[0])
+    append_jsonl(path, {**first, "id": "FR99", "path": "src/ghost.py",
+                        "recorded_at": "2999-01-01T00:00:00+00:00"})
+
+
+_UNMAPPED_HUNK = r"^unmapped hunk: src/feature\.py @@ -\d+,\d+ \+\d+,\d+ @@ [0-9a-f]{12} \(no_matching_hunk\)$"
 
 
 def _time_out_open_attempt(root: Path, agent: str = "tester") -> None:
@@ -1657,6 +1698,235 @@ class TestNextActionRecovery(unittest.TestCase):
             action = porcelain.next_action(root, agent_id="tester")
             self.assertEqual((action.state, action.step_id), ("step_amendment_needed", "P1"))
             self.assertIn("also needs a replacement attempt: P2", action.diagnostics)
+
+    def test_drift_failing_lists_every_category(self):
+        # #73 AC2: every failing drift category is named; unmapped hunks join
+        # the reason only under enforce.
+        reasons = {
+            "enforce": "changes fall outside plan scope; blocked files changed; "
+                       "changed hunks are not covered by file receipts",
+            "observe": "changes fall outside plan scope; blocked files changed",
+        }
+        for policy, reason in reasons.items():
+            with self.subTest(policy=policy), TemporaryDirectory() as d:
+                root = Path(d)
+                _ready_repo_with_steps(root, [_step()], blocked=("src/blocked.py",))
+                _finish(root, "P1", "src/feature.py")
+                _set_hunk_policy(root, policy)
+                (root / "src/feature.py").write_text("x = 2\n")
+                (root / "src/stray.py").write_text("y = 1\n")
+                (root / "src/blocked.py").write_text("z = 1\n")
+                action = porcelain.next_action(root, agent_id="tester")
+                self.assertEqual(action.state, "drift_failing")
+                self.assertEqual(action.reason, reason)
+                self.assertIn("out of scope: src/stray.py", action.diagnostics)
+                self.assertIn("blocked: src/blocked.py", action.diagnostics)
+                self.assertTrue(any(re.match(_UNMAPPED_HUNK, line) for line in action.diagnostics),
+                                action.diagnostics)
+                self.assertIn("after the out-of-scope and blocked changes are resolved, "
+                              "src/feature.py is in step P1's scope; amend-step P1 can record it",
+                              action.diagnostics)
+                self.assertIn("src/stray.py is in no step's scope; no amendment can record it",
+                              action.diagnostics)
+                self.assertFalse(_recovery(action.resumability, "amend")["allowed"])
+
+    def test_drift_failing_unmapped_hunk_in_shared_scope(self):
+        # #73 AC1: an in-scope unattributed edit names its hunk and fingerprint
+        # and is not reported as out of scope.
+        p2 = {**_step(), "id": "P2", "files": ["src/feature.py", "src/other.py"],
+              "expected_diff": ["src/other.py changes are attributed to P2."]}
+        # AC4: a path two steps' scopes share selects neither, under any policy.
+        for policy, state in (("enforce", "drift_failing"), ("observe", "run_unverified")):
+            with self.subTest(policy=policy), TemporaryDirectory() as d:
+                root = Path(d)
+                _ready_repo_with_steps(root, [_step(), p2], extra_allowed=("src/other.py",))
+                _finish(root, "P1", "src/feature.py")
+                _finish(root, "P2", "src/other.py")
+                _set_hunk_policy(root, policy)
+                (root / "src/feature.py").write_text("x = 2\n")
+                action = porcelain.next_action(root, agent_id="tester")
+                self.assertEqual(action.state, state)
+                if policy == "enforce":
+                    self.assertEqual(action.reason, "changed hunks are not covered by file receipts")
+                    self.assertTrue(any(re.match(_UNMAPPED_HUNK, line) for line in action.diagnostics),
+                                    action.diagnostics)
+                self.assertIn("src/feature.py is in the scope of steps P1, P2; "
+                              "amend the step that made the edit and record it there", action.diagnostics)
+                self.assertFalse(_recovery(action.resumability, "amend")["allowed"])
+
+    def test_post_completion_edit_selects_manual_amend_under_each_policy(self):
+        # #73 AC3: the edit selects amend-step for P1 under every policy; it is
+        # manual, and the amendment's own states then lead to a proof.
+        for policy in ("enforce", "observe", "off"):
+            with self.subTest(policy=policy), TemporaryDirectory() as d:
+                root = Path(d)
+                _edited(root, policy)
+                action = porcelain.next_action(root, agent_id="tester")
+                self.assertEqual((action.state, action.step_id), ("step_amendment_needed", "P1"))
+                self.assertEqual(action.args, ["amend-step", "P1", "--agent", "tester", "--reason",
+                                               "record post-completion edit to src/feature.py"])
+                amend = _recovery(action.resumability, "amend")
+                self.assertEqual((amend["allowed"], amend["automatic"], amend["break_glass"]),
+                                 (True, False, False))
+                self.assertIn("out-of-band edit after latest file receipt: src/feature.py",
+                              action.diagnostics)
+                self.assertEqual(any(re.match(_UNMAPPED_HUNK, line) for line in action.diagnostics),
+                                 policy != "off", action.diagnostics)
+                self.assertEqual(cli.main([*action.args, "--root", str(root)]), 0)
+                self._assert_proven(root, "tester")
+
+    def test_post_completion_edit_without_agent(self):
+        with TemporaryDirectory() as d:
+            root = Path(d)
+            _edited(root)
+            action = porcelain.next_action(root)
+            self.assertEqual(action.state, "step_amendment_needed")
+            self.assertIn("$USER", action.args)
+            amend = _recovery(action.resumability, "amend")
+            self.assertEqual((amend["allowed"], amend["automatic"], amend["reason"]),
+                             (False, False, "amend requires an agent identity"))
+
+    def test_failed_amendment_with_unreceipted_edit_is_manual(self):
+        # #73: receipts cannot tell an outside edit from a failed attempt's
+        # unrecorded work, so any unreceipted change makes a #70 amend manual.
+        with TemporaryDirectory() as d:
+            root = Path(d)
+            _closed_amendment(root, "fail-step", timeout=False)
+            self.assertTrue(_recovery(porcelain.next_action(root, agent_id="tester").resumability,
+                                      "amend")["automatic"])
+            (root / "src/feature.py").write_text("x = 2\n")
+            action = porcelain.next_action(root, agent_id="tester")
+            self.assertEqual(action.args[-1], "replace failed attempt A2")
+            self.assertFalse(_recovery(action.resumability, "amend")["automatic"])
+            self.assertIn("out-of-band edit after latest file receipt: src/feature.py", action.diagnostics)
+        with TemporaryDirectory() as d:  # the edit cause is withheld; the #70 cause still selects P1
+            root = Path(d)
+            _ready_repo_with_steps(root, [_step()], extra_allowed=("src/extra.py",))
+            _finish(root, "P1", "src/feature.py")
+            for argv in (["amend-step", "P1", "--agent", "tester", "--reason", "r"],
+                         ["fail-step", "P1", "--reason", "x"]):
+                self.assertEqual(cli.main([*argv, "--root", str(root)]), 0)
+            (root / "src/extra.py").write_text("y = 1\n")
+            action = porcelain.next_action(root, agent_id="tester")
+            self.assertEqual((action.state, action.args[-1]), ("step_amendment_needed", "replace failed attempt A2"))
+            self.assertFalse(_recovery(action.resumability, "amend")["automatic"])
+            self.assertIn("src/extra.py is in no step's scope; no amendment can record it", action.diagnostics)
+
+    def test_blocked_amendment_plus_edit_selects_edit_reason(self):
+        with TemporaryDirectory() as d:
+            root = Path(d)
+            _closed_amendment(root, "block-step", timeout=False)
+            (root / "src/feature.py").write_text("x = 2\n")
+            action = porcelain.next_action(root, agent_id="tester")
+            self.assertEqual(action.state, "step_amendment_needed")
+            self.assertEqual(action.args[-1], "record post-completion edit to src/feature.py")
+
+    def test_unreceipted_file_in_no_scope_selects_nothing(self):
+        with TemporaryDirectory() as d:
+            root = Path(d)
+            _ready_repo_with_steps(root, [_step()], extra_allowed=("src/extra.py",))
+            _finish(root, "P1", "src/feature.py")
+            (root / "src/extra.py").write_text("y = 1\n")
+            action = porcelain.next_action(root, agent_id="tester")
+            self.assertEqual(action.state, "run_unverified")
+            self.assertIn("src/extra.py is in no step's scope; no amendment can record it", action.diagnostics)
+            self.assertFalse(_recovery(action.resumability, "amend")["allowed"])
+
+    def test_directory_scope_is_a_candidate(self):
+        with TemporaryDirectory() as d:
+            root = Path(d)
+            _ready_repo_with_steps(root, [{**_step(), "files": ["src/"]}], extra_allowed=("src/",))
+            _finish(root, "P1", "src/feature.py")
+            (root / "src/feature.py").write_text("x = 2\n")
+            action = porcelain.next_action(root, agent_id="tester")
+            self.assertEqual((action.state, action.step_id), ("step_amendment_needed", "P1"))
+
+    def test_edit_inspection_runs_only_in_terminal_branch(self):
+        with TemporaryDirectory() as d, mock.patch.object(
+                porcelain, "post_completion_edits", side_effect=AssertionError("inspected")) as inspect:
+            root = Path(d)
+            _ready_repo(root)
+            self.assertEqual(porcelain.next_action(root, agent_id="tester").state, "step_unclaimed")
+            cli.main(["claim-step", "P1", "--agent", "tester", "--root", str(root)])
+            self.assertEqual(porcelain.next_action(root, agent_id="tester").state, "validation_missing")
+            inspect.assert_not_called()
+
+    def test_permanent_blockers_suppress_edit_cause(self):
+        def stranded(root):
+            _timed_out_gate(root, retry_in_new_attempt=False)
+
+        def violation(root):
+            _completed_step(root)
+            _terminal_violation(root)
+
+        for name, setup in (("unrecoverable_timeout", stranded), ("terminal_violation", violation)):
+            with self.subTest(case=name), TemporaryDirectory() as d:
+                root = Path(d)
+                setup(root)
+                _set_hunk_policy(root, "observe")
+                (root / "src/feature.py").write_text("x = 2\n")
+                action = porcelain.next_action(root, agent_id="tester")
+                self.assertEqual(action.state, "run_unverified")
+                self.assertFalse(any("can record it" in line for line in action.diagnostics),
+                                 action.diagnostics)
+
+    def test_implicated_kinds(self):
+        with TemporaryDirectory() as d:  # a tracked file deleted without a deleted receipt
+            root = Path(d)
+            _ready_repo(root)
+            (root / "src").mkdir()
+            (root / "src/feature.py").write_text("x = 0\n")
+            _git(root, "add", "src/feature.py")
+            _git(root, "commit", "-qm", "base")
+            _finish(root, "P1", "src/feature.py")
+            (root / "src/feature.py").unlink()
+            action = porcelain.next_action(root, agent_id="tester")
+            self.assertEqual((action.state, action.step_id), ("step_amendment_needed", "P1"))
+            self.assertIn("deleted file lacks deleted receipt: src/feature.py", action.diagnostics)
+        p1 = {**_step(), "files": ["src/feature.py", "src/new.py"]}
+        for required, strict, selected in ((False, False, False), (True, False, True), (False, True, True)):
+            with self.subTest(required=required, strict=strict), TemporaryDirectory() as d:
+                root = Path(d)  # a new in-scope file with no receipt
+                _ready_repo_with_steps(root, [p1], extra_allowed=("src/new.py",))
+                _finish(root, "P1", "src/feature.py")
+                path = root / ".agent/execution.contract.json"
+                contract = json.loads(path.read_text())
+                contract["proof_policy"]["require_file_receipts_for_changed_files"] = required
+                path.write_text(json.dumps(contract))
+                (root / "src/new.py").write_text("n = 1\n")
+                action = porcelain.next_action(root, strict=strict, agent_id="tester")
+                self.assertEqual(action.state == "step_amendment_needed", selected, action.state)
+
+    def test_inspection_errors_fail_closed(self):
+        with TemporaryDirectory() as d:  # a non-git root keeps #70's automatic amend
+            root = Path(d)
+            _closed_amendment(root, "fail-step", timeout=False)
+            shutil.rmtree(root / ".git")
+            action = porcelain.next_action(root, agent_id="tester")
+            self.assertEqual(action.state, "step_amendment_needed")
+            self.assertTrue(_recovery(action.resumability, "amend")["automatic"])
+        for target, error, text in (
+            ("changed_file_records", RuntimeError("git status failed"),
+             "cannot inspect changed files: git status failed"),
+            ("sha256_path", OSError("gone"), "cannot inspect changed files: gone"),
+        ):
+            with self.subTest(target=target), TemporaryDirectory() as d:
+                root = Path(d)
+                _edited(root)
+                with mock.patch.object(execution_coverage, target, side_effect=error):
+                    action = porcelain.next_action(root, agent_id="tester")
+                self.assertEqual(action.state, "state_invalid")
+                self.assertIn(text, action.diagnostics)
+                self.assertEqual(action.resumability["diagnostics"][0]["artifact"], "working tree")
+
+    def test_next_action_with_edit_is_read_only(self):
+        with TemporaryDirectory() as d:
+            root = Path(d)
+            _edited(root)
+            before = _agent_snapshot(root)
+            porcelain.next_action(root, agent_id="tester")
+            porcelain.next_action(root, agent_id="tester")
+            self.assertEqual(_agent_snapshot(root), before)
 
     def test_legacy_stranded_run_never_advertises_amend(self):
         with TemporaryDirectory() as d:

@@ -1587,6 +1587,43 @@ class AgentflowCliTests(unittest.TestCase):
             self.assertEqual(run_agentflow(cwd, "complete-step", "P1").returncode, 0)
             self.assertEqual(run_agentflow(cwd, "verify-run").returncode, 0)
 
+    @unittest.skipIf(shutil.which("git") is None, "git is not available")
+    def test_receipt_commands_on_completed_step_name_amend_step(self) -> None:
+        # #73: a completed step with no open attempt points at amend-step,
+        # because claim-step would refuse it. Exit codes are unchanged.
+        with tempfile.TemporaryDirectory() as tmp:
+            cwd = Path(tmp)
+            subprocess.run(["git", "init"], cwd=str(cwd), check=True, stdout=subprocess.PIPE)
+            self.assertEqual(run_agentflow(cwd, "init").returncode, 0)
+            self.assertEqual(run_agentflow(cwd, "init-execution").returncode, 0)
+            gate = "python3 -c \"print('ok')\""
+            plan = valid_plan()
+            plan["validation_gates"] = [gate]
+            plan["steps"][0]["validation"] = [gate]
+            plan["locked"] = True
+            (cwd / ".agent/plan.lock.json").write_text(json.dumps(plan, indent=2), encoding="utf-8")
+            run_gate = ("run", "--step", "P1", "--gate", gate, "--", "python3", "-c", "print('ok')")
+            self.assertEqual(run_agentflow(cwd, "claim-step", "P1", "--agent", "agent-a").returncode, 0)
+            (cwd / "fixture.txt").write_text("hello\n", encoding="utf-8")
+            self.assertEqual(
+                run_agentflow(cwd, "record-file-change", "--step", "P1", "--path", "fixture.txt").returncode, 0
+            )
+            self.assertEqual(run_agentflow(cwd, *run_gate).returncode, 0)
+            self.assertEqual(run_agentflow(cwd, "verify-step", "P1").returncode, 0)
+            self.assertEqual(run_agentflow(cwd, "complete-step", "P1").returncode, 0)
+
+            (cwd / "fixture.txt").write_text("edited\n", encoding="utf-8")
+            for argv, code in (
+                (("record-file-change", "--step", "P1", "--path", "fixture.txt"), 1),
+                (run_gate, 2),
+                (("verify-step", "P1"), 2),
+            ):
+                with self.subTest(command=argv[0]):
+                    result = run_agentflow(cwd, *argv)
+                    self.assertEqual(result.returncode, code, result.stderr)
+                    self.assertIn("open one with amend-step", result.stderr)
+                    self.assertNotIn("claim-step first", result.stderr)
+
     def test_amend_step_cli_rejects_malformed_finding(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             cwd = Path(tmp)

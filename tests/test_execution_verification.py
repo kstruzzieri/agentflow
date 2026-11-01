@@ -3,6 +3,7 @@ from __future__ import annotations
 import contextlib
 import io
 import json
+import shutil
 import subprocess
 import tempfile
 import time
@@ -31,6 +32,7 @@ from agentflow.execution import (
 )
 from agentflow.execution_coverage import (
     build_execution_coverage,
+    post_completion_edits,
     replacement_needs,
     timeout_receipt_states,
     verify_run,
@@ -848,6 +850,70 @@ class ExecutionVerificationTests(unittest.TestCase):
                             self.assertIn(messages[cause], errors)
                     if "timeout" in got:
                         self.assertTrue(any("timed out after 1 seconds" in m for m in errors))
+
+    def _edited_after_completion(self, root: Path) -> None:
+        """#73: P1/A1 records fixture.txt and completes; then fixture.txt changes."""
+        (root / "fixture.txt").write_text("a\n")
+        record_file_change(root, plan(), "P1", "A1", "fixture.txt")
+        self._complete(root, "A1")
+        (root / "fixture.txt").write_text("b\n")
+
+    def test_post_completion_edits_offers_single_candidate(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = self._root(tmp)
+            self._edited_after_completion(root)
+            self.assertEqual(replacement_needs(root, plan()), [])
+            edits = post_completion_edits(root, plan())
+            self.assertTrue(edits["offered"])
+            self.assertFalse(edits["permanent"] or edits["scope_violation"])
+            self.assertEqual(edits["candidates"], {"fixture.txt": ["P1"]})
+            self.assertEqual(edits["pairs"][0], {
+                "path": "fixture.txt",
+                "message": "out-of-band edit after latest file receipt: fixture.txt",
+            })
+            # Default hunk policy is enforce: the same path also has an unmapped hunk.
+            self.assertTrue(edits["pairs"][1]["message"].startswith("unmapped hunk in fixture.txt (@@"))
+            [need] = replacement_needs(root, plan(), edits=edits)
+            self.assertEqual(need["step_id"], "P1")
+            self.assertEqual(
+                [(c["cause"], c["path"], c["message"]) for c in need["causes"]],
+                [("post_completion_edit", p["path"], p["message"]) for p in edits["pairs"]],
+            )
+
+    def test_post_completion_edits_withholds_on_scope_violation(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = self._root(tmp)
+            self._edited_after_completion(root)
+            (root / "stray.txt").write_text("x\n")
+            edits = post_completion_edits(root, plan())
+            self.assertTrue(edits["scope_violation"])
+            self.assertFalse(edits["offered"])
+            self.assertEqual(edits["candidates"]["stray.txt"], [])
+            self.assertEqual(replacement_needs(root, plan(), edits=edits), [])
+
+    def test_post_completion_edits_skips_non_git_root(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = self._root(tmp)
+            self._edited_after_completion(root)
+            shutil.rmtree(root / ".git")
+            edits = post_completion_edits(root, plan())
+            self.assertEqual((edits["pairs"], edits["drift"], edits["offered"]), ([], None, False))
+
+    def test_post_completion_edits_terminal_violation_is_permanent(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = self._root(tmp)
+            self._edited_after_completion(root)
+            append_jsonl(root / ".agent/file-receipts.jsonl", {
+                "schema_version": FILE_RECEIPTS_SCHEMA_VERSION, "id": "FR99", "step_id": "P1",
+                "attempt_id": "A1", "path": "ghost.txt", "change_kind": "modified",
+                "after_sha256": "deadbeef", "recorded_at": "2999-01-01T00:00:00+00:00",
+            })
+            edits = post_completion_edits(root, plan())
+            self.assertTrue(edits["pairs"])
+            self.assertTrue(edits["permanent"])
+            self.assertFalse(edits["offered"])
+            self.assertIsNone(edits["drift"])
+            self.assertEqual(replacement_needs(root, plan(), edits=edits), [])
 
     def test_timeout_receipt_states_follow_ledger_order_for_aggregated_ids(self) -> None:
         def rows(*pairs):

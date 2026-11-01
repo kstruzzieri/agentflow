@@ -243,3 +243,12 @@ def unmapped_hunks(root: Path, records: List[Dict[str, Any]]) -> List[Dict[str, 
                     }
                 )
     return out
+
+
+def format_unmapped_hunk(entry: Dict[str, Any]) -> str:
+    """One unmapped_hunks entry as audit-drift prints it (#73: shared with next-action)."""
+    return (
+        f"{entry['path']} @@ -{entry['old_start']},{entry['old_count']} "
+        f"+{entry['new_start']},{entry['new_count']} @@ "
+        f"{entry['hash'][:12]} ({entry['reason']})"
+    )

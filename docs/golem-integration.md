@@ -98,7 +98,8 @@ Notes for the adapter:
   `amend`, break-glass `fail`) instead of reconstructing those rules. It
   always exits zero; malformed or ambiguous state has diagnostics and no
   allowed action, while `fail` is explicitly marked as non-automatic
-  break-glass. `recorded_blockers` lists attempts closed by
+  break-glass and `amend` is non-automatic while a changed file has no
+  matching file receipt. `recorded_blockers` lists attempts closed by
   `block-step`/`fail-step`; filter on `superseded_by == null` for current
   blockers, and count the rest as history. A current blocker does not by
   itself mean the run is blocked (a blocked amendment can leave the run
@@ -281,9 +282,10 @@ inventing its own locking on top of `.agent/`.
 | --- | --- |
 | `agentflow --version` fails | Report "Agentflow unavailable" with install hint; do not fall back to an unproofed run silently |
 | `lock-plan` returns `status: "invalid"` | Surface the structured `errors` to the planning layer; regenerate the plan |
-| `.agent/` state unclear (crash, resume) | Run `next-action --json --agent <worker-id>`; follow only an allowed non-break-glass recovery action, or surface diagnostics |
+| `.agent/` state unclear (crash, resume) | Run `next-action --json --agent <worker-id>`; take a recovery action unattended only when it is `allowed`, `automatic` and not `break_glass`. Surface any other allowed action, and the diagnostics, to an operator |
 | Gate command times out | Fix the gate or the timeout in `execution.contract.json`. `next-action` reports `attempt_timed_out` with the close the caller may take: `block-step`, or `reclaim-step` after lease expiry (it closes the old attempt and opens its replacement; continue that returned attempt without another claim). `complete-step` and `finish-step` refuse the timed-out attempt (exit 1), and rerunning the gate inside it does not clear the timeout. After the close, `next-action` reports `step_unclaimed` or `step_amendment_needed`; open the replacement, run the gate, verify, and complete it. `verify-run` then reports the old receipt as a `superseded_timeout` warning |
-| Completed step needs a replacement attempt | `next-action` reports `step_amendment_needed`; take the allowed `amend` action (`amend-step`). A completed step rejects a fresh `claim-step` |
+| Completed step needs a replacement attempt | `next-action` reports `step_amendment_needed`; take the `amend` action (`amend-step`) unattended only when it is allowed and `automatic`. A completed step rejects a fresh `claim-step` |
+| File in a completed step's scope edited after completion | `next-action` reports `step_amendment_needed` with `amend-step <step> --reason 'record post-completion edit to <path>'` and an allowed `amend` marked `automatic: false`, because receipts cannot show who made the edit. Stop and surface it to an operator rather than rerunning the step's goal. The operator finishes the amendment through `finish-step` before handing back, since resume refuses an open attempt on a completed step. A path in several steps' scopes or in none, or one beside out-of-scope or blocked changes, selects no step: `drift_failing` or `run_unverified` names each path and the step that could record it |
 | `finish-run` stops at `build-proof` with `review policy floor kept from existing proof` | An earlier proof in this root was built stricter (or by a stricter contract). Meet that floor, or have the operator archive `.agent/proof-pack.json` on purpose; the adapter never removes it. The guarantee covers the proof retained in this root only: `aggregate-ledgers`, and a deleted, archived or replaced proof, reset the floor |
 | `finish-run` stops at a gate | `--json` reports `stopped_at`; resolve that gate before re-running |
 | Worker records a blocker (`block-step` / `fail-step`) on a step that never completed | `next-action` keeps reporting the step (usually `step_unclaimed`) and lists the blocker in `recorded_blockers` with `superseded_by: null`; `verify-run` and the stop gate keep failing. Apply the adapter's budget or operator-approved pause, then re-plan, reassign or stop; Agentflow adds no escape hatch |
