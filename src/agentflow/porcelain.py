@@ -38,7 +38,9 @@ from .execution import (
     validate_execution_contract,
 )
 from .execution_coverage import (
+    latest_file_receipts_by_path,
     post_completion_edits,
+    receipt_matches_worktree,
     replacement_needs,
     timeout_receipt_states,
     verify_run,
@@ -1051,14 +1053,10 @@ def explain_next_step(root: Path) -> Dict[str, Any]:
     return {"step": None, "reason_code": code, "diagnostics": diagnostics}
 
 
-def _scoped_unrecorded_paths(root: Path, plan: Dict[str, Any], step_id: str,
-                             attempt_id: str) -> List[str]:
-    """Scoped changed files with no file receipt for this open attempt."""
-    recorded = {
-        r.get("path")
-        for r in file_receipts(root)
-        if r.get("step_id") == step_id and r.get("attempt_id") == attempt_id
-    }
+def _scoped_unrecorded_paths(root: Path, plan: Dict[str, Any], step_id: str) -> List[str]:
+    """Scoped changed files whose latest file receipt, from any step or attempt,
+    does not record them as they are now: the check verify-run makes (#97)."""
+    latest = latest_file_receipts_by_path(root)
     missing: List[str] = []
     for record in changed_file_records(root):
         path = record.get("path")
@@ -1068,7 +1066,8 @@ def _scoped_unrecorded_paths(root: Path, plan: Dict[str, Any], step_id: str,
             continue
         if not path_in_effective_scope(plan, step_id, path):
             continue
-        if path not in recorded:
+        receipt = latest.get(path)
+        if receipt is None or not receipt_matches_worktree(root, record, receipt):
             missing.append(path)
     return sorted(set(missing))
 
@@ -1432,7 +1431,7 @@ def _selected_action(
             ),
             projection,
         )
-    unrecorded = _scoped_unrecorded_paths(root, plan, step_id, attempt_id)
+    unrecorded = _scoped_unrecorded_paths(root, plan, step_id)
     if unrecorded:
         args = ["record-file-change", "--step", step_id, "--path", unrecorded[0], *agent_args]
         return _attach_inflight(

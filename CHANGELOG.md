@@ -9,6 +9,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `next-action` no longer asks a step to record a changed file that already has
+  a matching receipt. A file in the step's scope counts as recorded when its
+  latest file receipt, from any step or attempt, matches the file as it is now
+  (a deleted file needs a deleted receipt), the check `verify-run` makes. It
+  used to require a receipt from the open attempt itself. When two steps
+  listed the same file, following it copied the first step's hunks into a new
+  receipt and made the second step the file's latest owner in the proof, and
+  an amendment had to record again files its step had already recorded. A
+  file the open attempt recorded and then edited again is now
+  `file_receipts_missing`; `next-action` used to send it to `finish-step`, and
+  `finish-run` then failed. No state, recovery action, schema or exit-code
+  change. (#97)
 - `next-action` guides an edit made after a step completed to `amend-step`
   instead of a `finish-run` that always fails. When every changed file with no
   matching receipt is in exactly one step's effective scope and drift reports

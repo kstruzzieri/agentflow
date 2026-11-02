@@ -25,6 +25,7 @@ from agentflow.contracts import (
     STEP_RUNS_SCHEMA_VERSION,
 )
 from agentflow import cli, execution_coverage, mcp_server, porcelain
+from agentflow.receipts import file_receipts
 
 
 def _git(root: Path, *args: str) -> None:
@@ -134,6 +135,30 @@ def _finish(root: Path, step_id: str, *paths: str) -> None:
     assert cli.main(["run", "--step", step_id, "--gate", 'python3 -c "print(1)"', "--root", str(root),
                      "--", "python3", "-c", "print(1)"]) == 0
     assert cli.main(["finish-step", step_id, "--root", str(root)]) == 0
+
+
+def _shared_path_repo(root: Path) -> None:
+    """#97: P1 covers src/a.py and src/shared.py; P2 covers src/shared.py."""
+    steps = [
+        {**_step(), "id": step_id, "files": files, "expected_diff": [f"{step_id} edits its files."]}
+        for step_id, files in (("P1", ["src/a.py", "src/shared.py"]), ("P2", ["src/shared.py"]))
+    ]
+    _ready_repo_with_steps(root, steps, extra_allowed=("src/a.py", "src/shared.py"))
+
+
+def _attempt(root: Path, step_id: str, path: str, text, amend: bool = False) -> None:
+    """Open an attempt, write path (delete it when text is None), record it, pass the gate."""
+    opener = ["amend-step", step_id, "--reason", "tweak"] if amend else ["claim-step", step_id]
+    assert cli.main([*opener, "--agent", "tester", "--root", str(root)]) == 0
+    if text is None:
+        (root / path).unlink()
+    else:
+        (root / path).parent.mkdir(parents=True, exist_ok=True)
+        (root / path).write_text(text)
+    assert cli.main(["record-file-change", "--step", step_id, "--path", path,
+                     "--root", str(root)]) == 0
+    assert cli.main(["run", "--step", step_id, "--gate", 'python3 -c "print(1)"', "--root", str(root),
+                     "--", "python3", "-c", "print(1)"]) == 0
 
 
 def _edited(root: Path, policy: str = "enforce") -> None:
@@ -924,6 +949,106 @@ class TestNextActionInflightWork(unittest.TestCase):
             self.assertEqual(action.state, "file_receipts_missing")
             self.assertEqual(action.args[:3], ["record-file-change", "--step", "P1"])
             self.assertIn("src/feature.py", action.args)
+
+    def test_shared_path_recorded_by_another_step_is_not_unrecorded(self):
+        # #97: P2's receipt still matches src/shared.py, so P1 is not asked to record it.
+        for policy in ("enforce", "observe", "off"):
+            with self.subTest(policy=policy), TemporaryDirectory() as d:
+                root = Path(d)
+                _shared_path_repo(root)
+                _set_hunk_policy(root, policy)
+                _attempt(root, "P2", "src/shared.py", "shared = 2\n")
+                self.assertEqual(cli.main(["finish-step", "P2", "--root", str(root)]), 0)
+                _attempt(root, "P1", "src/a.py", "a = 1\n")
+
+                action = porcelain.next_action(root)
+
+                self.assertEqual(action.state, "step_unverified")
+                self.assertEqual(action.args, ["finish-step", "P1"])
+                self.assertEqual(cli.main(["finish-step", "P1", "--root", str(root)]), 0)
+                self.assertTrue(porcelain.finish_run(root, root / ".agent/plan.lock.json")["ok"])
+                self.assertEqual(
+                    [r["step_id"] for r in file_receipts(root) if r["path"] == "src/shared.py"],
+                    ["P2"],
+                )
+
+    def test_shared_path_recorded_by_another_step_does_not_hold_an_amendment(self):
+        with TemporaryDirectory() as d:
+            root = Path(d)
+            _shared_path_repo(root)
+            _attempt(root, "P1", "src/a.py", "a = 1\n")
+            self.assertEqual(cli.main(["finish-step", "P1", "--root", str(root)]), 0)
+            _attempt(root, "P2", "src/shared.py", "shared = 2\n")
+            self.assertEqual(cli.main(["finish-step", "P2", "--root", str(root)]), 0)
+            _attempt(root, "P1", "src/a.py", "a = 2\n", amend=True)
+
+            action = porcelain.next_action(root)
+
+            self.assertEqual(action.state, "step_unverified")
+            self.assertEqual(action.args, ["finish-step", "P1"])
+
+    def test_shared_path_changed_after_another_steps_receipt_is_unrecorded(self):
+        with TemporaryDirectory() as d:
+            root = Path(d)
+            _shared_path_repo(root)
+            _attempt(root, "P2", "src/shared.py", "shared = 2\n")
+            self.assertEqual(cli.main(["finish-step", "P2", "--root", str(root)]), 0)
+            _attempt(root, "P1", "src/a.py", "a = 1\n")
+            (root / "src/shared.py").write_text("shared = 3\n")
+
+            action = porcelain.next_action(root)
+
+            self.assertEqual(action.state, "file_receipts_missing")
+            self.assertEqual(action.args,
+                             ["record-file-change", "--step", "P1", "--path", "src/shared.py"])
+            self.assertEqual(action.diagnostics, ["unrecorded: src/shared.py"])
+
+    def test_deleted_shared_path_is_covered_only_by_a_deleted_receipt(self):
+        # P2 deletes src/shared.py (None) or edits it; P1's tree has it deleted either way.
+        for p2_text, state in ((None, "step_unverified"), ("shared = 2\n", "file_receipts_missing")):
+            with self.subTest(p2_deletes=p2_text is None), TemporaryDirectory() as d:
+                root = Path(d)
+                _init_repo(root)
+                (root / "src").mkdir()
+                (root / "src/shared.py").write_text("shared = 1\n")
+                _git(root, "add", "src/shared.py")
+                _git(root, "commit", "-qm", "base")
+                _shared_path_repo(root)
+                _attempt(root, "P2", "src/shared.py", p2_text)
+                self.assertEqual(cli.main(["finish-step", "P2", "--root", str(root)]), 0)
+                _attempt(root, "P1", "src/a.py", "a = 1\n")
+                if p2_text is not None:
+                    (root / "src/shared.py").unlink()
+
+                action = porcelain.next_action(root)
+
+                self.assertEqual(action.state, state)
+
+    def test_amendment_counts_its_steps_earlier_matching_receipt(self):
+        # #97 decision: any step, any attempt. P1/A1's receipt still matches src/a.py.
+        with TemporaryDirectory() as d:
+            root = Path(d)
+            _shared_path_repo(root)
+            _attempt(root, "P1", "src/a.py", "a = 1\n")
+            self.assertEqual(cli.main(["finish-step", "P1", "--root", str(root)]), 0)
+            _attempt(root, "P1", "src/shared.py", "shared = 9\n", amend=True)
+
+            action = porcelain.next_action(root)
+
+            self.assertEqual(action.state, "step_unverified")
+
+    def test_edit_after_this_attempts_receipt_is_unrecorded(self):
+        # The attempt's own receipt no longer matches, so verify-run would fail it.
+        with TemporaryDirectory() as d:
+            root = Path(d)
+            _validated(root)
+            (root / "src/feature.py").write_text("x = 2\n")
+
+            action = porcelain.next_action(root)
+
+            self.assertEqual(action.state, "file_receipts_missing")
+            self.assertEqual(action.args,
+                             ["record-file-change", "--step", "P1", "--path", "src/feature.py"])
 
     def test_validation_missing_when_files_recorded_but_gate_unmet(self):
         with TemporaryDirectory() as d:
