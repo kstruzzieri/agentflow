@@ -19,8 +19,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   an amendment had to record again files its step had already recorded. A
   file the open attempt recorded and then edited again is now
   `file_receipts_missing`; `next-action` used to send it to `finish-step`, and
-  `finish-run` then failed. No state, recovery action, schema or exit-code
-  change. (#97)
+  `finish-run` then failed. Enforced hunk attribution also requires the
+  current hunks to be recorded, even when the content hash still matches
+  after a staged rename or file type change. Working-tree inspection errors
+  return blocking `state_invalid` diagnostics instead of a traceback. No
+  state, recovery action, schema or exit-code change. (#97)
 - `next-action` guides an edit made after a step completed to `amend-step`
   instead of a `finish-run` that always fails. When every changed file with no
   matching receipt is in exactly one step's effective scope and drift reports

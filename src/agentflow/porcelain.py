@@ -47,7 +47,7 @@ from .execution_coverage import (
     verify_step,
 )
 from .git import changed_file_records
-from .hunks import effective_hunk_policy, format_unmapped_hunk
+from .hunks import effective_hunk_policy, format_unmapped_hunk, unmapped_hunks
 from .proof import verify_proof
 from .receipts import command_receipts, file_receipts, sha256_path
 from .validation import audit_drift, path_in_effective_scope, validate_plan
@@ -1054,10 +1054,10 @@ def explain_next_step(root: Path) -> Dict[str, Any]:
 
 
 def _scoped_unrecorded_paths(root: Path, plan: Dict[str, Any], step_id: str) -> List[str]:
-    """Scoped changed files whose latest file receipt, from any step or attempt,
-    does not record them as they are now: the check verify-run makes (#97)."""
+    """Scoped files without matching receipt content or enforced hunk coverage."""
     latest = latest_file_receipts_by_path(root)
     missing: List[str] = []
+    scoped_records: List[Dict[str, str]] = []
     for record in changed_file_records(root):
         path = record.get("path")
         if not isinstance(path, str):
@@ -1066,9 +1066,12 @@ def _scoped_unrecorded_paths(root: Path, plan: Dict[str, Any], step_id: str) -> 
             continue
         if not path_in_effective_scope(plan, step_id, path):
             continue
+        scoped_records.append(record)
         receipt = latest.get(path)
         if receipt is None or not receipt_matches_worktree(root, record, receipt):
             missing.append(path)
+    if effective_hunk_policy(root) == "enforce":
+        missing.extend(entry["path"] for entry in unmapped_hunks(root, scoped_records))
     return sorted(set(missing))
 
 
@@ -1431,7 +1434,16 @@ def _selected_action(
             ),
             projection,
         )
-    unrecorded = _scoped_unrecorded_paths(root, plan, step_id)
+    try:
+        unrecorded = _scoped_unrecorded_paths(root, plan, step_id)
+    except (RuntimeError, OSError) as exc:
+        # A concurrent ledger change must supersede this working-tree diagnostic.
+        return _invalid_action(_diagnose(
+            {**projection, "diagnostics": []},
+            "execution_state_invalid",
+            f"cannot inspect changed files: {exc}",
+            "working tree",
+        ))
     if unrecorded:
         args = ["record-file-change", "--step", step_id, "--path", unrecorded[0], *agent_args]
         return _attach_inflight(

@@ -1050,6 +1050,88 @@ class TestNextActionInflightWork(unittest.TestCase):
             self.assertEqual(action.args,
                              ["record-file-change", "--step", "P1", "--path", "src/feature.py"])
 
+    def test_unreadable_receipted_file_returns_blocking_json(self):
+        with TemporaryDirectory() as d:
+            root = Path(d)
+            _validated(root)
+            path = root / "src/feature.py"
+            path.unlink()
+            path.symlink_to("missing.py")
+            before = _agent_snapshot(root)
+            out = io.StringIO()
+
+            with contextlib.redirect_stdout(out):
+                code = cli.main(["next-action", "--json", "--root", str(root)])
+
+            self.assertEqual(code, 0)
+            action = json.loads(out.getvalue())
+            self.assertEqual(action["state"], "state_invalid")
+            self.assertNotIn("command", action)
+            self.assertTrue(any("cannot inspect changed files:" in line
+                                for line in action["diagnostics"]))
+            self.assertEqual(action["resumability"]["diagnostics"][0]["artifact"], "working tree")
+            self.assertFalse(any(item["allowed"]
+                                 for item in action["resumability"]["recovery_actions"]))
+            self.assertEqual(_agent_snapshot(root), before)
+
+    def test_inflight_git_inspection_error_fails_closed(self):
+        with TemporaryDirectory() as d:
+            root = Path(d)
+            _validated(root)
+            with mock.patch.object(porcelain, "changed_file_records",
+                                   side_effect=RuntimeError("git status failed")):
+                action = porcelain.next_action(root)
+
+            self.assertEqual(action.state, "state_invalid")
+            self.assertIsNone(action.command)
+            self.assertIn("cannot inspect changed files: git status failed", action.diagnostics)
+            self.assertEqual(action.resumability["diagnostics"][0]["artifact"], "working tree")
+
+    def test_changed_shared_hunks_need_recording_only_under_enforce(self):
+        for kind in ("rename", "symlink"):
+            for policy in ("enforce", "observe", "off"):
+                with self.subTest(kind=kind, policy=policy), TemporaryDirectory() as d:
+                    root = Path(d)
+                    _init_repo(root)
+                    (root / "src").mkdir()
+                    baseline = "".join(f"x{i} = {i}\n" for i in range(10))
+                    edited = baseline.replace("x5 = 5", "x5 = 50")
+                    if kind == "rename":
+                        (root / "src/original.py").write_text(baseline)
+                    else:
+                        (root / "src/shared.py").write_text(baseline)
+                        (root / "src/target.py").write_text(edited)
+                    _git(root, "add", "src")
+                    _git(root, "commit", "-qm", "baseline")
+                    steps = [
+                        {**_step(), "files": ["src/a.py", "src/shared.py", "src/original.py"]},
+                        {**_step(), "id": "P2", "files": ["src/shared.py"]},
+                    ]
+                    _ready_repo_with_steps(root, steps,
+                                           extra_allowed=("src/a.py", "src/shared.py", "src/original.py"))
+                    _set_hunk_policy(root, policy)
+                    _attempt(root, "P2", "src/shared.py", edited)
+                    self.assertEqual(cli.main(["finish-step", "P2", "--root", str(root)]), 0)
+                    _attempt(root, "P1", "src/a.py", "a = 1\n")
+                    if kind == "rename":
+                        (root / "src/original.py").unlink()
+                        _git(root, "add", "src/original.py", "src/shared.py")
+                    else:
+                        (root / "src/shared.py").unlink()
+                        (root / "src/shared.py").symlink_to("target.py")
+
+                    action = porcelain.next_action(root)
+
+                    expected = "file_receipts_missing" if policy == "enforce" else "step_unverified"
+                    self.assertEqual(action.state, expected)
+                    if policy == "enforce":
+                        self.assertEqual(action.args,
+                                         ["record-file-change", "--step", "P1", "--path", "src/shared.py"])
+                        self.assertEqual(cli.main([*action.args, "--root", str(root)]), 0)
+                    self.assertEqual(cli.main(["finish-step", "P1", "--root", str(root)]), 0)
+                    self.assertTrue(porcelain.finish_run(root, root / ".agent/plan.lock.json")["ok"])
+                    self.assertEqual(porcelain.next_action(root).state, "complete")
+
     def test_validation_missing_when_files_recorded_but_gate_unmet(self):
         with TemporaryDirectory() as d:
             root = Path(d)
