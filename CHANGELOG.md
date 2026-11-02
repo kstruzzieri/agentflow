@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.1] - 2026-11-02
+
+Agentflow 1.2.1 fixes three cases where `next-action` sent an agent the wrong
+way. It no longer asks a step to record a file again when the file already has
+a matching receipt from another step or attempt (#97). It guides an edit made
+after a step completed to `amend-step` instead of a `finish-run` that always
+fails (#73). It reports a ledger change only when a fresh read of the ledgers
+shows one, so a deterministic bug no longer looks like a race (#94). No state,
+recovery action, artifact schema, schema-version constant,
+`docs/cli-contract.json` value or exit-code change.
+
 ### Fixed
 
 - `next-action` no longer asks a step to record a changed file that already has
@@ -391,7 +402,8 @@ repository, so this heading is intentionally unlinked._
 
 - Existing v0.2 proof artifacts remain valid when no execution contract exists.
 
-[Unreleased]: https://github.com/kstruzzieri/agentflow/compare/v1.2.0...HEAD
+[Unreleased]: https://github.com/kstruzzieri/agentflow/compare/v1.2.1...HEAD
+[1.2.1]: https://github.com/kstruzzieri/agentflow/compare/v1.2.0...v1.2.1
 [1.2.0]: https://github.com/kstruzzieri/agentflow/compare/v1.1.1...v1.2.0
 [1.1.1]: https://github.com/kstruzzieri/agentflow/compare/v1.1.0...v1.1.1
 [1.1.0]: https://github.com/kstruzzieri/agentflow/compare/v1.0.0...v1.1.0
