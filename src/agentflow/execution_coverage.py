@@ -381,13 +381,23 @@ def _ignored(path: str, prefixes: List[str]) -> bool:
     return any(path.startswith(prefix) for prefix in prefixes)
 
 
-def _latest_file_receipts_by_path(root: Path) -> Dict[str, Dict[str, Any]]:
+def latest_file_receipts_by_path(root: Path) -> Dict[str, Dict[str, Any]]:
     latest: Dict[str, Dict[str, Any]] = {}
     for receipt in file_receipts(root):
         path = receipt.get("path")
         if isinstance(path, str):
             latest[path] = receipt
     return latest
+
+
+def receipt_matches_worktree(root: Path, record: Dict[str, str], receipt: Dict[str, Any]) -> bool:
+    """True when receipt records record's changed path as it is now.
+
+    verify-run and next-action (#97) share this check.
+    """
+    if record["change_kind"] == "deleted":
+        return receipt.get("change_kind") == "deleted"
+    return receipt.get("after_sha256") == sha256_path(root / record["path"])
 
 
 def _reconcile_changed_files(
@@ -414,7 +424,7 @@ def _changed_file_pairs(
         if contract is None:
             contract = {}
     ignore = contract.get("concurrency", {}).get("reconcile_ignore", [".agent/", ".git/"])
-    latest = _latest_file_receipts_by_path(root)
+    latest = latest_file_receipts_by_path(root)
     findings: List[Tuple[str, Dict[str, str]]] = []
     for record in changed_file_records(root):
         path = record["path"]
@@ -429,18 +439,14 @@ def _changed_file_pairs(
                 "message": f"changed file is not mapped to a step receipt: {path}",
             }))
             continue
-        if record["change_kind"] == "deleted":
-            if receipt.get("change_kind") != "deleted":
-                findings.append(
-                    (path, {"severity": "error", "message": f"deleted file lacks deleted receipt: {path}"})
-                )
+        if receipt_matches_worktree(root, record, receipt):
             continue
-        expected_hash = receipt.get("after_sha256")
-        actual_hash = sha256_path(root / path)
-        if expected_hash != actual_hash:
-            findings.append(
-                (path, {"severity": "error", "message": f"out-of-band edit after latest file receipt: {path}"})
-            )
+        message = (
+            f"deleted file lacks deleted receipt: {path}"
+            if record["change_kind"] == "deleted"
+            else f"out-of-band edit after latest file receipt: {path}"
+        )
+        findings.append((path, {"severity": "error", "message": message}))
     if effective_hunk_policy(root) == "enforce":
         # Scope-filter candidates the same way audit_drift does, so verify-run
         # and audit-drift cannot diverge on which paths are hunk-checked.
