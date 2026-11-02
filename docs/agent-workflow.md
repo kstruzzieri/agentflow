@@ -368,6 +368,23 @@ amendment is gated by `verify-step` like any attempt and is surfaced in
 needs a replacement attempt, `next-action` reports `step_amendment_needed`
 and recommends `amend-step`.
 
+An edit made to a file after its step completed, with no attempt open, has no
+matching file receipt, so `verify-run` fails on it. When every such path is in
+exactly one step's effective scope (`step.files` within `allowed_files`, minus
+`blocked_files`, the check `record-file-change` applies) and drift reports no
+out-of-scope or blocked file, `next-action` reports `step_amendment_needed` for
+that step with `amend-step <step> --reason 'record post-completion edit to
+<path>'`. Its `amend` action is `automatic: false`: an amendment records the
+working tree as the step's work, and receipts cannot show who made the edit,
+so a person, or the agent that made it, decides. The same holds for a
+timeout, failed or strict amendment while any changed file lacks a matching
+receipt. When a path is in several steps' scopes or in none, or out-of-scope or
+blocked files are present, no step is selected; `drift_failing` or
+`run_unverified` lists each path and the step that could record it, and
+choosing among several steps stays with you. On a completed step with no open
+attempt, `record-file-change`, `run` and `verify-step` say to open one with
+`amend-step`.
+
 ## Porcelain shortcuts
 
 The Agent Task Loop above lists every plumbing command explicitly. Three
@@ -388,7 +405,8 @@ semantics.
   attempt-scoped receipts and gates, structured diagnostics, and the
   `claim`/`continue`/`renew`/`reclaim`/`block`/`amend`/break-glass `fail`
   actions allowed for `--agent` (or `AGENTFLOW_AGENT_ID`). Break-glass failure
-  is always marked `automatic: false`.
+  is always marked `automatic: false`; so is `amend` while a changed file has
+  no matching file receipt.
   The additive `recorded_blockers` list reports every attempt closed by
   `block-step` or `fail-step`, in ledger order, with its reason, time, attempt
   owner and `superseded_by` (the next attempt opened for that step, or `null`

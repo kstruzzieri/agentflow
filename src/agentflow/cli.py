@@ -47,6 +47,7 @@ from .execution_coverage import verify_run, verify_step
 from .events import filter_events_since, project_events, valid_since
 from .capabilities import append_capability_receipt, build_capability_receipt
 from .handoff import export_handoff, lint_handoff_text
+from .hunks import format_unmapped_hunk
 from . import porcelain
 from .locks import file_lock
 from .packs import (
@@ -639,11 +640,7 @@ def command_audit_drift(args: argparse.Namespace) -> int:
         hunk_lines = []
         for entry in report["unmapped_hunks"]:
             if isinstance(entry, dict):
-                hunk_lines.append(
-                    f"- {entry['path']} @@ -{entry['old_start']},{entry['old_count']} "
-                    f"+{entry['new_start']},{entry['new_count']} @@ "
-                    f"{entry['hash'][:12]} ({entry['reason']})"
-                )
+                hunk_lines.append(f"- {format_unmapped_hunk(entry)}")
             else:
                 hunk_lines.append(f"- {entry}")
         print_lines([_terminal_safe(line) for line in hunk_lines])

@@ -21,7 +21,7 @@ from .execution import (
     receipt_timed_out,
     resolve_attempt,
 )
-from .git import changed_file_records
+from .git import changed_file_records, is_git_repo
 from .hunks import effective_hunk_policy, unmapped_hunks
 from .receipts import (
     command_receipts,
@@ -395,6 +395,15 @@ def _reconcile_changed_files(
     plan: Dict[str, Any],
     require_file_receipts: bool = True,
 ) -> List[Dict[str, str]]:
+    return [finding for _path, finding in _changed_file_pairs(root, plan, require_file_receipts)]
+
+
+def _changed_file_pairs(
+    root: Path,
+    plan: Dict[str, Any],
+    require_file_receipts: bool = True,
+) -> List[Tuple[str, Dict[str, str]]]:
+    """(path, finding) for each changed file verify-run flags (#73 needs the path)."""
     contract: Dict[str, Any] = {}
     contract_path = root / ".agent/execution.contract.json"
     if contract_path.exists():
@@ -406,7 +415,7 @@ def _reconcile_changed_files(
             contract = {}
     ignore = contract.get("concurrency", {}).get("reconcile_ignore", [".agent/", ".git/"])
     latest = _latest_file_receipts_by_path(root)
-    findings: List[Dict[str, str]] = []
+    findings: List[Tuple[str, Dict[str, str]]] = []
     for record in changed_file_records(root):
         path = record["path"]
         if _ignored(path, ignore):
@@ -415,24 +424,22 @@ def _reconcile_changed_files(
         if receipt is None:
             if not require_file_receipts:
                 continue
-            findings.append(
-                {
-                    "severity": "error",
-                    "message": f"changed file is not mapped to a step receipt: {path}",
-                }
-            )
+            findings.append((path, {
+                "severity": "error",
+                "message": f"changed file is not mapped to a step receipt: {path}",
+            }))
             continue
         if record["change_kind"] == "deleted":
             if receipt.get("change_kind") != "deleted":
                 findings.append(
-                    {"severity": "error", "message": f"deleted file lacks deleted receipt: {path}"}
+                    (path, {"severity": "error", "message": f"deleted file lacks deleted receipt: {path}"})
                 )
             continue
         expected_hash = receipt.get("after_sha256")
         actual_hash = sha256_path(root / path)
         if expected_hash != actual_hash:
             findings.append(
-                {"severity": "error", "message": f"out-of-band edit after latest file receipt: {path}"}
+                (path, {"severity": "error", "message": f"out-of-band edit after latest file receipt: {path}"})
             )
     if effective_hunk_policy(root) == "enforce":
         # Scope-filter candidates the same way audit_drift does, so verify-run
@@ -447,16 +454,14 @@ def _reconcile_changed_files(
             and not matches_path(record["path"], blocked)
         ]
         for entry in unmapped_hunks(root, candidates):
-            findings.append(
-                {
-                    "severity": "error",
-                    "message": (
-                        f"unmapped hunk in {entry['path']} "
-                        f"(@@ -{entry['old_start']},{entry['old_count']} "
-                        f"+{entry['new_start']},{entry['new_count']} @@): no matching file receipt"
-                    ),
-                }
-            )
+            findings.append((entry["path"], {
+                "severity": "error",
+                "message": (
+                    f"unmapped hunk in {entry['path']} "
+                    f"(@@ -{entry['old_start']},{entry['old_count']} "
+                    f"+{entry['new_start']},{entry['new_count']} @@): no matching file receipt"
+                ),
+            }))
     return findings
 
 
@@ -672,15 +677,25 @@ def _timeout_receipt_findings(
 
 
 def replacement_needs(
-    root: Path, plan: Dict[str, Any], strict: bool = False
+    root: Path,
+    plan: Dict[str, Any],
+    strict: bool = False,
+    edits: Optional[Dict[str, Any]] = None,
 ) -> List[Dict[str, Any]]:
     """Plan-order completed steps that need a replacement attempt, with causes.
 
     Mirrors the verify_run errors a replacement attempt would clear: a
     recoverable timed-out receipt, a failed latest attempt, and (effective
     strict) a latest attempt that is not completed. attempt_id/status are the
-    step's latest non-lease ledger event.
+    step's latest non-lease ledger event. #73: when post_completion_edits
+    offers them, each unreceipted change is a post_completion_edit cause on
+    its one candidate step, after that step's other causes.
     """
+    edit_causes: Dict[str, List[Dict[str, Any]]] = {}
+    if edits and edits.get("offered"):
+        for pair in edits["pairs"]:
+            [owner] = edits["candidates"][pair["path"]]
+            edit_causes.setdefault(owner, []).append({"cause": "post_completion_edit", **pair})
     effective_strict = strict or bool(_proof_policy(root).get("strict_by_default"))
     state = read_step_state(root)
     latest: Dict[str, Dict[str, Any]] = {}
@@ -716,6 +731,7 @@ def replacement_needs(
             causes.append({"cause": "failed_attempt"})
         if effective_strict and status != "completed":
             causes.append({"cause": "strict_incomplete"})
+        causes.extend(edit_causes.get(step_id, []))
         if causes:
             needs.append({
                 "step_id": step_id,
@@ -724,6 +740,64 @@ def replacement_needs(
                 "causes": causes,
             })
     return needs
+
+
+def _requires_file_receipts(root: Path, strict: bool) -> bool:
+    policy = _proof_policy(root)
+    return (
+        strict
+        or bool(policy.get("strict_by_default"))
+        or bool(policy.get("require_file_receipts_for_changed_files", True))
+    )
+
+
+def post_completion_edits(
+    root: Path, plan: Dict[str, Any], strict: bool = False
+) -> Dict[str, Any]:
+    """#73: changed files verify-run flags, and whether one step can absorb them.
+
+    For the selector's terminal branch only (no open attempt, nothing
+    eligible). Read-only. A path's candidates are the plan steps whose
+    effective scope holds it, the check record-file-change applies; that
+    permits recording, it does not prove who edited. offered is True only
+    when every path has exactly one candidate, drift has no out-of-scope or
+    blocked file, and nothing makes the run permanently unprovable. Git and
+    file errors propagate: the caller fails closed.
+    """
+    edits: Dict[str, Any] = {
+        "pairs": [], "candidates": {}, "drift": None,
+        "permanent": False, "scope_violation": False, "offered": False,
+    }
+    if not is_git_repo(root):
+        return edits
+    pairs = _changed_file_pairs(root, plan, _requires_file_receipts(root, strict))
+    if not pairs:
+        return edits
+    step_ids = [
+        step["id"] for step in plan.get("steps", [])
+        if isinstance(step, dict) and isinstance(step.get("id"), str)
+    ]
+    edits["pairs"] = [{"path": path, "message": finding["message"]} for path, finding in pairs]
+    for path, _finding in pairs:
+        if path not in edits["candidates"]:
+            edits["candidates"][path] = [
+                step_id for step_id in step_ids if path_in_effective_scope(plan, step_id, path)
+            ]
+    edits["permanent"] = bool(_terminal_attempt_violations(root)) or any(
+        receipt_state == "unrecoverable"
+        for _receipt, receipt_state, _by in timeout_receipt_states(root, plan)
+    )
+    if edits["permanent"]:
+        return edits
+    drift = audit_drift(root, plan)
+    edits["drift"] = drift
+    edits["scope_violation"] = bool(
+        drift.get("out_of_scope_files") or drift.get("blocked_files_changed")
+    )
+    edits["offered"] = not edits["scope_violation"] and all(
+        len(candidates) == 1 for candidates in edits["candidates"].values()
+    )
+    return edits
 
 
 def _unresolved_finding_refs(root: Path) -> List[Dict[str, str]]:
@@ -792,9 +866,7 @@ def verify_run(
     result: Dict[str, Any] = {"status": "passed", "errors": [], "warnings": []}
     policy = _proof_policy(root)
     effective_strict = strict or bool(policy.get("strict_by_default"))
-    require_file_receipts = effective_strict or bool(
-        policy.get("require_file_receipts_for_changed_files", True)
-    )
+    require_file_receipts = _requires_file_receipts(root, strict)
     for error in validate_plan(plan):
         result["errors"].append({"severity": "error", "message": error})
     drift = audit_drift(root, plan)

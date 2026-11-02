@@ -117,6 +117,21 @@ class ExecutionStateTests(unittest.TestCase):
 
             self.assertIn("claim-step first", str(ctx.exception))
 
+    def test_resolve_attempt_names_amend_step_for_completed_step(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = self._root(tmp)
+            first = claim_step(root, plan(), "P1", "agent-a")
+            mark_step_verified(root, "P1", first["attempt_id"], [])
+            complete_step(root, "P1", first["attempt_id"])
+
+            with self.assertRaises(ValueError) as ctx:
+                resolve_attempt(root, "P1", None)
+
+            self.assertEqual(
+                str(ctx.exception),
+                "step P1 has completed work and no open attempt; open one with amend-step",
+            )
+
     def test_complete_block_and_fail_close_attempt_pointer(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = self._root(tmp)
