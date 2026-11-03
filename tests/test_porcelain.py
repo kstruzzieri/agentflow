@@ -1359,6 +1359,100 @@ class TestFinishStep(unittest.TestCase):
             self.assertTrue(result["diagnostics"])
 
 
+class TestInheritedReceiptRefusal(unittest.TestCase):
+    """verify-step counts a changed file's latest receipt only from this or a completed attempt."""
+
+    def _replacement(self, root: Path, close: str) -> None:
+        """A1 records src/feature.py and stops; A2 passes its gate without recording it."""
+        _enforced_claim(root)
+        if close == "reclaim-step":
+            _set_attempt_lease(root, "A1", "2000-01-01T00:00:00+00:00")
+            self.assertEqual(cli.main(["reclaim-step", "P1", "--agent", "worker-8", "--reason",
+                                       "expired", "--root", str(root)]), 0)
+        else:
+            self.assertEqual(cli.main([close, "P1", "--reason", "stopped", "--agent", "worker-7",
+                                       "--root", str(root)]), 0)
+            self.assertEqual(cli.main(["claim-step", "P1", "--agent", "worker-8",
+                                       "--root", str(root)]), 0)
+        self.assertEqual(cli.main(["run", "--step", "P1", "--gate", 'python3 -c "print(1)"',
+                                   "--agent", "worker-8", "--root", str(root),
+                                   "--", "python3", "-c", "print(1)"]), 0)
+
+    def test_replacement_must_record_a_stopped_attempts_file(self):
+        for close, status in (("block-step", "blocked"), ("fail-step", "failed"),
+                              ("reclaim-step", "abandoned")):
+            for command in ("verify-step", "finish-step"):
+                with self.subTest(close=close, command=command), TemporaryDirectory() as d:
+                    root = Path(d)
+                    self._replacement(root, close)
+                    argv = [command, "P1", "--agent", "worker-8", "--root", str(root)]
+                    plan = json.loads((root / ".agent/plan.lock.json").read_text())
+
+                    result = execution_coverage.verify_step(root, plan, "P1", None, record=False)
+
+                    self.assertIn(
+                        f"src/feature.py was last recorded by attempt A1 ({status}); "
+                        "record it in attempt A2",
+                        [finding["message"] for finding in result["errors"]],
+                    )
+                    self.assertEqual(cli.main(argv), 1)
+                    self.assertFalse(read_step_state(root)["steps"]["P1"]["completed"])
+                    self.assertEqual(cli.main(["record-file-change", "--step", "P1", "--path",
+                                               "src/feature.py", "--agent", "worker-8",
+                                               "--root", str(root)]), 0)
+                    self.assertEqual(cli.main(argv), 0)
+
+    def test_complete_step_rechecks_a_shared_files_new_owner(self):
+        with TemporaryDirectory() as d:
+            root = Path(d)
+            _shared_path_repo(root)
+            _attempt(root, "P1", "src/a.py", "a = 1\n")
+            self.assertEqual(cli.main(["verify-step", "P1", "--root", str(root)]), 0)
+            _attempt(root, "P2", "src/shared.py", "shared = 2\n")
+
+            self.assertEqual(cli.main(["complete-step", "P1", "--root", str(root)]), 1)
+            self.assertEqual(cli.main(["finish-step", "P2", "--root", str(root)]), 0)
+            self.assertEqual(cli.main(["complete-step", "P1", "--root", str(root)]), 0)
+
+    def test_another_steps_receipt_counts_once_that_attempt_completes(self):
+        for close, code in ((["block-step", "P2", "--reason", "stopped"], 1),
+                            (["finish-step", "P2"], 0)):
+            with self.subTest(close=close[0]), TemporaryDirectory() as d:
+                root = Path(d)
+                _shared_path_repo(root)
+                _attempt(root, "P2", "src/shared.py", "shared = 2\n")
+                self.assertEqual(cli.main([*close, "--root", str(root)]), 0)
+                _attempt(root, "P1", "src/a.py", "a = 1\n")
+
+                self.assertEqual(cli.main(["finish-step", "P1", "--root", str(root)]), code)
+
+    def test_amendment_inherits_its_steps_completed_receipt(self):
+        with TemporaryDirectory() as d:
+            root = Path(d)
+            _shared_path_repo(root)
+            _attempt(root, "P1", "src/a.py", "a = 1\n")
+            self.assertEqual(cli.main(["finish-step", "P1", "--root", str(root)]), 0)
+            _attempt(root, "P1", "src/shared.py", "shared = 9\n", amend=True)
+
+            self.assertEqual(cli.main(["finish-step", "P1", "--root", str(root)]), 0)
+
+    def test_non_git_root_is_skipped_and_git_failure_fails_closed(self):
+        with TemporaryDirectory() as d:
+            plan = _plan([_step()])
+            self.assertEqual(
+                execution_coverage._inherited_receipt_errors(Path(d), plan, "P1", "A1"), [])
+        with TemporaryDirectory() as d:
+            root = Path(d)
+            _claimed(root)
+            plan = json.loads((root / ".agent/plan.lock.json").read_text())
+            with mock.patch.object(execution_coverage, "changed_file_records",
+                                   side_effect=RuntimeError("git status failed")):
+                result = execution_coverage.verify_step(root, plan, "P1", None, record=False)
+            self.assertEqual(result["status"], "failed")
+            self.assertIn("cannot inspect changed files: git status failed",
+                          [finding["message"] for finding in result["errors"]])
+
+
 class TestFinishRun(unittest.TestCase):
     def test_finish_run_all_green(self):
         with TemporaryDirectory() as d:

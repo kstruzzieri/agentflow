@@ -41,6 +41,7 @@ from .execution import (
 from .execution_coverage import (
     latest_file_receipts_by_path,
     post_completion_edits,
+    receipt_counts_for_attempt,
     receipt_matches_worktree,
     replacement_needs,
     timeout_receipt_states,
@@ -1078,9 +1079,7 @@ def _scoped_unrecorded_paths(root: Path, plan: Dict[str, Any], step_id: str,
         receipt = latest.get(path)
         if receipt is None or not receipt_matches_worktree(root, record, receipt):
             missing.append(path)
-        elif receipt.get("attempt_id") != attempt_id and (
-            attempts.get(receipt.get("attempt_id"), {}).get("status") != "completed"
-        ):
+        elif not receipt_counts_for_attempt(receipt, attempt_id, attempts):
             missing.append(path)
     if effective_hunk_policy(root) == "enforce":
         missing.extend(entry["path"] for entry in unmapped_hunks(root, scoped_records))
