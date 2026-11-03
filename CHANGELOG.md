@@ -20,6 +20,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `--strict`. The attempt's own receipts and any completed attempt's receipts
   still count, and `verify-run` is unchanged. No new command, flag, JSON key,
   state or schema, and exit codes keep their meaning. (#102)
+- Git status parsing preserves spaces, non-ASCII characters and literal ` -> `
+  in filenames, so receipt ownership checks cannot skip these files. Drift
+  auditing and file receipts use the same NUL-delimited parser, including
+  rename source paths. (#102)
 
 ## [1.2.2] - 2026-11-03
 

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import subprocess
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
@@ -13,9 +14,9 @@ def run_git(root: Path, args: List[str]) -> Tuple[int, str, str]:
         check=False,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
-        text=True,
     )
-    return proc.returncode, proc.stdout.rstrip(), proc.stderr.rstrip()
+    # Text mode would translate CR/LF inside NUL-delimited filenames.
+    return proc.returncode, os.fsdecode(proc.stdout).rstrip(), os.fsdecode(proc.stderr).rstrip()
 
 
 def is_git_repo(root: Path) -> bool:
@@ -24,37 +25,28 @@ def is_git_repo(root: Path) -> bool:
 
 
 def changed_files(root: Path) -> List[str]:
-    code, stdout, stderr = run_git(root, ["status", "--porcelain=v1", "-uall"])
-    if code != 0:
-        raise RuntimeError(stderr or "git status failed")
-
-    files = []
-    for line in stdout.splitlines():
-        if not line:
-            continue
-        path = line[3:].strip()
-        if " -> " in path:
-            path = path.split(" -> ", 1)[1]
-        files.append(path)
-    return sorted(set(files))
+    return sorted({record["path"] for record in changed_file_records(root)})
 
 
 def changed_file_records(root: Path) -> List[Dict[str, str]]:
-    code, stdout, stderr = run_git(root, ["status", "--porcelain=v1", "-uall"])
+    code, stdout, stderr = run_git(root, ["status", "--porcelain=v1", "-z", "-uall"])
     if code != 0:
         raise RuntimeError(stderr or "git status failed")
 
     records: List[Dict[str, str]] = []
-    for line in stdout.splitlines():
-        if not line:
+    entries = iter(stdout.split("\0"))
+    for entry in entries:
+        if not entry:
             continue
-        status = line[:2]
-        raw_path = line[3:].strip()
+        status = entry[:2]
+        path = entry[3:]
         previous_path = ""
-        path = raw_path
         change_kind = "modified"
-        if " -> " in raw_path:
-            previous_path, path = raw_path.split(" -> ", 1)
+        if "R" in status or "C" in status:
+            # With -z, renames and copies emit the destination before the source.
+            previous_path = next(entries, "")
+            if not previous_path:
+                raise RuntimeError("git status omitted rename/copy source path")
             change_kind = "renamed"
         elif status == "??" or "A" in status:
             change_kind = "added"

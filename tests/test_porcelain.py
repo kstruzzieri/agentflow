@@ -1362,6 +1362,35 @@ class TestFinishStep(unittest.TestCase):
 class TestInheritedReceiptRefusal(unittest.TestCase):
     """verify-step counts a changed file's latest receipt only from this or a completed attempt."""
 
+    def test_replacement_must_record_git_quoted_filenames(self):
+        for path in ("src/two words.py", "src/café.py", "src/literal -> name.py"):
+            for strict in ([], ["--strict"]):
+                with self.subTest(path=path, strict=bool(strict)), TemporaryDirectory() as d:
+                    root = Path(d)
+                    _ready_repo_with_steps(root, [{**_step(), "files": [path]}],
+                                           extra_allowed=(path,))
+                    _attempt(root, "P1", path, "x = 1\n")
+                    self.assertEqual(cli.main(["block-step", "P1", "--reason", "stopped",
+                                               "--root", d]), 0)
+                    self.assertEqual(cli.main(["claim-step", "P1", "--agent", "replacement",
+                                               "--root", d]), 0)
+                    self.assertEqual(cli.main(["run", "--step", "P1", "--gate",
+                                               'python3 -c "print(1)"', "--root", d,
+                                               "--", "python3", "-c", "print(1)"]), 0)
+                    plan = json.loads((root / ".agent/plan.lock.json").read_text())
+                    result = execution_coverage.verify_step(root, plan, "P1", None, record=False)
+                    self.assertIn(
+                        f"{path} was last recorded by attempt A1 (blocked); record it in attempt A2",
+                        [finding["message"] for finding in result["errors"]],
+                    )
+                    for command in ("verify-step", "finish-step"):
+                        self.assertEqual(cli.main([command, "P1", *strict, "--root", d]), 1)
+                    self.assertFalse(read_step_state(root)["steps"]["P1"]["completed"])
+                    self.assertEqual(cli.main(["record-file-change", "--step", "P1", "--path",
+                                               path, "--root", d]), 0)
+                    self.assertEqual(cli.main(["finish-step", "P1", *strict, "--root", d]), 0)
+                    self.assertFalse(execution_coverage.verify_run(root, plan, record=False)["errors"])
+
     def _replacement(self, root: Path, close: str) -> None:
         """A1 records src/feature.py and stops; A2 passes its gate without recording it."""
         _enforced_claim(root)
