@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.2] - 2026-11-03
+
+Agentflow 1.2.2 restores fail-closed resume in `next-action`. In 1.2.1, a
+blocked or failed attempt's file receipt covered the attempt that replaced it,
+so a driver that refuses to run gates while `file_receipts_missing` stands
+could finish a step on the stopped attempt's partial edit. Users of 1.2.1
+should upgrade. No state, recovery action, artifact schema, schema-version
+constant, `docs/cli-contract.json` value or exit-code change.
+
 ### Fixed
 
 - `next-action` again asks an attempt that replaces a blocked or failed one to
@@ -18,7 +27,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   only when the open attempt wrote it or the attempt that wrote it completed:
   another completed step's receipt and an amendment's earlier completed
   receipt still count. `verify-step`, `finish-step` and `verify-run` are
-  unchanged. No state, recovery action, schema or exit-code change.
+  unchanged. No state, recovery action, schema or exit-code change. (#100)
 
 ## [1.2.1] - 2026-11-02
 
@@ -415,7 +424,8 @@ repository, so this heading is intentionally unlinked._
 
 - Existing v0.2 proof artifacts remain valid when no execution contract exists.
 
-[Unreleased]: https://github.com/kstruzzieri/agentflow/compare/v1.2.1...HEAD
+[Unreleased]: https://github.com/kstruzzieri/agentflow/compare/v1.2.2...HEAD
+[1.2.2]: https://github.com/kstruzzieri/agentflow/compare/v1.2.1...v1.2.2
 [1.2.1]: https://github.com/kstruzzieri/agentflow/compare/v1.2.0...v1.2.1
 [1.2.0]: https://github.com/kstruzzieri/agentflow/compare/v1.1.1...v1.2.0
 [1.1.1]: https://github.com/kstruzzieri/agentflow/compare/v1.1.0...v1.1.1
