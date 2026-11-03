@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- `verify-step`, `finish-step` and `complete-step` now refuse an attempt
+  (exit 1) when a changed file in its step's scope was last recorded by
+  another attempt that has not completed: a blocked, failed or abandoned
+  attempt it replaced, or another step's open or stopped attempt on a shared
+  file. Recording the file in the current attempt clears it. Until now these
+  commands checked only the receipts the attempt wrote, so a replacement could
+  finish on a stopped attempt's edit without recording it, although
+  `next-action` asks for that record. The finding is an error even without
+  `--strict`. The attempt's own receipts and any completed attempt's receipts
+  still count, and `verify-run` is unchanged. No new command, flag, JSON key,
+  state or schema, and exit codes keep their meaning. (#102)
+- Git status parsing preserves spaces, non-ASCII characters and literal ` -> `
+  in filenames, so receipt ownership checks cannot skip these files. Drift
+  auditing and file receipts use the same NUL-delimited parser, including
+  rename source paths. (#102)
+
 ## [1.2.2] - 2026-11-03
 
 Agentflow 1.2.2 restores fail-closed resume in `next-action`. In 1.2.1, a

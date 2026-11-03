@@ -317,6 +317,10 @@ agentflow verify-proof
   Out-of-band edits inside an allowed file that are not re-recorded fail drift
   under the default `enforce` policy (`proof_policy.hunk_attribution`).
 - `verify-step` checks the step attempt has required command and file receipts.
+  A changed file in the step's scope must have been last recorded by this
+  attempt or by a completed one; a blocked, failed or abandoned attempt's
+  receipt does not cover its replacement, so the replacement records that file
+  again. `finish-step` and `complete-step` apply the same check (exit 1).
 - `complete-step` closes only a successfully verified step. Like `finish-step`,
   it re-checks the step's gates on their latest receipts before closing, so a
   gate that failed after `verify-step` refuses completion (exit 1).

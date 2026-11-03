@@ -284,6 +284,9 @@ def verify_step(
         path = receipt.get("path")
         if isinstance(path, str) and not path_in_effective_scope(plan, step_id, path):
             _add_finding(result, "error", f"{path} is outside effective file scope for {step_id}")
+    # An error in every mode: a warning would still let finish-step complete.
+    for message in _inherited_receipt_errors(root, plan, step_id, resolved_attempt):
+        _add_finding(result, "error", message)
     if replay:
         replay_result = replay_gates(root, plan, step_id=step_id, record=False)
         result["errors"].extend(replay_result["errors"])
@@ -398,6 +401,51 @@ def receipt_matches_worktree(root: Path, record: Dict[str, str], receipt: Dict[s
     if record["change_kind"] == "deleted":
         return receipt.get("change_kind") == "deleted"
     return receipt.get("after_sha256") == sha256_path(root / record["path"])
+
+
+def receipt_counts_for_attempt(
+    receipt: Dict[str, Any], attempt_id: Optional[str], attempts: Dict[str, Any]
+) -> bool:
+    """True when attempt_id or a completed attempt wrote receipt.
+
+    An open, blocked, failed or abandoned attempt's receipt does not cover
+    another attempt. next-action and verify-step share this rule.
+    """
+    producer = receipt.get("attempt_id")
+    return producer == attempt_id or attempts.get(producer, {}).get("status") == "completed"
+
+
+def _inherited_receipt_errors(
+    root: Path, plan: Dict[str, Any], step_id: str, attempt_id: Optional[str]
+) -> List[str]:
+    """Changed in-scope files whose latest receipt attempt_id may not rely on.
+
+    A missing or stale receipt stays verify-run's finding. Non-git roots have
+    no changed-file list to inspect.
+    """
+    if not is_git_repo(root):
+        return []
+    try:
+        records = changed_file_records(root)
+    except RuntimeError as exc:
+        return [f"cannot inspect changed files: {exc}"]
+    attempts = read_step_state(root)["attempts"]
+    latest = latest_file_receipts_by_path(root)
+    errors: List[str] = []
+    for record in records:
+        path = record["path"]
+        if path.startswith((".agent/", ".git/")) or not path_in_effective_scope(plan, step_id, path):
+            continue
+        receipt = latest.get(path)
+        if receipt is None or receipt_counts_for_attempt(receipt, attempt_id, attempts):
+            continue
+        producer = receipt.get("attempt_id")
+        status = attempts.get(producer, {}).get("status", "unknown")
+        errors.append(
+            f"{path} was last recorded by attempt {producer} ({status}); "
+            f"record it in attempt {attempt_id}"
+        )
+    return errors
 
 
 def _reconcile_changed_files(

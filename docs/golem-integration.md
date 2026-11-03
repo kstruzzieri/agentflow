@@ -109,6 +109,11 @@ Notes for the adapter:
 - Record file changes as they happen, not batched at the end. Hunk-level
   attribution fingerprints each diff hunk; an unrecorded edit inside an
   allowed file fails drift under the default `enforce` policy.
+- An attempt that replaces a blocked, failed or abandoned one records that
+  attempt's changed files itself. `next-action` reports `file_receipts_missing`
+  until it does, and `verify-step`, `finish-step` and `complete-step` refuse
+  (exit 1) a changed in-scope file whose latest receipt came from an attempt
+  that is neither the current one nor completed.
 - Post-completion fixes go through `amend-step` (optionally with
   `--finding RR-...#ID` to correlate a review finding). A completed step
   rejects a fresh `claim-step`.
