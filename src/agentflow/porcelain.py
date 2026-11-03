@@ -31,6 +31,7 @@ from .execution import (
     lease_ttl_minutes,
     load_execution_contract,
     mark_step_verified,
+    read_step_state,
     refuse_timed_out_attempt,
     require_lifecycle_owner,
     step_state_from_events,
@@ -1053,9 +1054,16 @@ def explain_next_step(root: Path) -> Dict[str, Any]:
     return {"step": None, "reason_code": code, "diagnostics": diagnostics}
 
 
-def _scoped_unrecorded_paths(root: Path, plan: Dict[str, Any], step_id: str) -> List[str]:
-    """Scoped files without matching receipt content or enforced hunk coverage."""
+def _scoped_unrecorded_paths(root: Path, plan: Dict[str, Any], step_id: str,
+                             attempt_id: str) -> List[str]:
+    """Scoped files without an eligible matching receipt or enforced hunk coverage.
+
+    A latest receipt is eligible when this attempt or a completed attempt wrote
+    it, so a replacement records a blocked or failed attempt's edit before its
+    gates run (fail-closed resume) while #97's completed receipts still count.
+    """
     latest = latest_file_receipts_by_path(root)
+    attempts = read_step_state(root)["attempts"]
     missing: List[str] = []
     scoped_records: List[Dict[str, str]] = []
     for record in changed_file_records(root):
@@ -1069,6 +1077,10 @@ def _scoped_unrecorded_paths(root: Path, plan: Dict[str, Any], step_id: str) -> 
         scoped_records.append(record)
         receipt = latest.get(path)
         if receipt is None or not receipt_matches_worktree(root, record, receipt):
+            missing.append(path)
+        elif receipt.get("attempt_id") != attempt_id and (
+            attempts.get(receipt.get("attempt_id"), {}).get("status") != "completed"
+        ):
             missing.append(path)
     if effective_hunk_policy(root) == "enforce":
         missing.extend(entry["path"] for entry in unmapped_hunks(root, scoped_records))
@@ -1435,7 +1447,7 @@ def _selected_action(
             projection,
         )
     try:
-        unrecorded = _scoped_unrecorded_paths(root, plan, step_id)
+        unrecorded = _scoped_unrecorded_paths(root, plan, step_id, attempt_id)
     except (RuntimeError, OSError) as exc:
         # A concurrent ledger change must supersede this working-tree diagnostic.
         return _invalid_action(_diagnose(

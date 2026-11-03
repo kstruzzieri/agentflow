@@ -1025,7 +1025,7 @@ class TestNextActionInflightWork(unittest.TestCase):
                 self.assertEqual(action.state, state)
 
     def test_amendment_counts_its_steps_earlier_matching_receipt(self):
-        # #97 decision: any step, any attempt. P1/A1's receipt still matches src/a.py.
+        # #97: P1/A1 completed, so its receipt still covers src/a.py for the amendment.
         with TemporaryDirectory() as d:
             root = Path(d)
             _shared_path_repo(root)
@@ -1036,6 +1036,43 @@ class TestNextActionInflightWork(unittest.TestCase):
             action = porcelain.next_action(root)
 
             self.assertEqual(action.state, "step_unverified")
+
+    def test_closed_attempts_receipt_does_not_cover_its_replacement(self):
+        # Fail-closed resume: A2 records A1's unfinished edit itself before its gates run.
+        for close in ("block-step", "fail-step"):
+            with self.subTest(close=close), TemporaryDirectory() as d:
+                root = Path(d)
+                _claimed(root)
+                (root / "src").mkdir()
+                (root / "src/feature.py").write_text("x = 1\n")
+                record = ["record-file-change", "--step", "P1", "--path", "src/feature.py"]
+                self.assertEqual(cli.main([*record, "--root", str(root)]), 0)
+                self.assertEqual(cli.main([close, "P1", "--reason", "stopped",
+                                           "--root", str(root)]), 0)
+                self.assertEqual(cli.main(["claim-step", "P1", "--agent", "tester",
+                                           "--root", str(root)]), 0)
+
+                action = porcelain.next_action(root)
+
+                self.assertEqual(action.state, "file_receipts_missing")
+                self.assertEqual(action.args, record)
+                self.assertEqual(cli.main([*record, "--root", str(root)]), 0)
+                self.assertEqual(porcelain.next_action(root).state, "validation_missing")
+
+    def test_another_steps_closed_attempt_receipt_does_not_count(self):
+        with TemporaryDirectory() as d:
+            root = Path(d)
+            _shared_path_repo(root)
+            _attempt(root, "P2", "src/shared.py", "shared = 2\n")
+            self.assertEqual(cli.main(["block-step", "P2", "--reason", "stopped",
+                                       "--root", str(root)]), 0)
+            _attempt(root, "P1", "src/a.py", "a = 1\n")
+
+            action = porcelain.next_action(root)
+
+            self.assertEqual(action.state, "file_receipts_missing")
+            self.assertEqual(action.args,
+                             ["record-file-change", "--step", "P1", "--path", "src/shared.py"])
 
     def test_edit_after_this_attempts_receipt_is_unrecorded(self):
         # The attempt's own receipt no longer matches, so verify-run would fail it.

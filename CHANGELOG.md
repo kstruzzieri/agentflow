@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- `next-action` again asks an attempt that replaces a blocked or failed one to
+  record that attempt's edits before its gates run. Since 1.2.1 (#97), any
+  matching receipt counted, so the stopped attempt's receipt covered its
+  replacement, which went straight to `validation_missing`. That broke
+  fail-closed resume for a driver that refuses to run gates while
+  `file_receipts_missing` stands. A changed file's latest receipt now counts
+  only when the open attempt wrote it or the attempt that wrote it completed:
+  another completed step's receipt and an amendment's earlier completed
+  receipt still count. `verify-step`, `finish-step` and `verify-run` are
+  unchanged. No state, recovery action, schema or exit-code change.
+
 ## [1.2.1] - 2026-11-02
 
 Agentflow 1.2.1 fixes three cases where `next-action` sent an agent the wrong
