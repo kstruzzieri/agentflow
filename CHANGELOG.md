@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.3.0] - 2026-11-04
+
+Agentflow 1.3.0 stops an edit from a stopped attempt from passing unverified. A
+replacement attempt can no longer finish a step on a file that a blocked,
+failed or abandoned attempt last recorded (#102). `verify-run`, `finish-run`
+and the stop gate now fail in every mode when such an edit is still in the
+tree (#103).
+
+**Upgrade note for adapters and stop-hook users: a run that passed on a stopped
+attempt's unverified edit now fails.** It keeps failing until a replacement
+attempt completes. `next-action` reports `step_amendment_needed`, and its
+`amend` action is `automatic: false` when this is the only cause, so an adapter
+must surface it to an operator instead of amending unattended. No new command,
+flag, JSON key, state, artifact schema, schema-version constant or
+`docs/cli-contract.json` value, and exit codes keep their meaning.
+
 ### Changed
 
 - `verify-step`, `finish-step` and `complete-step` now refuse an attempt
@@ -454,7 +470,8 @@ repository, so this heading is intentionally unlinked._
 
 - Existing v0.2 proof artifacts remain valid when no execution contract exists.
 
-[Unreleased]: https://github.com/kstruzzieri/agentflow/compare/v1.2.2...HEAD
+[Unreleased]: https://github.com/kstruzzieri/agentflow/compare/v1.3.0...HEAD
+[1.3.0]: https://github.com/kstruzzieri/agentflow/compare/v1.2.2...v1.3.0
 [1.2.2]: https://github.com/kstruzzieri/agentflow/compare/v1.2.1...v1.2.2
 [1.2.1]: https://github.com/kstruzzieri/agentflow/compare/v1.2.0...v1.2.1
 [1.2.0]: https://github.com/kstruzzieri/agentflow/compare/v1.1.1...v1.2.0
