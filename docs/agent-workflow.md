@@ -324,7 +324,10 @@ agentflow verify-proof
 - `complete-step` closes only a successfully verified step. Like `finish-step`,
   it re-checks the step's gates on their latest receipts before closing, so a
   gate that failed after `verify-step` refuses completion (exit 1).
-- `verify-run` checks the full execution ledger for completion coverage.
+- `verify-run` checks the full execution ledger for completion coverage. In
+  every mode it also fails on a changed file whose latest receipt came from a
+  blocked, failed or abandoned attempt, unless the file matches its latest
+  receipt from a completed attempt.
 - `audit-drift` writes the current `.agent/drift-report.json` used by the proof
   pack.
 - `build-proof` writes `.agent/proof-pack.md` and `.agent/proof-pack.json`. If
@@ -389,6 +392,18 @@ choosing among several steps stays with you. On a completed step with no open
 attempt, `record-file-change`, `run` and `verify-step` say to open one with
 `amend-step`.
 
+An edit recorded by an amendment that then stopped has a matching receipt, but
+no attempt verified it. Unless the file also matches its latest receipt from a
+completed attempt, `verify-run` fails in every mode with `unverified edit from
+<status> attempt <id>: <path>`. `next-action` reports `step_amendment_needed`
+for the step on the receipt, even when other steps' scopes share the path, with
+`amend-step <step> --reason 'replace <status> attempt <id>: unverified edit to
+<path>'`. Its `amend` action is `automatic: false`, because reopening stopped
+work is a decision for a person or the agent that stopped it, unless a timeout,
+failed or strict cause also applies. The replacement records the file again,
+passes its gates and completes. A blocked amendment that left no edit still
+passes without `--strict`.
+
 ## Porcelain shortcuts
 
 The Agent Task Loop above lists every plumbing command explicitly. Three
@@ -410,7 +425,8 @@ semantics.
   `claim`/`continue`/`renew`/`reclaim`/`block`/`amend`/break-glass `fail`
   actions allowed for `--agent` (or `AGENTFLOW_AGENT_ID`). Break-glass failure
   is always marked `automatic: false`; so is `amend` while a changed file has
-  no matching file receipt.
+  no matching file receipt, or when a stopped attempt's unverified edit is its
+  only cause.
   The additive `recorded_blockers` list reports every attempt closed by
   `block-step` or `fail-step`, in ledger order, with its reason, time, attempt
   owner and `superseded_by` (the next attempt opened for that step, or `null`

@@ -60,7 +60,9 @@ writer can record a blocker with any reason, rewrite ledgers and checksums, or
 delete `.agent/plan.lock.json`, which makes the hook pass through as ungoverned.
 Agentflow therefore adds no escape hatch: exit `0` keeps meaning "proof
 satisfied (or repo ungoverned)", and a recorded blocker does not satisfy the
-gate.
+gate. That includes a blocked amendment whose recorded edit is still in the
+tree: the gate keeps failing until a replacement attempt completes. In
+non-strict mode, a blocked amendment that left no edit does not hold the gate.
 
 Operator interruption is the supported way out (Esc in Claude Code). The
 operator then completes or re-plans the step, or disables the hook.

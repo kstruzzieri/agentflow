@@ -453,15 +453,22 @@ def _reconcile_changed_files(
     plan: Dict[str, Any],
     require_file_receipts: bool = True,
 ) -> List[Dict[str, str]]:
-    return [finding for _path, finding in _changed_file_pairs(root, plan, require_file_receipts)]
+    return [finding for _path, finding, _stopped in _changed_file_pairs(root, plan, require_file_receipts)]
 
 
 def _changed_file_pairs(
     root: Path,
     plan: Dict[str, Any],
     require_file_receipts: bool = True,
-) -> List[Tuple[str, Dict[str, str]]]:
-    """(path, finding) for each changed file verify-run flags (#73 needs the path)."""
+) -> List[Tuple[str, Dict[str, str], Optional[Dict[str, Any]]]]:
+    """(path, finding, stopped) for each changed file verify-run flags (#73 needs the path).
+
+    #103: stopped is set when the latest receipt matches the tree but a blocked,
+    failed or abandoned attempt wrote it and the path's latest completed receipt
+    does not match. It names that attempt for next-action; the finding stays
+    severity and message. An open attempt and an unknown producer each have
+    their own verify-run error.
+    """
     contract: Dict[str, Any] = {}
     contract_path = root / ".agent/execution.contract.json"
     if contract_path.exists():
@@ -473,7 +480,14 @@ def _changed_file_pairs(
             contract = {}
     ignore = contract.get("concurrency", {}).get("reconcile_ignore", [".agent/", ".git/"])
     latest = latest_file_receipts_by_path(root)
-    findings: List[Tuple[str, Dict[str, str]]] = []
+    attempts = read_step_state(root)["attempts"]
+    latest_completed = {
+        receipt["path"]: receipt
+        for receipt in file_receipts(root)
+        if isinstance(receipt.get("path"), str)
+        and attempts.get(receipt.get("attempt_id"), {}).get("status") == "completed"
+    }
+    findings: List[Tuple[str, Dict[str, str], Optional[Dict[str, Any]]]] = []
     for record in changed_file_records(root):
         path = record["path"]
         if _ignored(path, ignore):
@@ -485,16 +499,31 @@ def _changed_file_pairs(
             findings.append((path, {
                 "severity": "error",
                 "message": f"changed file is not mapped to a step receipt: {path}",
-            }))
+            }, None))
             continue
         if receipt_matches_worktree(root, record, receipt):
+            attempt_id = receipt.get("attempt_id")
+            status = attempts.get(attempt_id, {}).get("status")
+            completed = latest_completed.get(path)
+            if status in _SUPERSEDABLE_STATUSES and not (
+                completed and receipt_matches_worktree(root, record, completed)
+            ):
+                findings.append((path, {
+                    "severity": "error",
+                    "message": f"unverified edit from {status} attempt {attempt_id}: {path}",
+                }, {
+                    "cause": "unverified_edit",
+                    "step_id": receipt.get("step_id"),
+                    "attempt_id": attempt_id,
+                    "status": status,
+                }))
             continue
         message = (
             f"deleted file lacks deleted receipt: {path}"
             if record["change_kind"] == "deleted"
             else f"out-of-band edit after latest file receipt: {path}"
         )
-        findings.append((path, {"severity": "error", "message": message}))
+        findings.append((path, {"severity": "error", "message": message}, None))
     if effective_hunk_policy(root) == "enforce":
         # Scope-filter candidates the same way audit_drift does, so verify-run
         # and audit-drift cannot diverge on which paths are hunk-checked.
@@ -515,7 +544,7 @@ def _changed_file_pairs(
                     f"(@@ -{entry['old_start']},{entry['old_count']} "
                     f"+{entry['new_start']},{entry['new_count']} @@): no matching file receipt"
                 ),
-            }))
+            }, None))
     return findings
 
 
@@ -742,8 +771,9 @@ def replacement_needs(
     recoverable timed-out receipt, a failed latest attempt, and (effective
     strict) a latest attempt that is not completed. attempt_id/status are the
     step's latest non-lease ledger event. #73: when post_completion_edits
-    offers them, each unreceipted change is a post_completion_edit cause on
-    its one candidate step, after that step's other causes.
+    offers them, each flagged change is a post_completion_edit cause (#103:
+    unverified_edit for a stopped attempt's edit) on its one candidate step,
+    after that step's other causes.
     """
     edit_causes: Dict[str, List[Dict[str, Any]]] = {}
     if edits and edits.get("offered"):
@@ -813,10 +843,12 @@ def post_completion_edits(
     For the selector's terminal branch only (no open attempt, nothing
     eligible). Read-only. A path's candidates are the plan steps whose
     effective scope holds it, the check record-file-change applies; that
-    permits recording, it does not prove who edited. offered is True only
-    when every path has exactly one candidate, drift has no out-of-scope or
-    blocked file, and nothing makes the run permanently unprovable. Git and
-    file errors propagate: the caller fails closed.
+    permits recording, it does not prove who edited. #103: a stopped attempt's
+    edit has one candidate, the step on its receipt, while that step still
+    holds the path. offered is True only when every path has exactly one
+    candidate, drift has no out-of-scope or blocked file, and nothing makes the
+    run permanently unprovable. Git and file errors propagate: the caller fails
+    closed.
     """
     edits: Dict[str, Any] = {
         "pairs": [], "candidates": {}, "drift": None,
@@ -831,12 +863,18 @@ def post_completion_edits(
         step["id"] for step in plan.get("steps", [])
         if isinstance(step, dict) and isinstance(step.get("id"), str)
     ]
-    edits["pairs"] = [{"path": path, "message": finding["message"]} for path, finding in pairs]
-    for path, _finding in pairs:
+    edits["pairs"] = [
+        {"path": path, "message": finding["message"], **(stopped or {})}
+        for path, finding, stopped in pairs
+    ]
+    for path, _finding, stopped in pairs:
         if path not in edits["candidates"]:
-            edits["candidates"][path] = [
-                step_id for step_id in step_ids if path_in_effective_scope(plan, step_id, path)
-            ]
+            owner = stopped["step_id"] if stopped else None
+            edits["candidates"][path] = (
+                [owner]
+                if owner in step_ids and path_in_effective_scope(plan, owner, path)
+                else [step_id for step_id in step_ids if path_in_effective_scope(plan, step_id, path)]
+            )
     edits["permanent"] = bool(_terminal_attempt_violations(root)) or any(
         receipt_state == "unrecoverable"
         for _receipt, receipt_state, _by in timeout_receipt_states(root, plan)

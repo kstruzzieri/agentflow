@@ -671,11 +671,20 @@ def _project_recovery_actions(
         amend_allowed = amend and bool(agent_id)
         # #73: an amendment records the working tree as the step's work, so
         # with any unreceipted change someone must say whose it is first.
-        manual = amend and bool(selection.edits.get("pairs"))
+        unreceipted = amend and any("cause" not in pair for pair in selection.edits.get("pairs", []))
+        # #103: a stopped attempt's edit is attributed, but it alone does not
+        # reopen stopped work unattended. Another cause keeps its automatic amend.
+        stopped_only = amend and all(
+            cause["cause"] == "unverified_edit" for cause in selection.needs[0]["causes"]
+        )
+        manual = unreceipted or stopped_only
         amend_reason = (
             "changed files have no matching file receipt; an operator must attribute "
             "them with amend-step"
-            if amend_allowed and manual
+            if amend_allowed and unreceipted
+            else "a stopped attempt's edit was never verified; an operator must decide "
+            "whether to replace it with amend-step"
+            if amend_allowed and stopped_only
             else f"step {step_id} has completed work and needs a replacement attempt"
             if amend_allowed
             else "amend requires an agent identity"
@@ -1202,6 +1211,12 @@ def _replacement_cause(
         return f"replace failed attempt {need['attempt_id']}", f"{step_id} has failed attempt"
     if cause["cause"] == "post_completion_edit":
         return f"record post-completion edit to {cause['path']}", cause["message"]
+    if cause["cause"] == "unverified_edit":
+        return (
+            f"replace {cause['status']} attempt {cause['attempt_id']}: "
+            f"unverified edit to {cause['path']}",
+            cause["message"],
+        )
     return (
         f"replace {need['status']} attempt {need['attempt_id']} (strict)",
         f"{step_id} is not completed",

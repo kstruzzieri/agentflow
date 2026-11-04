@@ -2466,6 +2466,330 @@ class TestNextActionRecovery(unittest.TestCase):
         self.assertEqual(len(porcelain.NEXT_ACTION_STATES), 17)
 
 
+def _stopped_amendment(root: Path, close: str = "block-step", text: str = "x = 2\n",
+                       step_id: str = "P1", path: str = "src/feature.py") -> None:
+    """An amendment of a completed step records path, then closes with close."""
+    _attempt(root, step_id, path, text, amend=True)
+    assert cli.main([close, step_id, "--reason", "deferred", "--agent", "tester",
+                     "--root", str(root)]) == 0
+
+
+def _run_messages(root: Path, strict: bool = False):
+    result = execution_coverage.verify_run(root, _locked_plan(root), strict=strict, record=False)
+    return [finding["message"] for finding in result["errors"]]
+
+
+class TestStoppedAttemptEdit(unittest.TestCase):
+    """#103: a changed file's latest receipt came from an attempt that stopped."""
+
+    BLOCKED = "unverified edit from blocked attempt A2: src/feature.py"
+
+    def test_blocked_amendment_edit_fails_verify_run_in_both_modes(self):
+        for strict in (False, True):
+            with self.subTest(strict=strict), TemporaryDirectory() as d:
+                root = Path(d)
+                _completed_step(root)
+                _stopped_amendment(root)
+                self.assertIn(self.BLOCKED, _run_messages(root, strict=strict))
+
+    def test_next_action_asks_to_amend_the_step_without_automating_it(self):
+        with TemporaryDirectory() as d:
+            root = Path(d)
+            _completed_step(root)
+            _stopped_amendment(root)
+            action = porcelain.next_action(root, agent_id="tester")
+            self.assertEqual((action.state, action.step_id), ("step_amendment_needed", "P1"))
+            self.assertEqual(action.args[-1], "replace blocked attempt A2: unverified edit to src/feature.py")
+            self.assertIn(self.BLOCKED, action.diagnostics)
+            amend = _recovery(action.resumability, "amend")
+            self.assertTrue(amend["allowed"])
+            self.assertFalse(amend["automatic"])
+            self.assertIn("stopped attempt", amend["reason"])
+            self.assertNotIn("no matching file receipt", amend["reason"])
+
+    def test_finish_run_stops_before_the_proof(self):
+        with TemporaryDirectory() as d:
+            root = Path(d)
+            _completed_step(root)
+            _stopped_amendment(root)
+            result = porcelain.finish_run(root, root / ".agent/plan.lock.json")
+            self.assertFalse(result["ok"])
+            self.assertEqual(result["stopped_at"], "verify-run")
+            self.assertFalse((root / ".agent/proof-pack.json").exists())
+
+    def test_stop_gate_and_mcp_give_the_same_verdict(self):
+        with TemporaryDirectory() as d:
+            root = Path(d)
+            _completed_step(root)
+            _stopped_amendment(root)
+            self.assertEqual(cli.main(["verify-run", "--no-record", "--root", str(root)]), 1)
+            result = mcp_server.handle_message({
+                "jsonrpc": "2.0", "id": 1, "method": "tools/call",
+                "params": {"name": "verify_run", "arguments": {"root": str(root)}},
+            })["result"]
+            self.assertTrue(result["isError"])
+
+    def test_following_next_action_reaches_a_complete_run(self):
+        with TemporaryDirectory() as d:
+            root = Path(d)
+            _completed_step(root)
+            _stopped_amendment(root)
+            args = porcelain.next_action(root, agent_id="tester").args
+            self.assertEqual(cli.main([*args, "--root", str(root)]), 0)
+            self.assertEqual(cli.main(["finish-step", "P1", "--root", str(root)]), 1)
+            self.assertEqual(cli.main(["record-file-change", "--step", "P1", "--path", "src/feature.py",
+                                       "--root", str(root)]), 0)
+            self.assertEqual(cli.main(["run", "--step", "P1", "--gate", 'python3 -c "print(1)"',
+                                       "--root", str(root), "--", "python3", "-c", "print(1)"]), 0)
+            self.assertEqual(cli.main(["finish-step", "P1", "--root", str(root)]), 0)
+            self.assertTrue(porcelain.finish_run(root, root / ".agent/plan.lock.json")["ok"])
+            self.assertEqual(porcelain.next_action(root).state, "complete")
+
+    def test_failed_edit_hidden_by_a_later_blocked_amendment_fails(self):
+        with TemporaryDirectory() as d:
+            root = Path(d)
+            _completed_step(root)
+            _stopped_amendment(root, close="fail-step")
+            self.assertEqual(cli.main(["amend-step", "P1", "--agent", "tester", "--reason", "retry",
+                                       "--root", str(root)]), 0)
+            self.assertEqual(cli.main(["block-step", "P1", "--reason", "deferred", "--agent", "tester",
+                                       "--root", str(root)]), 0)
+            self.assertIn("unverified edit from failed attempt A2: src/feature.py", _run_messages(root))
+            action = porcelain.next_action(root, agent_id="tester")
+            self.assertEqual(action.args[-1], "replace failed attempt A2: unverified edit to src/feature.py")
+            self.assertFalse(_recovery(action.resumability, "amend")["automatic"])
+
+    def test_undoing_completed_work_fails_though_an_older_receipt_matches(self):
+        with TemporaryDirectory() as d:
+            root = Path(d)
+            _completed_step(root)
+            _attempt(root, "P1", "src/feature.py", "x = 2\n", amend=True)
+            self.assertEqual(cli.main(["finish-step", "P1", "--root", str(root)]), 0)
+            _stopped_amendment(root, text="x = 1\n")
+            self.assertIn("unverified edit from blocked attempt A3: src/feature.py", _run_messages(root))
+
+    def test_rerecording_completed_content_stays_green(self):
+        with TemporaryDirectory() as d:
+            root = Path(d)
+            _completed_step(root)
+            _stopped_amendment(root, text="x = 1\n")
+            self.assertEqual(_run_messages(root), [])
+            self.assertTrue(porcelain.finish_run(root, root / ".agent/plan.lock.json")["ok"])
+            self.assertEqual(porcelain.next_action(root).state, "complete")
+
+    def test_deletions_compare_by_change_kind(self):
+        def _tracked(root: Path) -> None:
+            _ready_repo(root)
+            (root / "src").mkdir()
+            (root / "src/feature.py").write_text("x = 0\n")
+            _git(root, "add", "src/feature.py")
+            _git(root, "commit", "-qm", "seed")
+
+        with TemporaryDirectory() as d:  # deleting completed content is an edit
+            root = Path(d)
+            _tracked(root)
+            _attempt(root, "P1", "src/feature.py", "x = 1\n")
+            self.assertEqual(cli.main(["finish-step", "P1", "--root", str(root)]), 0)
+            _attempt(root, "P1", "src/feature.py", None, amend=True)
+            self.assertEqual(cli.main(["block-step", "P1", "--reason", "deferred", "--agent", "tester",
+                                       "--root", str(root)]), 0)
+            self.assertIn(self.BLOCKED, _run_messages(root))
+        with TemporaryDirectory() as d:  # re-recording a completed deletion is not
+            root = Path(d)
+            _tracked(root)
+            _attempt(root, "P1", "src/feature.py", None)
+            self.assertEqual(cli.main(["finish-step", "P1", "--root", str(root)]), 0)
+            self.assertEqual(cli.main(["amend-step", "P1", "--agent", "tester", "--reason", "tweak",
+                                       "--root", str(root)]), 0)
+            self.assertEqual(cli.main(["record-file-change", "--step", "P1", "--path", "src/feature.py",
+                                       "--root", str(root)]), 0)
+            self.assertEqual(cli.main(["block-step", "P1", "--reason", "deferred", "--agent", "tester",
+                                       "--root", str(root)]), 0)
+            self.assertEqual(_run_messages(root), [])
+
+    def test_completed_amendment_passes(self):
+        with TemporaryDirectory() as d:
+            root = Path(d)
+            _completed_step(root)
+            _attempt(root, "P1", "src/feature.py", "x = 2\n", amend=True)
+            self.assertEqual(cli.main(["finish-step", "P1", "--root", str(root)]), 0)
+            self.assertEqual(_run_messages(root), [])
+
+    def test_reverting_a_blocked_edit_keeps_the_existing_repair(self):
+        with TemporaryDirectory() as d:
+            root = Path(d)
+            _completed_step(root)
+            _stopped_amendment(root)
+            (root / "src/feature.py").write_text("x = 1\n")
+            self.assertEqual(_run_messages(root),
+                             ["out-of-band edit after latest file receipt: src/feature.py"])
+            action = porcelain.next_action(root, agent_id="tester")
+            self.assertEqual(action.args[-1], "record post-completion edit to src/feature.py")
+            self.assertIn("no matching file receipt", _recovery(action.resumability, "amend")["reason"])
+
+    def test_open_attempt_keeps_its_own_error_only(self):
+        with TemporaryDirectory() as d:
+            root = Path(d)
+            _completed_step(root)
+            _attempt(root, "P1", "src/feature.py", "x = 2\n", amend=True)
+            self.assertEqual(_run_messages(root), ["P1 has open attempt A2"])
+
+    def test_unknown_producer_keeps_the_integrity_error_and_offers_no_amend(self):
+        with TemporaryDirectory() as d:
+            root = Path(d)
+            _completed_step(root)
+            _stopped_amendment(root)
+            path = root / ".agent/file-receipts.jsonl"
+            rows = [json.loads(line) for line in path.read_text().splitlines()]
+            rows[-1]["attempt_id"] = "A9"
+            path.write_text("".join(json.dumps(row) + "\n" for row in rows))
+            self.assertEqual(_run_messages(root), ["receipt references unknown attempt: FR2"])
+            action = porcelain.next_action(root, agent_id="tester")
+            self.assertEqual(action.state, "run_unverified")
+            self.assertFalse(_recovery(action.resumability, "amend")["allowed"])
+
+    def test_shared_path_names_the_step_that_wrote_the_receipt(self):
+        for owner in ("P1", "P2"):
+            with self.subTest(owner=owner), TemporaryDirectory() as d:
+                root = Path(d)
+                _shared_path_repo(root)
+                _finish(root, "P1", "src/a.py", "src/shared.py")
+                _finish(root, "P2", "src/shared.py")
+                _stopped_amendment(root, step_id=owner, path="src/shared.py")
+                action = porcelain.next_action(root, agent_id="tester")
+                self.assertEqual((action.state, action.step_id), ("step_amendment_needed", owner))
+                self.assertEqual(action.args[-1], "replace blocked attempt A3: unverified edit to src/shared.py")
+
+    def test_ambiguous_unreceipted_path_beside_it_selects_no_step(self):
+        with TemporaryDirectory() as d:
+            root = Path(d)
+            _shared_path_repo(root)
+            _finish(root, "P1", "src/a.py", "src/shared.py")
+            _finish(root, "P2", "src/shared.py")
+            _stopped_amendment(root, path="src/a.py")
+            (root / "src/shared.py").write_text("x = 3\n")
+            action = porcelain.next_action(root, agent_id="tester")
+            self.assertEqual(action.state, "drift_failing")  # the unreceipted hunk
+            self.assertIn("src/a.py is in step P1's scope; amend-step P1 can record it", action.diagnostics)
+            self.assertIn("src/shared.py is in the scope of steps P1, P2; amend the step that made "
+                          "the edit and record it there", action.diagnostics)
+            self.assertFalse(_recovery(action.resumability, "amend")["allowed"])
+
+    def test_unreceipted_edit_beside_it_keeps_the_attribution_reason(self):
+        p2 = {**_step(), "id": "P2", "files": ["src/other.py"],
+              "expected_diff": ["src/other.py changes are attributed to P2."]}
+        with TemporaryDirectory() as d:
+            root = Path(d)
+            _ready_repo_with_steps(root, [_step(), p2], extra_allowed=("src/other.py",))
+            _finish(root, "P1", "src/feature.py")
+            _finish(root, "P2", "src/other.py")
+            _stopped_amendment(root)
+            (root / "src/other.py").write_text("y = 2\n")
+            action = porcelain.next_action(root, agent_id="tester")
+            self.assertEqual((action.state, action.step_id), ("step_amendment_needed", "P1"))
+            amend = _recovery(action.resumability, "amend")
+            self.assertFalse(amend["automatic"])
+            self.assertIn("no matching file receipt", amend["reason"])
+
+    def test_existing_automatic_causes_stay_automatic(self):
+        def _timed_out(root: Path) -> None:
+            self.assertEqual(cli.main(["amend-step", "P1", "--agent", "tester", "--reason", "fix",
+                                       "--root", str(root)]), 0)
+            (root / "src/feature.py").write_text("x = 2\n")
+            self.assertEqual(cli.main(["record-file-change", "--step", "P1", "--path", "src/feature.py",
+                                       "--root", str(root)]), 0)
+            _time_out_open_attempt(root)
+            self.assertEqual(cli.main(["block-step", "P1", "--reason", "gate timed out", "--agent", "tester",
+                                       "--root", str(root)]), 0)
+
+        for name, stop, strict, reason, message in (
+            ("failed", lambda root: _stopped_amendment(root, close="fail-step"), False,
+             "replace failed attempt A2", "unverified edit from failed attempt A2: src/feature.py"),
+            ("strict", _stopped_amendment, True,
+             "replace blocked attempt A2 (strict)", self.BLOCKED),
+            ("timeout", _timed_out, False,
+             "replace attempt A2: timed-out receipt CR2", self.BLOCKED),
+        ):
+            with self.subTest(name), TemporaryDirectory() as d:
+                root = Path(d)
+                _completed_step(root)
+                stop(root)
+                action = porcelain.next_action(root, strict=strict, agent_id="tester")
+                self.assertEqual(action.args[-1], reason)
+                self.assertIn(message, action.diagnostics)
+                self.assertTrue(_recovery(action.resumability, "amend")["automatic"])
+
+    def test_receipt_opt_out_still_applies(self):
+        with TemporaryDirectory() as d:
+            root = Path(d)
+            _completed_step(root)
+            _stopped_amendment(root)
+            path = root / ".agent/execution.contract.json"
+            contract = json.loads(path.read_text())
+            contract["proof_policy"]["require_file_receipts_for_changed_files"] = False
+            path.write_text(json.dumps(contract))
+            self.assertIn(self.BLOCKED, _run_messages(root))
+
+    def test_enforced_leases_change_nothing(self):
+        def _agent_cli(command: str, *args: str) -> int:
+            return cli.main([command, "--root", str(root), *args])
+
+        for close in ("block-step", "reclaim-step"):
+            with self.subTest(close), TemporaryDirectory() as d:
+                root = Path(d)
+                _enforced_claim(root)
+                gate = ["--gate", 'python3 -c "print(1)"', "--", "python3", "-c", "print(1)"]
+                self.assertEqual(_agent_cli("run", "--step", "P1", "--agent", "worker-7", *gate), 0)
+                self.assertEqual(_agent_cli("finish-step", "P1", "--agent", "worker-7"), 0)
+                self.assertEqual(_agent_cli("amend-step", "P1", "--agent", "worker-7", "--reason", "fix"), 0)
+                (root / "src/feature.py").write_text("x = 2\n")
+                self.assertEqual(_agent_cli("record-file-change", "--step", "P1", "--path", "src/feature.py",
+                                            "--agent", "worker-7"), 0)
+                if close == "reclaim-step":
+                    _set_attempt_lease(root, "A2", "2000-01-01T00:00:00+00:00")
+                    self.assertEqual(_agent_cli("reclaim-step", "P1", "--agent", "worker-8",
+                                                "--reason", "expired"), 0)
+                    self.assertEqual(_agent_cli("block-step", "P1", "--reason", "deferred",
+                                                "--agent", "worker-8"), 0)
+                    status = "abandoned"
+                else:
+                    self.assertEqual(_agent_cli("block-step", "P1", "--reason", "deferred",
+                                                "--agent", "worker-7"), 0)
+                    status = "blocked"
+                self.assertIn(f"unverified edit from {status} attempt A2: src/feature.py", _run_messages(root))
+                action = porcelain.next_action(root, agent_id="worker-8")
+                self.assertEqual((action.state, action.step_id), ("step_amendment_needed", "P1"))
+                self.assertEqual(_agent_cli(*action.args), 0)
+                self.assertEqual(_agent_cli("record-file-change", "--step", "P1", "--path", "src/feature.py",
+                                            "--agent", "worker-8"), 0)
+                self.assertEqual(_agent_cli("run", "--step", "P1", "--agent", "worker-8", *gate), 0)
+                self.assertEqual(_agent_cli("finish-step", "P1", "--agent", "worker-8"), 0)
+                self.assertEqual(_run_messages(root), [])
+
+    def test_prefixed_attempt_ids_are_opaque(self):
+        with TemporaryDirectory() as d:
+            root = Path(d)
+            _completed_step(root)
+            _stopped_amendment(root)
+            for ledger in ("step-runs", "file-receipts", "command-receipts"):
+                path = root / f".agent/{ledger}.jsonl"
+                rows = [json.loads(line) for line in path.read_text().splitlines()]
+                for row in rows:
+                    if row.get("attempt_id") == "A2":
+                        row["attempt_id"] = "WTabc-A2"
+                path.write_text("".join(json.dumps(row) + "\n" for row in rows))
+            self.assertIn("unverified edit from blocked attempt WTabc-A2: src/feature.py", _run_messages(root))
+
+    def test_non_git_root_adds_no_finding(self):
+        with TemporaryDirectory() as d:
+            root = Path(d)
+            _completed_step(root)
+            _stopped_amendment(root)
+            shutil.rmtree(root / ".git")
+            edits = execution_coverage.post_completion_edits(root, _locked_plan(root))
+            self.assertEqual(edits["pairs"], [])
+
+
 class TestPolicyFloorRatchet(unittest.TestCase):
     """#66: a non-strict finish-run keeps the floor of the proof it replaces."""
 
