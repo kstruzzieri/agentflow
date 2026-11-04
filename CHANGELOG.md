@@ -18,12 +18,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   finish on a stopped attempt's edit without recording it, although
   `next-action` asks for that record. The finding is an error even without
   `--strict`. The attempt's own receipts and any completed attempt's receipts
-  still count, and `verify-run` is unchanged. No new command, flag, JSON key,
-  state or schema, and exit codes keep their meaning. (#102)
+  still count. No new command, flag, JSON key, state or schema, and exit codes
+  keep their meaning. (#102)
 - Git status parsing preserves spaces, non-ASCII characters and literal ` -> `
   in filenames, so receipt ownership checks cannot skip these files. Drift
   auditing and file receipts use the same NUL-delimited parser, including
   rename source paths. (#102)
+- `verify-run`, `finish-run` and the stop gate now fail in every mode (exit 1)
+  when a changed file's latest receipt matches the working tree but a blocked,
+  failed or abandoned attempt wrote it, and the file does not match its latest
+  receipt from a completed attempt. Until now a non-strict run could report
+  complete on an edit no attempt had verified. **Adapters and stop-hook users:
+  a run that passed this way now fails until a replacement attempt completes.**
+  `next-action` reports `step_amendment_needed` for the step on the receipt,
+  with `amend-step <step> --reason 'replace <status> attempt <id>: unverified
+  edit to <path>'`. That `amend` action is `automatic: false` unless a timeout,
+  failed or strict cause also applies. A blocked amendment that left no edit
+  still passes without `--strict`. No new command, flag, JSON key, state or
+  schema, and exit codes keep their meaning. (#103)
 
 ## [1.2.2] - 2026-11-03
 
