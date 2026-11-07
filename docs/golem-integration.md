@@ -274,9 +274,9 @@ The full artifact inventory is in
 
 Run exactly one Golem worker per worktree. Agentflow's execution contract
 rejects `multi_writer` today. Single-writer lease enforcement
-([#20](https://github.com/kstruzzieri/agentflow/issues/20)) has shipped, but
+([docs/single-writer-leases.md](single-writer-leases.md)) has shipped, but
 shared-tree multi-writer coordination remains out of scope. Cross-worktree proof
-aggregation ([#30](https://github.com/kstruzzieri/agentflow/issues/30)) is now
+aggregation is now
 implemented: run one worker per worktree, then merge the immutable trees with
 `aggregate-ledgers` into a single canonical `.agent/` proof. An adapter that
 wants parallelism should use that one-worker-per-worktree model rather than
@@ -297,13 +297,11 @@ inventing its own locking on top of `.agent/`.
 | `finish-run` stops at a gate | `--json` reports `stopped_at`; resolve that gate before re-running |
 | Worker records a blocker (`block-step` / `fail-step`) on a step that never completed | `next-action` keeps reporting the step (usually `step_unclaimed`) and lists the blocker in `recorded_blockers` with `superseded_by: null`; `verify-run` and the stop gate keep failing. Apply the adapter's budget or operator-approved pause, then re-plan, reassign or stop; Agentflow adds no escape hatch |
 
-## Related Issues
+## Related
 
 - [go-llm#209](https://github.com/kstruzzieri/go-llm/issues/209) — parent:
   Agentflow-backed task mode in Golem
 - [#20](https://github.com/kstruzzieri/agentflow/issues/20) — authoritative
   read-only resumability projection
-- [#30](https://github.com/kstruzzieri/agentflow/issues/30) — deferred
-  parallelism design
-- [#19](https://github.com/kstruzzieri/agentflow/issues/19) — MCP/runtime
-  status as read-only evidence
+- [docs/mcp.md](mcp.md#recording-other-mcp-servers-as-evidence-19) —
+  MCP/runtime status as read-only evidence
