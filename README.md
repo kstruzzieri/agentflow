@@ -435,30 +435,12 @@ Expected failure behavior:
 
 ## Project Status
 
-Agentflow is at version `0.4.0`. Prebuilt single-file
-artifacts (`agentflow.pyz`, `agentflow-mcp.pyz`, `SHA256SUMS`) are published on
-the [Releases](https://github.com/kstruzzieri/agentflow/releases) page. The
-implemented surface includes:
-
-- v0.1 local planning, evidence, drift, and proof artifacts.
-- v0.2 runtime metadata, runtime snapshots, structured proof metadata, and
-  reproducible proof verification.
-- v0.3 portable execution contracts, step claims, command and file receipts,
-  step/run verification, replay support, provider-neutral handoffs, and
-  execution summaries in proof packs.
-- Increments on the v0.3 line: command-risk screening, a stdlib-only MCP server,
-  a Stop-hook enforcement gate, a CI proof gate with a strict review gate, a
-  deterministic `review-manifest` producer, and hunk-level attribution (drift
-  audit distinguishes receipt-covered edits from unrelated edits inside the same
-  allowed file), plus durable adaptive workflow contract artifacts.
-- Concurrency and interop: single-writer lease enforcement, cross-worktree
-  ledger aggregation via `aggregate-ledgers`, read-only MCP/runtime status
-  evidence in proofs, a static `view-proof --html` report, and a Golem adapter
-  integration guide.
-- Distribution: a stdlib-only `zipapp` single-file build with a tag-triggered
-  release workflow (packaging phase 1).
-
-The next priorities are tracked in [docs/roadmap.md](docs/roadmap.md).
+Agentflow is past `1.0`, and its artifact schemas are frozen under the policy in
+[docs/stability.md](docs/stability.md). What is available today and what comes
+next are tracked in the [roadmap](docs/roadmap.md#available-today). Each
+release, with its notes, is on the
+[Releases](https://github.com/kstruzzieri/agentflow/releases) page and in
+[CHANGELOG.md](CHANGELOG.md).
 
 ## Documentation
 
