@@ -1,6 +1,6 @@
 # Agentflow Roadmap
 
-Last updated: 2026-11-04
+Last updated: 2026-11-08
 
 Agentflow `1.3.0` is a standard-library-only Python CLI for plan-locked,
 auditable agent work. It supports Python 3.11–3.13 and ships as the
@@ -56,10 +56,32 @@ the [tracking issue #11](https://github.com/kstruzzieri/agentflow/issues/11).
   `agentflow` PyPI name is pursued separately under PEP 541; if it transfers,
   only `project.name` changes.
 
+## On main, not yet released
+
+- The proof records how each validation gate was satisfied (run by Agentflow,
+  replayed, self-reported, inspection evidence, or missing), `verify-proof`
+  recomputes that record and prints a one-line summary, and the docs define
+  each command-receipt provenance value
+  ([#110](https://github.com/kstruzzieri/agentflow/issues/110)). The
+  proof-pack schema moves to `1.1.0`, the first additive minor bump under the
+  compatibility policy; Agentflow 1.3 and older refuse a `1.1.0` proof and ask
+  for an upgrade.
+
 ## After 1.0
 
-No next milestone is committed. Candidates, each starting as an issue with a
-concrete use case and compatibility impact:
+Open issues that tighten who decides a proof's strictness and who approves
+risky commands:
+
+- A minimum policy that `verify-proof` can require, so the agent's own
+  execution contract no longer decides how strict its proof is
+  ([#111](https://github.com/kstruzzieri/agentflow/issues/111)).
+- High-risk confirmations bound to the exact command and an approver outside
+  the agent ([#112](https://github.com/kstruzzieri/agentflow/issues/112)).
+- Replaying recorded commands against a proposed risk policy before
+  tightening it ([#113](https://github.com/kstruzzieri/agentflow/issues/113)).
+
+No next milestone is committed. Other candidates, each starting as an issue
+with a concrete use case and compatibility impact:
 
 - PyInstaller single-binary packaging (deferred until a consumer needs
   Python-free machines; see `docs/packaging.md`).
