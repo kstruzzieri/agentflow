@@ -1,0 +1,15 @@
+{"agent_id": "fixture-agent", "attempt_id": "A1", "event": "claimed", "lease_expires_at": null, "recorded_at": "2026-11-08T15:44:14+00:00", "schema_version": "1.0.0", "step_id": "P1"}
+{"attempt_id": "A1", "event": "verified", "findings": [], "recorded_at": "2026-11-08T15:44:14+00:00", "schema_version": "1.0.0", "step_id": "P1"}
+{"attempt_id": "A1", "event": "completed", "recorded_at": "2026-11-08T15:44:14+00:00", "schema_version": "1.0.0", "step_id": "P1"}
+{"agent_id": "fixture-agent", "attempt_id": "A2", "event": "claimed", "lease_expires_at": null, "recorded_at": "2026-11-08T15:44:15+00:00", "schema_version": "1.0.0", "step_id": "P2"}
+{"attempt_id": "A2", "event": "verified", "findings": [], "recorded_at": "2026-11-08T15:44:15+00:00", "schema_version": "1.0.0", "step_id": "P2"}
+{"attempt_id": "A2", "event": "completed", "recorded_at": "2026-11-08T15:44:15+00:00", "schema_version": "1.0.0", "step_id": "P2"}
+{"agent_id": "fixture-agent", "attempt_id": "A3", "event": "claimed", "lease_expires_at": null, "recorded_at": "2026-11-08T15:44:15+00:00", "schema_version": "1.0.0", "step_id": "P3"}
+{"attempt_id": "A3", "event": "verified", "findings": [], "recorded_at": "2026-11-08T15:44:15+00:00", "schema_version": "1.0.0", "step_id": "P3"}
+{"attempt_id": "A3", "event": "completed", "recorded_at": "2026-11-08T15:44:16+00:00", "schema_version": "1.0.0", "step_id": "P3"}
+{"agent_id": "fixture-agent", "attempt_id": "A4", "event": "claimed", "lease_expires_at": null, "recorded_at": "2026-11-08T15:44:16+00:00", "schema_version": "1.0.0", "step_id": "P4"}
+{"attempt_id": "A4", "event": "verified", "findings": [], "recorded_at": "2026-11-08T15:44:16+00:00", "schema_version": "1.0.0", "step_id": "P4"}
+{"attempt_id": "A4", "event": "completed", "recorded_at": "2026-11-08T15:44:16+00:00", "schema_version": "1.0.0", "step_id": "P4"}
+{"agent_id": "fixture-agent", "attempt_id": "A5", "event": "claimed", "lease_expires_at": null, "recorded_at": "2026-11-08T15:44:16+00:00", "schema_version": "1.0.0", "step_id": "P5"}
+{"attempt_id": "A5", "event": "verified", "findings": [{"message": "legacy inspection gate needs evidence or receipt: unmet gate", "severity": "warning"}], "recorded_at": "2026-11-08T15:44:16+00:00", "schema_version": "1.0.0", "step_id": "P5"}
+{"attempt_id": "A5", "event": "completed", "recorded_at": "2026-11-08T15:44:16+00:00", "schema_version": "1.0.0", "step_id": "P5"}

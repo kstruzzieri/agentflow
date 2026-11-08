@@ -51,6 +51,71 @@ uses `agentflow init-execution`.
 - `.agent/handoffs/`: generated provider-neutral handoffs.
 - `.agent/receipts/`: captured command output referenced by command receipts.
 
+## Command Receipt Provenance
+
+Every command receipt records `provenance`: which Agentflow command wrote it,
+and so how its exit code was obtained.
+
+| Value | Written by | What it shows | Strict mode |
+| --- | --- | --- | --- |
+| `observed` | `run` | Agentflow started the command and captured its exit code. | accepted |
+| `attested` | `record-command` | Self-reported: the agent's own account of a command it ran somewhere else. Agentflow did not see it run. | rejected |
+| `reconstructed` | `replay-gates --record` | Agentflow re-ran an attested gate and got the same exit code. | accepted |
+| `managed` | no Agentflow command | Reserved for a runner outside Agentflow that executes gates itself, such as CI. Agentflow 1.x never writes it but accepts it as trusted, so a receipt carrying it came from another tool or a hand edit. | accepted |
+
+"Strict mode" covers `--strict`, `AGENTFLOW_STRICT=1`,
+`proof_policy.strict_by_default`, and
+`proof_policy.require_managed_receipts_for_validation`: each fails a validation
+gate whose receipt is `attested`. Outside them an attested gate passes, and the
+proof says it was self-reported.
+
+Here `attested` means self-reported. In in-toto, SLSA and similar receipt
+formats, "attested" means signed by a key other than the producer's. Agentflow
+receipts carry no signature, and renaming the value would change a stored
+field's meaning, which needs a schema-major release, so the name stays in 1.x.
+
+Provenance is not a signature. Anyone who can write `.agent/` can write any
+value, and a proof's hashes detect edits made after `build-proof`, not before.
+When the producer's identity matters, see the
+[security model](security-model.md).
+
+### How each validation gate was satisfied
+
+When an execution contract exists, `build-proof` writes
+`coverage.validation_gates` (proof-pack schema 1.1.0): one entry per gate of
+each step's latest completed attempt, in plan order.
+
+| Field | Meaning |
+| --- | --- |
+| `step_id`, `attempt_id` | The step and the completed attempt whose gates were verified. |
+| `gate` | The gate label: its command, its `validation` string, or its evidence id. |
+| `kind` | `command` or `inspection` for structured `gates`; `legacy` for a plain `validation` string. |
+| `status` | `satisfied`, `missing` (nothing met it, a warning the contract allowed) or `failed`. |
+| `receipt_id`, `provenance` | The command receipt that met the gate, and its provenance; otherwise `null`. |
+| `evidence_id` | The evidence id an inspection gate names (present even when `status` is `missing`), or the step evidence that met a legacy gate; otherwise `null`. |
+
+The entries apply `verify-step`'s own rules under the execution contract's
+policy; a `--strict` build does not change them. They sit inside the proof's
+hashed core, and `verify-proof` recomputes them from the hashed ledgers, so an
+edited or removed entry fails with "proof validation gate coverage is stale or
+tampered". Proofs built before schema 1.1.0 have no entries and verify as
+before.
+
+After a proof verifies, `verify-proof` prints one summary line before
+`proof verified`, and `view-proof --html` shows the same line above a per-gate
+table:
+
+```text
+validation gates: 1 run by agentflow, 1 replayed by agentflow, 1 self-reported, 2 inspection evidence, 1 missing
+```
+
+The labels map to `observed`, `reconstructed` and `attested` receipts; a
+`managed` receipt reads "managed (not written by agentflow)". "Inspection
+evidence" counts gates met by evidence, and "missing" counts gates nothing met.
+A trailing `; N failed` counts gates whose receipt failed; each is also counted
+under its source. The line is human output: read the JSON entries in
+scripts.
+
 ## Optional Requirement Traceability
 
 A plan may declare provider-neutral requirements and acceptance criteria. The

@@ -121,6 +121,35 @@ class ProofCompatibilityMatrixTests(unittest.TestCase):
                 self.assertIn("MANIFEST.json", provenance)
                 self.assertIn("Updating the fixture", provenance)
 
+    def test_current_1_1_fixture_records_every_gate_source(self) -> None:
+        # #110: the first proof with coverage.validation_gates. Every way a gate
+        # can be satisfied appears once, so the matrix keeps recomputing each.
+        root = FIXTURES / "current-1.1"
+        proof = json.loads((root / ".agent/proof-pack.json").read_text(encoding="utf-8"))
+
+        self.assertEqual(proof["schema_version"], "1.1.0")
+        sources = [
+            (entry["kind"], entry["status"], entry["provenance"], entry["evidence_id"])
+            for entry in proof["coverage"]["validation_gates"]
+        ]
+        self.assertCountEqual(
+            sources,
+            [
+                ("command", "satisfied", "observed", None),
+                ("inspection", "satisfied", None, "E1"),
+                ("legacy", "missing", None, None),
+                ("legacy", "satisfied", "attested", None),
+                ("legacy", "satisfied", "reconstructed", None),
+                ("legacy", "satisfied", None, "E2"),
+            ],
+        )
+        result = verify_fixture(root)
+        self.assertIn(
+            "validation gates: 1 run by agentflow, 1 replayed by agentflow, "
+            "1 self-reported, 2 inspection evidence, 1 missing",
+            result.stdout,
+        )
+
     def test_current_full_fixture_exercises_load_bearing_optional_blocks(self) -> None:
         root = FIXTURES / "current-full"
         proof = json.loads((root / ".agent/proof-pack.json").read_text(encoding="utf-8"))

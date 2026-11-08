@@ -1,0 +1,26 @@
+{
+  "artifacts": {
+    ".agent/amendments.jsonl": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    ".agent/assumptions.json": "c4c98e433ab1d2554ff6dcdb1917b19cc2546428ce14a9634f39d38615b49d26",
+    ".agent/capability-receipts.jsonl": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    ".agent/command-receipts.jsonl": "3cf8840248e6a8cf97976a240642768dfcc5ce2d443036101879f1b2064f0802",
+    ".agent/context-receipts.jsonl": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    ".agent/drift-report.json": "4f908a2af17011afce6c3c2238d4317aa1d18cafcca317b604259f8490d03949",
+    ".agent/evidence.jsonl": "91cfa1f32838f85f29fa2d49a9f4171155c947dc1d26a4a46c7609ed5e07e9fd",
+    ".agent/execution.contract.json": "53f81518c34c36d658480a91111ebd99f43777d34fa523d6f92062e761bc454d",
+    ".agent/failures.jsonl": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    ".agent/file-receipts.jsonl": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    ".agent/model-profiles/anthropic.example.json": "c39697f14aa9243aa424ac1fc25ed4af1586867cbf483e25783bb5822e808c1d",
+    ".agent/model-profiles/local.example.json": "d062005370cfd6b33a594c0ab1808203ba8e26026bca5a308db2a6ba93066f78",
+    ".agent/model-profiles/openai.example.json": "f15b10cd53f5551e00b34612145e399c360f441021b123e644701817299060f1",
+    ".agent/plan.lock.json": "cc0cbd9633916de53a6a260fe029118dac4f869d202d72d85f41d6d3161dd645",
+    ".agent/proof-pack.json": "0eafd7c59c5f1a7ed007b22dd553496e86e882031bb16e40b3cf2f16c09e33a4",
+    ".agent/proof-pack.md": "a58083a9fcdae4395b42f7cf86405ca214668c90a62eb40a1674fa805642a9cc",
+    ".agent/receipts/A1/CR1.stderr.txt": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    ".agent/receipts/A1/CR1.stdout.txt": "08cfb1f08c9a2b3985853df5336808a27d616d731c6e944ff0a4e8e74dde5e5f",
+    ".agent/review-runs.jsonl": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    ".agent/runtime-snapshots.jsonl": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    ".agent/step-runs.jsonl": "a348278c29a1dec95dda4ed3c279303023b180d044dfecf40b86422e6cc70f2a",
+    ".agent/verification-runs.jsonl": "6b78eb655de50687d868a5d878bfc96e1c7f18a7f98a6c418597f00b942d0e5f"
+  }
+}

@@ -1,0 +1,14 @@
+{
+  "blocked_files_changed": [],
+  "changed_files": [],
+  "dependency_changes": [],
+  "generated_at": "2026-11-08T15:44:13+00:00",
+  "notes": [
+    "No drift audit has been run yet."
+  ],
+  "out_of_scope_files": [],
+  "schema_version": "1.0.0",
+  "status": "warning",
+  "test_weakening": [],
+  "unmapped_hunks": []
+}

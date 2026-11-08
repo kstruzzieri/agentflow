@@ -1,0 +1,6 @@
+{"attempt_id": "A1", "findings": [], "id": "VR1", "recorded_at": "2026-11-08T15:44:14+00:00", "replay": false, "schema_version": "1.0.0", "scope": "step", "status": "passed", "step_id": "P1", "strict": false}
+{"attempt_id": "A2", "findings": [], "id": "VR2", "recorded_at": "2026-11-08T15:44:15+00:00", "replay": false, "schema_version": "1.0.0", "scope": "step", "status": "passed", "step_id": "P2", "strict": false}
+{"attempt_id": "A3", "findings": [], "id": "VR3", "recorded_at": "2026-11-08T15:44:15+00:00", "replay": false, "schema_version": "1.0.0", "scope": "step", "status": "passed", "step_id": "P3", "strict": false}
+{"attempt_id": "A4", "findings": [], "id": "VR4", "recorded_at": "2026-11-08T15:44:16+00:00", "replay": false, "schema_version": "1.0.0", "scope": "step", "status": "passed", "step_id": "P4", "strict": false}
+{"attempt_id": "A5", "findings": [{"message": "legacy inspection gate needs evidence or receipt: unmet gate", "severity": "warning"}], "id": "VR5", "recorded_at": "2026-11-08T15:44:16+00:00", "replay": false, "schema_version": "1.0.0", "scope": "step", "status": "warning", "step_id": "P5", "strict": false}
+{"findings": [], "id": "VR6", "recorded_at": "2026-11-08T15:44:17+00:00", "replay": false, "schema_version": "1.0.0", "scope": "run", "status": "passed", "strict": false}
