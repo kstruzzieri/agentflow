@@ -1255,6 +1255,25 @@ class OneZeroTransitionTests(SoakHarness, unittest.TestCase):
             edit(schema)
         path.write_text(json.dumps(schema, indent=2) + "\n", encoding="utf-8")
 
+    def test_rejects_narrow_version_pattern(self) -> None:
+        self._released()
+        self._bump_proof(edit=lambda schema: schema['properties']['schema_version'].update(
+            pattern=r'^(?:0\.4\.0|1\.0\.0|1\.1\.0)$'))
+        self._assert_baseline_rejects(self.PROOF_SCHEMA)
+
+    def test_committed_minor_fields_remain_protected(self) -> None:
+        self._released()
+        self._bump_proof()
+        self._commit('publish minor schema', self.now)
+        self._assert_released_ok()
+        path = self.root / self.PROOF_SCHEMA
+        schema = json.loads(path.read_text())
+        schema['properties']['validation_gates'] = {'type': 'string'}
+        path.write_text(json.dumps(schema))
+        self._assert_baseline_rejects(self.PROOF_SCHEMA)
+        self._commit('invalid same-version edit', self.now)
+        self._assert_baseline_rejects(self.PROOF_SCHEMA)
+
     def test_additive_minor_bump_passes_after_the_transition(self) -> None:
         self._released()
         self._bump_proof()

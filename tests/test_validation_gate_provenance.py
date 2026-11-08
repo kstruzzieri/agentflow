@@ -244,6 +244,36 @@ class ValidationGateProvenanceTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertEqual(result.stdout.splitlines()[-2:], [SUMMARY, "proof verified"])
 
+    def test_custom_plan_is_used_even_without_default_plan(self) -> None:
+        for keep_default in (True, False):
+            with self.subTest(keep_default=keep_default):
+                root = self.copy()
+                path = root / '.agent/plan.lock.json'
+                plan = json.loads(path.read_text())
+                plan['steps'][3]['validation'] = ['custom evidence gate']
+                (root / 'custom.json').write_text(json.dumps(plan))
+                if not keep_default:
+                    path.unlink()
+                built = agentflow(root, 'build-proof', '--plan', 'custom.json')
+                self.assertEqual(built.returncode, 0, built.stdout + built.stderr)
+                verified = agentflow(root, 'verify-proof')
+                self.assertEqual(verified.returncode, 0, verified.stdout)
+                proof = _load(root)
+                proof['coverage']['validation_gates'][2]['provenance'] = 'observed'
+                _save(root, proof)
+                self.assertEqual(agentflow(root, 'verify-proof').returncode, 1)
+
+    def test_gate_plan_must_be_a_present_in_root_hashed_source(self) -> None:
+        for source in (None, 'unlisted.json', '../outside.json'):
+            with self.subTest(source=source):
+                root = self.copy()
+                proof = _load(root)
+                proof['coverage']['validation_gate_plan'] = source
+                _save(root, proof)
+                result = agentflow(root, 'verify-proof')
+                self.assertEqual(result.returncode, 1, result.stdout)
+                self.assertIn('validation gate plan', result.stdout)
+
     def test_edited_entry_fails_verify_proof(self) -> None:
         for rehash in (True, False):
             with self.subTest(rehash=rehash):

@@ -572,15 +572,23 @@ def _verify_validation_gate_coverage(
 ) -> List[Dict[str, Any]]:
     coverage = proof.get("coverage")
     recorded = coverage.get("validation_gates") if isinstance(coverage, dict) else None
-    plan_path = root / ".agent/plan.lock.json"
-    if not plan_path.exists():
-        return []  # like the sibling verifiers: the file-hash check reports it
-    if not (root / EXECUTION_ARTIFACT_PATHS["execution-contract"]).exists():
-        expected = None
-    elif recorded is None and _recorded_schema_is_older(
+    if recorded is None and _recorded_schema_is_older(
         proof.get("schema_version"), VALIDATION_GATES_SINCE
     ):
         return []
+    if recorded is None and not (root / EXECUTION_ARTIFACT_PATHS["execution-contract"]).exists():
+        return []
+    # Older 1.1 bundles used the default plan; custom builds bind their source.
+    source = coverage.get("validation_gate_plan", ".agent/plan.lock.json")
+    if not isinstance(source, str) or source not in proof.get("generated_from", []):
+        return [{"severity": "error", "message": "validation gate plan is not a hashed source"}]
+    plan_path = root / source
+    if not plan_path.resolve().is_relative_to(root.resolve()):
+        return [{"severity": "error", "message": "validation gate plan escapes root"}]
+    if not plan_path.exists():
+        return [{"severity": "error", "message": "validation gate plan is missing"}]
+    if not (root / EXECUTION_ARTIFACT_PATHS["execution-contract"]).exists():
+        expected = None
     else:
         try:
             expected = validation_gate_coverage(root, read_json(plan_path))
@@ -834,6 +842,8 @@ def build_proof(root: Path, plan_path: Path, strict: bool = False) -> Dict[str, 
             coverage[key] = execution_coverage.get(key, [])
         # #110: hash-bound like the lease keys; verify-proof recomputes it.
         coverage["validation_gates"] = validation_gate_coverage(root, plan)
+        if plan_source != ".agent/plan.lock.json":
+            coverage["validation_gate_plan"] = plan_source
     budget = plan.get("context_budget", {})
     receipts_required = bool(budget.get("receipts_required")) if isinstance(budget, dict) else False
     checks = check_from_coverage(coverage, receipts_required)

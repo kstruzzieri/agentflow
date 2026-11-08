@@ -806,9 +806,6 @@ def _commit_subject(root: Path, commit: str, paths: Sequence[str]) -> Subject:
 # never require, remove, retype or tighten one.
 ADDITIVE_SCHEMA_MAPS = frozenset({"properties", "$defs"})
 VERSION_PATTERN_FIELDS = ("schema_version", "bundle_version")
-# Versions a released pattern accepted that a widened one must keep accepting,
-# besides the released constant itself: the proof-pack's verify-proof floor.
-HISTORICAL_VERSION_PROBES = ("0.4.0",)
 
 
 def _is_additive_bump(released: str, current: str) -> bool:
@@ -868,13 +865,25 @@ def _is_additive_schema(
     if set(old_patterns) != set(new_patterns):
         return False
     for field, pattern in new_patterns.items():
-        kept = (released_version, *HISTORICAL_VERSION_PROBES)
-        probes = [version] + (
-            []
-            if path in EXACT_SCHEMA_PATHS
-            else [probe for probe in kept if _accepts(old_patterns[field], probe)]
-        )
-        if not all(_accepts(pattern, probe) for probe in probes):
+        old = old_patterns[field]
+        if path in EXACT_SCHEMA_PATHS:
+            valid = pattern == rf"^{re.escape(version)}$"
+        else:
+            # Recognize the released grammar, then widen only its minor token.
+            major, minor, _ = _version_tuple(version)
+            old_major, old_minor, _ = _version_tuple(released_version)
+            old_token = str(old_minor) if old_minor == 0 else (
+                "[01]" if old_minor == 1 else "(?:" + "|".join(map(str, range(old_minor + 1))) + ")"
+            )
+            new_token = "[01]" if minor == 1 else "(?:" + "|".join(map(str, range(minor + 1))) + ")"
+            needle = rf"{old_major}\.{old_token}\."
+            widened = old.replace(needle, rf"{major}\.{new_token}\.")
+            valid = (pattern == old and _accepts(old, version)) or (
+                major == old_major and minor > old_minor
+                and needle in old and pattern == widened
+                and _accepts(pattern, version)
+            )
+        if not valid:
             return False
     return _grows_only(before, after)
 
@@ -913,6 +922,28 @@ def _require_released_baseline(root: Path, transition: str) -> None:
     released_versions = _subject_schema_versions(
         _commit_subject(root, transition, [CONTRACTS_PATH])
     )
+    schema_paths = [*sorted(SCHEMA_FILE_CONSTANTS), CONTRACTS_PATH]
+    history = _git(
+        root, "log", "--format=%H", "--reverse", "--first-parent",
+        f"{transition}..HEAD", "--", *schema_paths,
+    ).stdout.split()
+    for commit in history:
+        versions = _subject_schema_versions(_commit_subject(root, commit, [CONTRACTS_PATH]))
+        tree, read = _commit_subject(root, commit, sorted(SCHEMA_FILE_CONSTANTS))
+        for path, name in SCHEMA_FILE_CONSTANTS.items():
+            if path not in tree:
+                raise SoakCheckError(f"released schema baseline changed after transition_commit: {path}")
+            previous, current = released_blobs[path], read(path, tree[path])
+            if versions[name] == released_versions[name]:
+                valid = _semantic_value(path, previous) == _semantic_value(path, current)
+            else:
+                valid = _is_additive_bump(released_versions[name], versions[name]) and _is_additive_schema(
+                    path, previous, current, released_versions[name], versions[name]
+                )
+            if not valid or tree[path] != released_tree[path]:
+                raise SoakCheckError(f"released schema baseline changed after transition_commit: {path}")
+            released_blobs[path] = current
+        released_versions = versions
     current_versions = _current_schema_versions(root)
     bumped = {
         name
