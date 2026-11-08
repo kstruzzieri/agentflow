@@ -64,7 +64,7 @@ Keep HTTP bound to loopback unless every reachable client and network path is tr
 
 ### Non-guarantee
 
-Proof integrity is **not cryptographic signing**. Agentflow does not establish the identity of a proof producer, protect an operator's private key, prove that a bundle is complete, or prevent a party who can rewrite a bundle from recomputing its checksums. Proof signing (for example, HMAC or Sigstore) is out of scope for v1.0.
+Proof integrity is **not cryptographic signing**. Agentflow does not establish the identity of a proof producer, protect an operator's private key, prove that a bundle is complete, or prevent a party who can rewrite a bundle from recomputing its checksums. Proof signing (for example, HMAC or Sigstore) is out of scope for v1.0. Likewise, a command receipt's `provenance` records which Agentflow command wrote it, not who ran the command: anyone who can write `.agent/` can write any value (see [Command Receipt Provenance](agent-workflow.md#command-receipt-provenance)).
 
 ### Threat assumptions
 

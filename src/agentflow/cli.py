@@ -71,6 +71,7 @@ from .proof import (
     proof_build_lock_path,
     publish_proof,
     render_markdown,
+    validation_gate_summary,
     verify_proof,
 )
 from .viewer import collect_view_model, render_html
@@ -1247,6 +1248,11 @@ def command_verify_proof(args: argparse.Namespace) -> int:
         print(_terminal_safe(f"{finding['severity']}: {finding['message']}"))
     if any(finding.get("severity") == "error" for finding in findings):
         return 1
+    # #110: only after verification passes, so the line never reports a
+    # tampered proof's claims. verify_proof already parsed this file.
+    summary = validation_gate_summary(json.loads(proof_path.read_text(encoding="utf-8")))
+    if summary is not None:
+        print(_terminal_safe(summary))
     print("proof verified")
     return 0
 

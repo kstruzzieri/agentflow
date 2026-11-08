@@ -9,7 +9,8 @@ change at all and the load-bearing constants must stay pre-1.0.
 Once ``transition_commit`` is recorded, the candidate-to-transition audit runs
 against that commit, and the working tree only has to keep the released 1.0
 contract: the load-bearing schemas, the schema-version constant values, and the
-preserved compatibility fixtures (#64).
+preserved compatibility fixtures (#64). A constant may still take an additive
+minor bump within its major, with a schema that only grows (#110).
 """
 
 from __future__ import annotations
@@ -799,6 +800,94 @@ def _commit_subject(root: Path, commit: str, paths: Sequence[str]) -> Subject:
     return tree, lambda path, _mode: blobs[path]
 
 
+# #110: what an additive minor bump may change in a published schema. Every
+# other node must stay exactly as released (lists, including `required` and
+# `enum`, compare whole), so a bump can add optional fields and definitions but
+# never require, remove, retype or tighten one.
+ADDITIVE_SCHEMA_MAPS = frozenset({"properties", "$defs"})
+VERSION_PATTERN_FIELDS = ("schema_version", "bundle_version")
+
+
+def _is_additive_bump(released: str, current: str) -> bool:
+    """A strictly newer version inside the released major."""
+    return (
+        SEMVER_RE.fullmatch(current) is not None
+        and _version_tuple(current)[0] == _version_tuple(released)[0]
+        and _version_tuple(current) > _version_tuple(released)
+    )
+
+
+def _grows_only(released: Any, current: Any, schema_map: bool = False) -> bool:
+    """True when ``current`` is ``released`` plus new properties/$defs members."""
+    if not (isinstance(released, dict) and isinstance(current, dict)):
+        return released == current
+    if not set(released) <= set(current) or (not schema_map and set(released) != set(current)):
+        return False
+    # Members of a properties/$defs map are field names, not keywords, so a
+    # field literally named "properties" is not itself a schema map.
+    return all(
+        _grows_only(released[key], current[key], not schema_map and key in ADDITIVE_SCHEMA_MAPS)
+        for key in released
+    )
+
+
+def _pop_version_patterns(schema: Any) -> dict[str, str]:
+    properties = schema.get("properties") if isinstance(schema, dict) else None
+    patterns: dict[str, str] = {}
+    for field in VERSION_PATTERN_FIELDS:
+        spec = properties.get(field) if isinstance(properties, dict) else None
+        if isinstance(spec, dict) and isinstance(spec.get("pattern"), str):
+            patterns[field] = spec.pop("pattern")
+    return patterns
+
+
+def _accepts(pattern: str, version: str) -> bool:
+    try:
+        return re.fullmatch(pattern, version) is not None
+    except re.error:
+        return False
+
+
+def _is_additive_schema(
+    path: str, released: bytes, current: bytes, released_version: str, version: str
+) -> bool:
+    """#110: ``current`` may only grow ``released`` and must admit ``version``.
+
+    A same-major reader keeps accepting every version its released pattern
+    did; the exact-policy execution contract admits only its own version.
+    """
+    try:
+        before = _load_json(released.decode("utf-8"))
+        after = _load_json(current.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError, DuplicateJsonKeyError) as exc:
+        raise SoakCheckError(f"frozen JSON path is invalid: {path}") from exc
+    old_patterns, new_patterns = _pop_version_patterns(before), _pop_version_patterns(after)
+    if set(old_patterns) != set(new_patterns):
+        return False
+    for field, pattern in new_patterns.items():
+        old = old_patterns[field]
+        if path in EXACT_SCHEMA_PATHS:
+            valid = pattern == rf"^{re.escape(version)}$"
+        else:
+            # Recognize the released grammar, then widen only its minor token.
+            major, minor, _ = _version_tuple(version)
+            old_major, old_minor, _ = _version_tuple(released_version)
+            old_token = str(old_minor) if old_minor == 0 else (
+                "[01]" if old_minor == 1 else "(?:" + "|".join(map(str, range(old_minor + 1))) + ")"
+            )
+            new_token = "[01]" if minor == 1 else "(?:" + "|".join(map(str, range(minor + 1))) + ")"
+            needle = rf"{old_major}\.{old_token}\."
+            widened = old.replace(needle, rf"{major}\.{new_token}\.")
+            valid = (pattern == old and _accepts(old, version)) or (
+                major == old_major and minor > old_minor
+                and needle in old and pattern == widened
+                and _accepts(pattern, version)
+            )
+        if not valid:
+            return False
+    return _grows_only(before, after)
+
+
 def _require_released_baseline(root: Path, transition: str) -> None:
     """Hold the working tree to the released 1.0 contract only (#64).
 
@@ -807,6 +896,10 @@ def _require_released_baseline(root: Path, transition: str) -> None:
     ``transition_commit``: the load-bearing schemas (compared as JSON), the
     schema-version constant values. Compatibility fixtures stay byte-exact,
     including additions pinned to their first committed version after release.
+
+    #110: docs/compatibility.md lets a minor version add optional fields, so a
+    constant may rise within its major when its schema only grows
+    (``_is_additive_schema``). Nothing else about the released contract moves.
     """
     paths = [*sorted(SCHEMA_FILE_CONSTANTS), RELEASED_FIXTURE_ROOT]
     released_tree, read_released = _commit_subject(root, transition, paths)
@@ -826,25 +919,57 @@ def _require_released_baseline(root: Path, transition: str) -> None:
         added = sorted(set(tree) - set(released_tree))
         released_blobs.update(_candidate_blobs(root, commit, added))
         released_tree.update((path, tree[path]) for path in added)
+    released_versions = _subject_schema_versions(
+        _commit_subject(root, transition, [CONTRACTS_PATH])
+    )
+    schema_paths = [*sorted(SCHEMA_FILE_CONSTANTS), CONTRACTS_PATH]
+    history = _git(
+        root, "log", "--format=%H", "--reverse", "--first-parent",
+        f"{transition}..HEAD", "--", *schema_paths,
+    ).stdout.split()
+    for commit in history:
+        versions = _subject_schema_versions(_commit_subject(root, commit, [CONTRACTS_PATH]))
+        tree, read = _commit_subject(root, commit, sorted(SCHEMA_FILE_CONSTANTS))
+        for path, name in SCHEMA_FILE_CONSTANTS.items():
+            if path not in tree:
+                raise SoakCheckError(f"released schema baseline changed after transition_commit: {path}")
+            previous, current = released_blobs[path], read(path, tree[path])
+            if versions[name] == released_versions[name]:
+                valid = _semantic_value(path, previous) == _semantic_value(path, current)
+            else:
+                valid = _is_additive_bump(released_versions[name], versions[name]) and _is_additive_schema(
+                    path, previous, current, released_versions[name], versions[name]
+                )
+            if not valid or tree[path] != released_tree[path]:
+                raise SoakCheckError(f"released schema baseline changed after transition_commit: {path}")
+            released_blobs[path] = current
+        released_versions = versions
+    current_versions = _current_schema_versions(root)
+    bumped = {
+        name
+        for name in SCHEMA_CONSTANTS
+        if _is_additive_bump(released_versions[name], current_versions[name])
+    }
     current_tree = _current_tree(root, paths)
     changed = sorted(set(released_tree) - set(current_tree))
     for path in sorted(set(released_tree) & set(current_tree)):
         released = released_blobs[path]
         current = _current_bytes(root, path, current_tree[path])
-        if path in SCHEMA_FILE_CONSTANTS:
+        name = SCHEMA_FILE_CONSTANTS.get(path)
+        if name in bumped:
+            same = _is_additive_schema(
+                path, released, current, released_versions[name], current_versions[name]
+            )
+        elif name is not None:
             same = _semantic_value(path, released) == _semantic_value(path, current)
         else:
             same = released == current
         if released_tree[path] != current_tree[path] or not same:
             changed.append(path)
-    released_versions = _subject_schema_versions(
-        _commit_subject(root, transition, [CONTRACTS_PATH])
-    )
-    current_versions = _current_schema_versions(root)
     changed.extend(
         name
         for name in sorted(SCHEMA_CONSTANTS)
-        if current_versions[name] != released_versions[name]
+        if current_versions[name] != released_versions[name] and name not in bumped
     )
     if changed:
         raise SoakCheckError(

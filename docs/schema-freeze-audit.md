@@ -267,10 +267,18 @@ contract, compared with `transition_commit` (#64):
   the same path fail; restoring the original content and mode passes.
 
 Source, tests, workflows and the guard itself then change under
-[`docs/stability.md`](stability.md) like any other code. A deliberate change
-to a load-bearing schema or its version constant fails the guard until the
-released baseline is moved forward on purpose, which needs its own reviewed
-change to this guard.
+[`docs/stability.md`](stability.md) like any other code.
+
+A load-bearing schema may still take the additive minor bump that
+[`docs/compatibility.md`](compatibility.md) allows (#110). Its constant must
+rise within the released major, and its published schema may only grow: new
+members under `properties` or `$defs`, and a `schema_version` (or
+`bundle_version`) pattern that accepts the new constant and every version the
+released pattern accepted (the exact-policy execution contract accepts only
+its own version). The guard compares the whole JSON otherwise, lists
+included, so a bump that requires, removes, retypes or tightens a field fails,
+as does a schema edit without a bump or a major bump. Moving the baseline in
+any other way still needs its own reviewed change to this guard.
 
 Anything else still fails, inside that window as much as outside it. Before the
 clock elapses the same edits are rejected, and the guard refuses any candidate

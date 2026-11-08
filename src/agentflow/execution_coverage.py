@@ -15,6 +15,7 @@ from .execution import (
     TERMINAL_EVENTS,
     attempt_is_expired,
     lease_grace_seconds,
+    latest_completed_attempt,
     lease_policy,
     read_step_events,
     read_step_state,
@@ -166,28 +167,20 @@ def _append_verification(
     append_jsonl(root / ".agent/verification-runs.jsonl", entry)
 
 
-def verify_step(
+def _check_gates(
     root: Path,
-    plan: Dict[str, Any],
-    step_id: str,
-    attempt_id: Optional[str],
-    strict: bool = False,
-    replay: bool = False,
-    record: bool = True,
-    include_gates: bool = False,
-) -> Dict[str, Any]:
-    step = _step_by_id(plan, step_id)
-    resolved_attempt = resolve_attempt(root, step_id, attempt_id)
-    result: Dict[str, Any] = {
-        "status": "passed",
-        "errors": [],
-        "warnings": [],
-    }
+    step: Dict[str, Any],
+    attempt_id: str,
+    effective_strict: bool,
+    policy: Dict[str, Any],
+    result: Dict[str, Any],
+) -> List[Dict[str, Any]]:
+    """Judge step's gates on attempt_id's receipts; findings go into result.
+
+    verify_step and the proof's validation gate coverage (#110) share this, so
+    the proof names exactly the receipt or evidence verify-step accepted.
+    """
     gate_results: List[Dict[str, Any]] = []
-    if include_gates:
-        result["gates"] = gate_results
-    policy = _proof_policy(root)
-    effective_strict = strict or bool(policy.get("strict_by_default"))
     require_command_receipts = effective_strict or bool(
         policy.get("require_command_receipts_for_validation")
     )
@@ -201,12 +194,7 @@ def verify_step(
     receipts = [
         receipt
         for receipt in command_receipts(root)
-        if receipt.get("step_id") == step_id and receipt.get("attempt_id") == resolved_attempt
-    ]
-    files = [
-        receipt
-        for receipt in file_receipts(root)
-        if receipt.get("step_id") == step_id and receipt.get("attempt_id") == resolved_attempt
+        if receipt.get("step_id") == step["id"] and receipt.get("attempt_id") == attempt_id
     ]
     receipt_by_gate = {
         receipt.get("gate"): receipt
@@ -280,6 +268,36 @@ def verify_step(
                     else "warning",
                     f"legacy inspection gate needs evidence or receipt: {gate['gate']}",
                 )
+    return gate_results
+
+
+def verify_step(
+    root: Path,
+    plan: Dict[str, Any],
+    step_id: str,
+    attempt_id: Optional[str],
+    strict: bool = False,
+    replay: bool = False,
+    record: bool = True,
+    include_gates: bool = False,
+) -> Dict[str, Any]:
+    step = _step_by_id(plan, step_id)
+    resolved_attempt = resolve_attempt(root, step_id, attempt_id)
+    result: Dict[str, Any] = {
+        "status": "passed",
+        "errors": [],
+        "warnings": [],
+    }
+    policy = _proof_policy(root)
+    effective_strict = strict or bool(policy.get("strict_by_default"))
+    gate_results = _check_gates(root, step, resolved_attempt, effective_strict, policy, result)
+    if include_gates:
+        result["gates"] = gate_results
+    files = [
+        receipt
+        for receipt in file_receipts(root)
+        if receipt.get("step_id") == step_id and receipt.get("attempt_id") == resolved_attempt
+    ]
     for receipt in files:
         path = receipt.get("path")
         if isinstance(path, str) and not path_in_effective_scope(plan, step_id, path):
@@ -298,6 +316,46 @@ def verify_step(
     if record:
         _append_verification(root, "step", step_id, resolved_attempt, effective_strict, replay, result)
     return result
+
+
+def validation_gate_coverage(root: Path, plan: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """#110: how each gate of each step's latest completed attempt was satisfied.
+
+    Judged by verify-step's rules under the execution contract's own policy,
+    never a --strict flag, so verify-proof can recompute it from the hashed
+    ledgers alone.
+    """
+    policy = _proof_policy(root)
+    effective_strict = bool(policy.get("strict_by_default"))
+    provenance = {receipt.get("id"): receipt.get("provenance") for receipt in command_receipts(root)}
+    evidence = _evidence_ids(root)
+    entries: List[Dict[str, Any]] = []
+    for step in plan.get("steps", []):
+        if not isinstance(step, dict) or not isinstance(step.get("id"), str):
+            continue
+        completed = latest_completed_attempt(root, step["id"])
+        if completed is None:
+            continue
+        attempt_id = completed[0]
+        findings: Dict[str, Any] = {"errors": [], "warnings": []}
+        for gate in _check_gates(root, step, attempt_id, effective_strict, policy, findings):
+            evidence_id = gate["evidence_id"]
+            if gate["kind"] == "legacy" and gate["receipt_id"] is None and gate["status"] == "satisfied":
+                # verify-step accepts any of the step's evidence ids; name the first present.
+                evidence_id = next(item for item in step.get("evidence_ids", []) if item in evidence)
+            entries.append(
+                {
+                    "step_id": step["id"],
+                    "attempt_id": attempt_id,
+                    "gate": gate["label"],
+                    "kind": gate["kind"],
+                    "status": gate["status"],
+                    "receipt_id": gate["receipt_id"],
+                    "provenance": provenance.get(gate["receipt_id"]) if gate["receipt_id"] else None,
+                    "evidence_id": evidence_id,
+                }
+            )
+    return entries
 
 
 def build_execution_coverage(

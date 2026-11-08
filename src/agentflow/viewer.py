@@ -17,6 +17,7 @@ from typing import Any, Dict, List, Optional
 from .artifacts import read_jsonl, try_read_json
 from .contracts import EXECUTION_ARTIFACT_PATHS
 from .execution import read_step_state
+from .proof import validation_gate_summary
 
 
 def _try_read_jsonl(path: Path, warnings: List[str]) -> List[Dict[str, Any]]:
@@ -192,6 +193,27 @@ def _step_status_body(plan: Optional[Dict[str, Any]], step_state: Optional[Dict[
     return _table(["Step", "Action", "Status", "Attempts"], rows)
 
 
+def _gate_coverage_body(proof: Dict[str, Any]) -> str:
+    """#110: how each gate was satisfied, ahead of the declared gate list."""
+    summary = validation_gate_summary(proof)
+    if summary is None:
+        return ""
+    rows = [
+        [
+            entry.get("step_id", ""),
+            entry.get("gate", ""),
+            entry.get("kind", ""),
+            entry.get("status", ""),
+            entry.get("receipt_id") or entry.get("evidence_id") or "",
+            entry.get("provenance") or "",
+        ]
+        for entry in proof["coverage"]["validation_gates"]
+        if isinstance(entry, dict)
+    ]
+    headers = ["Step", "Gate", "Kind", "Status", "Receipt or evidence", "Provenance"]
+    return f"<p>{_esc(summary)}</p>" + _table(headers, rows)
+
+
 def _output_link(receipt: Dict[str, Any], stream: str) -> Any:
     href = receipt.get(f"{stream}_href")
     if href:
@@ -363,7 +385,10 @@ def render_html(model: Dict[str, Any]) -> str:
         _section("Objective", f"<p>{_esc(objective)}</p>"),
         _section("Scope", _items(_list((plan or {}).get("scope")), "No scope recorded.")),
         _section("Step Status", _step_status_body(plan, model.get("step_state"))),
-        _section("Validation Gates", _items(gates, "No validation gates recorded.")),
+        _section(
+            "Validation Gates",
+            _gate_coverage_body(proof) + _items(gates, "No validation gates recorded."),
+        ),
         _section("Command Receipts", _command_receipts_body(model.get("command_receipts", []))),
         _section("File Receipts", _file_receipts_body(model.get("file_receipts", []))),
         _section("Drift Audit", _drift_body(model.get("drift"))),

@@ -7,6 +7,52 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+The proof now shows, gate by gate, how each validation gate was satisfied, and
+the docs define what each command-receipt provenance value means (#110). The
+proof-pack schema moves to 1.1.0, the first additive minor bump of a
+load-bearing schema since 1.0.
+
+**Upgrade note: Agentflow 1.3 and older reject a 1.1.0 proof** with "newer
+schema than supported ... upgrade Agentflow", and their `build-proof` refuses to
+replace one. Build and verify proofs with the same release. Proofs built by
+earlier releases verify unchanged. CLI flags, exit codes, JSON output and
+`docs/cli-contract.json` are unchanged.
+
+### Added
+
+- `build-proof` writes `coverage.validation_gates` when an execution contract
+  exists: one entry per gate of each step's latest completed attempt, with
+  `step_id`, `attempt_id`, `gate`, `kind` (`command`, `inspection` or
+  `legacy`), `status` (`satisfied`, `missing` or `failed`), the `receipt_id`
+  and its `provenance`, or the `evidence_id` that met the gate. It uses
+  `verify-step`'s own rules under the execution contract's policy. The field
+  is inside the hashed proof core, and `verify-proof` recomputes it from the
+  hashed ledgers, so an edited or removed entry fails with "proof validation
+  gate coverage is stale or tampered". (#110)
+- After a proof verifies, `verify-proof` prints one human line before
+  `proof verified`, for example `validation gates: 1 run by agentflow, 1
+  self-reported, 2 inspection evidence`. `view-proof --html` shows the same line
+  above a per-gate table. `finish-run` output is unchanged. (#110)
+- `docs/agent-workflow.md` documents the four provenance values. `observed`
+  (written by `run`), `attested` (self-reported, written by `record-command`),
+  `reconstructed` (written by `replay-gates --record`), and `managed`, which
+  is reserved for an outside runner such as CI and never written by Agentflow
+  1.x. The table says which ones strict mode accepts. It also documents that
+  provenance is not a signature. (#110)
+- A `current-1.1` compatibility fixture covers every way a gate can be
+  satisfied. (#110)
+
+### Changed
+
+- `PROOF_PACK_SCHEMA_VERSION` is 1.1.0, and `schemas/proof-pack.schema.json`
+  accepts `1.1.x` and documents `coverage.validation_gates`. (#110)
+- The CI schema guard (`scripts/check_schema_soak.py`) accepts an additive
+  minor bump of a load-bearing schema after 1.0. The schema-version constant
+  must rise within its major, and the published schema may only gain members
+  under `properties` or `$defs`. Its version pattern must still accept every
+  version it accepted before. Any other change to a released schema still
+  fails CI. (#110)
+
 ## [1.3.0] - 2026-11-04
 
 Agentflow 1.3.0 stops an edit from a stopped attempt from passing unverified. A

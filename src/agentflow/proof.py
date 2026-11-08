@@ -40,7 +40,11 @@ from .execution import (
     read_step_state,
     validate_execution_contract,
 )
-from .execution_coverage import build_execution_coverage, incomplete_execution_errors
+from .execution_coverage import (
+    build_execution_coverage,
+    incomplete_execution_errors,
+    validation_gate_coverage,
+)
 from .receipts import command_receipts, file_receipts, replay_gates, verify_receipt_outputs
 from .review import (
     build_time_review_policy,
@@ -558,6 +562,97 @@ def _verify_design_decision_coverage(
     return []
 
 
+# #110: the proof-pack schema that introduced coverage.validation_gates. An
+# older proof never had the field, so its absence there is not tampering.
+VALIDATION_GATES_SINCE = "1.1.0"
+
+
+def _verify_validation_gate_coverage(
+    root: Path, proof: Dict[str, Any]
+) -> List[Dict[str, Any]]:
+    coverage = proof.get("coverage")
+    recorded = coverage.get("validation_gates") if isinstance(coverage, dict) else None
+    if recorded is None and _recorded_schema_is_older(
+        proof.get("schema_version"), VALIDATION_GATES_SINCE
+    ):
+        return []
+    if recorded is None and not (root / EXECUTION_ARTIFACT_PATHS["execution-contract"]).exists():
+        return []
+    # Older 1.1 bundles used the default plan; custom builds bind their source.
+    source = coverage.get("validation_gate_plan", ".agent/plan.lock.json")
+    if not isinstance(source, str) or source not in proof.get("generated_from", []):
+        return [{"severity": "error", "message": "validation gate plan is not a hashed source"}]
+    plan_path = root / source
+    if not plan_path.resolve().is_relative_to(root.resolve()):
+        return [{"severity": "error", "message": "validation gate plan escapes root"}]
+    if not plan_path.exists():
+        return [{"severity": "error", "message": "validation gate plan is missing"}]
+    if not (root / EXECUTION_ARTIFACT_PATHS["execution-contract"]).exists():
+        expected = None
+    else:
+        try:
+            expected = validation_gate_coverage(root, read_json(plan_path))
+        except (OSError, ValueError, json.JSONDecodeError) as exc:
+            return [
+                {
+                    "severity": "error",
+                    "message": f"validation gate coverage could not be recomputed: {exc}",
+                }
+            ]
+    if recorded != expected:
+        return [
+            {
+                "severity": "error",
+                "message": "proof validation gate coverage is stale or tampered"
+                + _coverage_growth_hint(proof),
+            }
+        ]
+    return []
+
+
+_GATE_SOURCES = {
+    "observed": "run by agentflow",
+    "reconstructed": "replayed by agentflow",
+    "managed": "managed (not written by agentflow)",
+    "attested": "self-reported",
+}
+_GATE_SOURCE_ORDER = (*_GATE_SOURCES.values(), "inspection evidence", "missing")
+
+
+def _gate_source(entry: Dict[str, Any]) -> str:
+    if entry.get("status") == "missing":
+        return "missing"
+    if entry.get("receipt_id"):
+        # view-proof renders unverified proofs, so the value may be anything.
+        provenance = entry.get("provenance")
+        if isinstance(provenance, str) and provenance in _GATE_SOURCES:
+            return _GATE_SOURCES[provenance]
+        return f"{provenance} provenance"
+    return "inspection evidence" if entry.get("evidence_id") else "missing"
+
+
+def validation_gate_summary(proof: Dict[str, Any]) -> Optional[str]:
+    """#110: one line saying how the proof's validation gates were satisfied.
+
+    ``None`` when the proof has no per-gate coverage (an older schema or the
+    evidence-only flow).
+    """
+    coverage = proof.get("coverage")
+    entries = coverage.get("validation_gates") if isinstance(coverage, dict) else None
+    if not isinstance(entries, list):
+        return None
+    entries = [entry for entry in entries if isinstance(entry, dict)]
+    counts: Dict[str, int] = {}
+    for entry in entries:
+        source = _gate_source(entry)
+        counts[source] = counts.get(source, 0) + 1
+    ordered = [*_GATE_SOURCE_ORDER, *sorted(set(counts) - set(_GATE_SOURCE_ORDER))]
+    parts = [f"{counts[source]} {source}" for source in ordered if source in counts]
+    line = "validation gates: " + (", ".join(parts) or "none")
+    failed = sum(1 for entry in entries if entry.get("status") == "failed")
+    return f"{line}; {failed} failed" if failed else line
+
+
 class InvalidWorkingState(ValueError):
     """A load-bearing input failed its full runtime contract.
 
@@ -745,6 +840,10 @@ def build_proof(root: Path, plan_path: Path, strict: bool = False) -> Dict[str, 
         execution_coverage = build_execution_coverage(root, plan)
         for key in ("expired_leases", "no_deadline_open_attempts", "abandoned_attempts"):
             coverage[key] = execution_coverage.get(key, [])
+        # #110: hash-bound like the lease keys; verify-proof recomputes it.
+        coverage["validation_gates"] = validation_gate_coverage(root, plan)
+        if plan_source != ".agent/plan.lock.json":
+            coverage["validation_gate_plan"] = plan_source
     budget = plan.get("context_budget", {})
     receipts_required = bool(budget.get("receipts_required")) if isinstance(budget, dict) else False
     checks = check_from_coverage(coverage, receipts_required)
@@ -1185,6 +1284,7 @@ def _verify_proof(
         findings.append({"severity": "error", "message": message})
     findings.extend(_verify_requirement_coverage(root, proof))
     findings.extend(_verify_design_decision_coverage(root, proof))
+    findings.extend(_verify_validation_gate_coverage(root, proof))
     findings.extend(verify_proof_checks(proof, effective_proof_strict))
     findings.extend(verify_receipt_outputs(root))
     findings.extend(verify_review_integrity(root, strict, recorded_review_policy))
