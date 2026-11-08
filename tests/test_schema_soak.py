@@ -1234,13 +1234,93 @@ class OneZeroTransitionTests(SoakHarness, unittest.TestCase):
 
         self._assert_baseline_rejects("schemas/step-runs.schema.json")
 
-    def test_rejects_a_schema_version_change_after_the_transition(self) -> None:
+    # -- additive minor bumps after the release (#110) ---------------------
+
+    PROOF_SCHEMA = "schemas/proof-pack.schema.json"
+    ONE_ONE_PROOF_PATTERN = (
+        r"^(?:0\.(?:[4-9]|[1-9][0-9]+)\.(?:0|[1-9][0-9]*)"
+        r"|1\.[01]\.(?:0|[1-9][0-9]*))$"
+    )
+
+    def _bump_proof(self, version: str = "1.1.0", edit=None) -> None:
+        """Move PROOF_PACK to ``version`` and grow its schema by one field."""
+        released = {name: "1.0.0" for name in SCHEMA_VERSIONS}
+        released["PROOF_PACK_SCHEMA_VERSION"] = version
+        self._bump(**released)
+        path = self.root / self.PROOF_SCHEMA
+        schema = json.loads(path.read_text(encoding="utf-8"))
+        schema["properties"]["schema_version"]["pattern"] = self.ONE_ONE_PROOF_PATTERN
+        schema["properties"]["validation_gates"] = {"type": "array"}
+        if edit is not None:
+            edit(schema)
+        path.write_text(json.dumps(schema, indent=2) + "\n", encoding="utf-8")
+
+    def test_additive_minor_bump_passes_after_the_transition(self) -> None:
+        self._released()
+        self._bump_proof()
+
+        self._assert_released_ok()
+
+    def test_rejects_a_version_bump_its_schema_pattern_rejects(self) -> None:
         self._released()
         released = {name: "1.0.0" for name in SCHEMA_VERSIONS}
         released["PROOF_PACK_SCHEMA_VERSION"] = "1.1.0"
         self._bump(**released)
 
+        self._assert_baseline_rejects(self.PROOF_SCHEMA)
+
+    def test_rejects_a_major_bump_after_the_transition(self) -> None:
+        self._released()
+        self._bump_proof(
+            "2.0.0",
+            edit=lambda schema: schema["properties"]["schema_version"].update(
+                pattern=r"^(?:1|2)\.[0-9]+\.[0-9]+$"
+            ),
+        )
+
         self._assert_baseline_rejects("PROOF_PACK_SCHEMA_VERSION")
+
+    def test_rejects_a_schema_change_without_a_version_bump(self) -> None:
+        self._released()
+        self._bump_proof("1.0.0")
+
+        self._assert_baseline_rejects(self.PROOF_SCHEMA)
+
+    def test_minor_bump_rejects_a_pattern_that_drops_the_released_version(self) -> None:
+        self._released()
+        self._bump_proof(
+            edit=lambda schema: schema["properties"]["schema_version"].update(
+                pattern=r"^1\.1\.(?:0|[1-9][0-9]*)$"
+            ),
+        )
+
+        self._assert_baseline_rejects(self.PROOF_SCHEMA)
+
+    def test_minor_bump_rejects_a_new_required_field(self) -> None:
+        self._released()
+        self._bump_proof(edit=lambda schema: schema.update(required=["validation_gates"]))
+
+        self._assert_baseline_rejects(self.PROOF_SCHEMA)
+
+    def test_minor_bump_rejects_a_removed_field(self) -> None:
+        self._released()
+        self._bump_proof(edit=lambda schema: schema.pop("title"))
+
+        self._assert_baseline_rejects(self.PROOF_SCHEMA)
+
+    def test_minor_bump_rejects_a_tightened_existing_field(self) -> None:
+        self._released()
+        self._bump_proof(
+            edit=lambda schema: schema["properties"]["schema_version"].update(maxLength=5)
+        )
+
+        self._assert_baseline_rejects(self.PROOF_SCHEMA)
+
+    def test_minor_bump_rejects_a_new_keyword_outside_properties(self) -> None:
+        self._released()
+        self._bump_proof(edit=lambda schema: schema.update(additionalProperties=False))
+
+        self._assert_baseline_rejects(self.PROOF_SCHEMA)
 
     def test_rejects_a_modified_compatibility_fixture_after_the_transition(self) -> None:
         self._released()

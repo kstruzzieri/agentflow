@@ -654,7 +654,7 @@ class ReviewSchemaTests(unittest.TestCase):
         # #124: proof coverage grows requirements/criterion_status_counts and
         # review-runs rows grow plan_sha256, so both artifacts bump per the
         # #82 growth convention.
-        self.assertEqual(PROOF_PACK_SCHEMA_VERSION, "1.0.0")
+        self.assertEqual(PROOF_PACK_SCHEMA_VERSION, "1.1.0")
         self.assertEqual(REVIEW_RUNS_SCHEMA_VERSION, "0.6.0")
 
     def test_bumped_versions_still_match_schema_patterns(self) -> None:
@@ -685,7 +685,7 @@ class ReviewSchemaTests(unittest.TestCase):
 
         self.assertEqual(REVIEW_MANIFEST_SCHEMA_VERSION, "1.0.0")
         self.assertEqual(REVIEW_RUNS_SCHEMA_VERSION, "0.6.0")
-        self.assertEqual(PROOF_PACK_SCHEMA_VERSION, "1.0.0")
+        self.assertEqual(PROOF_PACK_SCHEMA_VERSION, "1.1.0")
         manifest = load_schema("review-manifest.schema.json")
         ledger = load_schema("review-runs.schema.json")
         proof = load_schema("proof-pack.schema.json")
@@ -766,7 +766,7 @@ class ReviewSchemaTests(unittest.TestCase):
 
 class LeaseSchemaContractTests(unittest.TestCase):
     def test_lease_schema_versions_bumped(self) -> None:
-        self.assertEqual(PROOF_PACK_SCHEMA_VERSION, "1.0.0")
+        self.assertEqual(PROOF_PACK_SCHEMA_VERSION, "1.1.0")
         self.assertEqual(DRIFT_REPORT_SCHEMA_VERSION, "1.0.0")
         self.assertEqual(STEP_RUNS_SCHEMA_VERSION, "1.0.0")
 
@@ -790,6 +790,37 @@ class LeaseSchemaContractTests(unittest.TestCase):
         self.assertEqual(
             sorted(item["required"]),
             ["attempt_id", "expired_at", "note", "owner", "step_id"],
+        )
+
+
+class ValidationGateSchemaContractTests(unittest.TestCase):
+    def test_proof_schema_bumped_for_validation_gate_coverage(self) -> None:
+        # #110: coverage.validation_gates is an optional field inside
+        # canonical_core, an additive-only minor bump (docs/compatibility.md).
+        self.assertEqual(PROOF_PACK_SCHEMA_VERSION, "1.1.0")
+
+    def test_proof_schema_documents_validation_gate_entries(self) -> None:
+        schema = load_schema("proof-pack.schema.json")
+        coverage = schema["properties"]["coverage"]["properties"]
+        self.assertEqual(
+            coverage["validation_gates"],
+            {"type": "array", "items": {"$ref": "#/$defs/validationGateCoverage"}},
+        )
+        entry = schema["$defs"]["validationGateCoverage"]
+        fields = [
+            "attempt_id", "evidence_id", "gate", "kind",
+            "provenance", "receipt_id", "status", "step_id",
+        ]
+        self.assertEqual(sorted(entry["required"]), fields)
+        self.assertEqual(sorted(entry["properties"]), fields)
+        self.assertEqual(
+            entry["properties"]["kind"]["enum"], [*GATE_KINDS, "legacy"]
+        )
+        self.assertEqual(
+            entry["properties"]["provenance"]["enum"], [*PROVENANCE_VALUES, None]
+        )
+        self.assertEqual(
+            entry["properties"]["status"]["enum"], ["failed", "missing", "satisfied"]
         )
 
 

@@ -5,8 +5,8 @@
   "type": "object",
   "required": ["schema_version", "bundle_version", "meta", "generated_from", "files", "checks", "coverage", "core_sha256"],
   "properties": {
-    "schema_version": { "type": "string", "pattern": "^(?:0\\.(?:[4-9]|[1-9][0-9]+)\\.(?:0|[1-9][0-9]*)|1\\.0\\.(?:0|[1-9][0-9]*))$" },
-    "bundle_version": { "type": "string", "pattern": "^(?:0\\.(?:[4-9]|[1-9][0-9]+)\\.(?:0|[1-9][0-9]*)|1\\.0\\.(?:0|[1-9][0-9]*))$" },
+    "schema_version": { "type": "string", "pattern": "^(?:0\\.(?:[4-9]|[1-9][0-9]+)\\.(?:0|[1-9][0-9]*)|1\\.[01]\\.(?:0|[1-9][0-9]*))$" },
+    "bundle_version": { "type": "string", "pattern": "^(?:0\\.(?:[4-9]|[1-9][0-9]+)\\.(?:0|[1-9][0-9]*)|1\\.[01]\\.(?:0|[1-9][0-9]*))$" },
     "bundle_type": { "type": "string" },
     "meta": {
       "type": "object",
@@ -50,6 +50,10 @@
         "design_decisions": {
           "type": "array",
           "items": { "$ref": "#/$defs/designDecisionCoverage" }
+        },
+        "validation_gates": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/validationGateCoverage" }
         }
       },
       "additionalProperties": true
@@ -159,6 +163,21 @@
           "type": "array",
           "items": { "$ref": "#/$defs/criterionCoverage" }
         }
+      },
+      "additionalProperties": true
+    },
+    "validationGateCoverage": {
+      "type": "object",
+      "required": ["step_id", "attempt_id", "gate", "kind", "status", "receipt_id", "provenance", "evidence_id"],
+      "properties": {
+        "step_id": { "type": "string" },
+        "attempt_id": { "type": "string" },
+        "gate": { "type": "string" },
+        "kind": { "enum": ["command", "inspection", "legacy"] },
+        "status": { "enum": ["failed", "missing", "satisfied"] },
+        "receipt_id": { "type": ["string", "null"] },
+        "provenance": { "enum": ["attested", "managed", "observed", "reconstructed", null] },
+        "evidence_id": { "type": ["string", "null"] }
       },
       "additionalProperties": true
     },
