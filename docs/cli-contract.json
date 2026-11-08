@@ -2408,6 +2408,17 @@
         "nargs": 0,
         "required": false,
         "takes_value": false
+      },
+      {
+        "choices": null,
+        "default": null,
+        "multiple": true,
+        "names": [
+          "--require"
+        ],
+        "nargs": null,
+        "required": false,
+        "takes_value": true
       }
     ],
     "verify-run": [

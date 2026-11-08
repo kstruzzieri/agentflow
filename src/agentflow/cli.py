@@ -7,7 +7,7 @@ import json
 import os
 import sys
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 from . import __version__
 from .aggregate import analyze, parse_sources, write_canonical
@@ -66,8 +66,10 @@ from .draft_plan import (
     selection_reason,
 )
 from .proof import (
+    POLICY_FLOOR_KEYS,
     InvalidWorkingState,
     build_proof,
+    policy_value_text,
     proof_build_lock_path,
     publish_proof,
     render_markdown,
@@ -118,6 +120,20 @@ def _positive_int(value: str) -> int:
     if parsed < 1:
         raise argparse.ArgumentTypeError("must be a positive integer")
     return parsed
+
+
+def _policy_requirement(value: str) -> Tuple[str, Any]:
+    """#111: parse ``KEY=MIN`` for ``verify-proof --require``."""
+    key, _, minimum = value.partition("=")
+    if key not in POLICY_FLOOR_KEYS:
+        raise argparse.ArgumentTypeError(
+            f"{value!r} must be KEY=MIN with KEY one of: " + ", ".join(POLICY_FLOOR_KEYS)
+        )
+    order = POLICY_FLOOR_KEYS[key][1]
+    spelled = [policy_value_text(option) for option in order]
+    if minimum not in spelled:
+        raise argparse.ArgumentTypeError(f"{key} minimum must be one of: " + ", ".join(spelled))
+    return key, order[spelled.index(minimum)]
 
 
 def command_init(args: argparse.Namespace) -> int:
@@ -1243,7 +1259,9 @@ def command_verify_proof(args: argparse.Namespace) -> int:
     if not proof_path.exists():
         print(f"proof metadata missing: {proof_path.relative_to(root)}")
         return 1
-    findings = verify_proof(root, proof_path, replay=args.replay, strict=strict_mode(args.strict))
+    findings = verify_proof(
+        root, proof_path, replay=args.replay, strict=strict_mode(args.strict), floor=args.require
+    )
     for finding in findings:
         print(_terminal_safe(f"{finding['severity']}: {finding['message']}"))
     if any(finding.get("severity") == "error" for finding in findings):
@@ -2139,6 +2157,13 @@ def build_parser() -> argparse.ArgumentParser:
     verify.add_argument("--proof", default=".agent/proof-pack.json")
     verify.add_argument("--replay", action="store_true")
     verify.add_argument("--strict", action="store_true")
+    verify.add_argument(
+        "--require",
+        action="append",
+        type=_policy_requirement,
+        metavar="KEY=MIN",
+        help="fail unless the proof's execution contract sets KEY at least to MIN (repeatable)",
+    )
     verify.set_defaults(func=command_verify_proof)
 
     view = subparsers.add_parser(

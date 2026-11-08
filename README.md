@@ -409,6 +409,24 @@ PYTHONPATH=src python3 -m agentflow verify-proof --root "$PROOF_ROOT"
 execution ledger without appending a new entry to `.agent/verification-runs.jsonl`,
 so `verify-proof` can still validate the committed proof hashes afterward.
 
+How strict a run is comes from `.agent/execution.contract.json`, which the agent
+doing the work can edit. On its own, `verify-proof` accepts a proof built under
+`hunk_attribution: off` or `review_gate: ignore`. To let CI set the minimum
+instead, pass `--require KEY=MIN`, once per key:
+
+```bash
+PYTHONPATH=src python3 -m agentflow verify-proof --root "$PROOF_ROOT" \
+  --require hunk_attribution=enforce --require review_gate=block
+```
+
+A setting below its floor fails with `policy_below_floor`, and so does a proof
+with no execution contract. Keep the floor in CI configuration the agent cannot
+change. `agentflow verify-proof --help` and the CHANGELOG list the keys. The
+floor reads the contract as `build-proof` hashed it; for `risk_policy`,
+`lease_policy` and `hunk_attribution`, which act while the work runs, that is
+not proof the work ran under it (see
+[docs/security-model.md](docs/security-model.md)).
+
 The workflow uses `AGENTFLOW_PROOF_ROOT` to select the committed proof bundle.
 This repository points it at `tests/fixtures/proof-bundle` so CI can regression
 test the verifier itself without committing task-local root `.agent/` artifacts.

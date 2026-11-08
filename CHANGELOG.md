@@ -15,10 +15,39 @@ load-bearing schema since 1.0.
 **Upgrade note: Agentflow 1.3 and older reject a 1.1.0 proof** with "newer
 schema than supported ... upgrade Agentflow", and their `build-proof` refuses to
 replace one. Build and verify proofs with the same release. Proofs built by
-earlier releases verify unchanged. CLI flags, exit codes, JSON output and
-`docs/cli-contract.json` are unchanged.
+earlier releases verify unchanged. #110 leaves CLI flags, exit codes, JSON
+output and `docs/cli-contract.json` unchanged.
+
+`verify-proof` can now hold a proof to a minimum policy that the verifier
+chooses, instead of accepting whatever the agent's own execution contract says
+(#111). Without the new flag, every proof verifies exactly as before.
 
 ### Added
+
+- `verify-proof --require KEY=MIN`, repeatable, fails a proof whose execution
+  contract sets `KEY` below `MIN`. Keys and their order, weakest first:
+  `hunk_attribution` (`off`, `observe`, `enforce`), `review_gate` (`ignore`,
+  `warn`, `block`), `risk_policy` (`warn`, `require-confirmation`, `block`),
+  `lease_policy` (`advisory`, `enforce`), and the `proof_policy` booleans
+  `strict_by_default`, `require_command_receipts_for_validation`,
+  `require_file_receipts_for_changed_files`,
+  `require_managed_receipts_for_validation`,
+  `require_evidence_for_inspection_gates` and `require_review_run` (`false`,
+  `true`). A missing optional key counts as the value Agentflow enforces
+  without it. A miss is reported as `policy_below_floor: ...` and exits 1; a
+  malformed `--require` exits 2. The check reads the contract only after its
+  hash and the proof core verify, so a contract edited after `build-proof`
+  fails as tampering, not as below the floor. A proof with no execution
+  contract fails any floor. The floor compares each setting as written:
+  `strict_by_default` and a workflow `review_depth` do not count toward
+  another key's floor. The floor is never written into the proof, and the
+  proof-pack schema is unchanged. Known limit: the floor reads the contract
+  `build-proof` hashed, and nothing records which contract the work ran under,
+  so `risk_policy`, `lease_policy` and `hunk_attribution` raised after the work
+  still pass. (#111)
+- The MCP `verify_proof` tool takes an optional `require` array of `KEY=MIN`
+  strings and passes each one as `--require`. `docs/cli-contract.json` lists
+  the new flag. (#111)
 
 - `build-proof` writes `coverage.validation_gates` when an execution contract
   exists: one entry per gate of each step's latest completed attempt, with
