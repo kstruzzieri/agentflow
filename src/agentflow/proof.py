@@ -1303,7 +1303,10 @@ def _verify_proof(
                 "message": "proof generated_from/files path mismatch: " + "; ".join(details),
             }
         )
-    hash_verified = set()
+    # #111: the floor judges these exact bytes, never a later re-read, so a
+    # contract swapped after hashing on a still-writable root cannot pass it.
+    contract_source = EXECUTION_ARTIFACT_PATHS["execution-contract"]
+    verified_contract: Optional[bytes] = None
     for item in proof.get("files", []):
         if not isinstance(item, dict):
             findings.append({"severity": "error", "message": "proof file entry is malformed"})
@@ -1323,11 +1326,16 @@ def _verify_proof(
         if not path.exists():
             findings.append({"severity": "error", "message": f"missing source {relative_path}"})
             continue
-        actual_hash = sha256_file(resolved_path)
+        contract_bytes = resolved_path.read_bytes() if relative_path == contract_source else None
+        actual_hash = (
+            hashlib.sha256(contract_bytes).hexdigest()
+            if contract_bytes is not None
+            else sha256_file(resolved_path)
+        )
         if actual_hash != expected_hash:
             findings.append({"severity": "error", "message": f"hash mismatch for {relative_path}"})
-        else:
-            hash_verified.add(relative_path)
+        elif contract_bytes is not None:
+            verified_contract = contract_bytes
     # ratchet-v1: honor the build-time policy floor baked into the proof (tamper-evident via core_sha256)
     recorded_review_policy = None
     review_block = proof.get("review")
@@ -1359,11 +1367,13 @@ def _verify_proof(
     # #111: judge the floor only on a contract the bundle vouches for. A
     # contract that fails its hash, or a bundle whose core fails, is already an
     # integrity error and must not read as a weak policy.
-    contract_source = EXECUTION_ARTIFACT_PATHS["execution-contract"]
     if floor and core_intact and contract_source not in file_paths:
         findings.extend(policy_floor_findings(None, floor))
-    elif floor and core_intact and contract_source in hash_verified:
-        contract, _ = try_read_json(root / contract_source)
+    elif floor and core_intact and verified_contract is not None:
+        try:
+            contract = json.loads(verified_contract.decode("utf-8"))
+        except ValueError:  # includes UnicodeDecodeError and JSONDecodeError
+            contract = None
         findings.extend(policy_floor_findings(contract, floor))
     findings.extend(_verify_requirement_coverage(root, proof))
     findings.extend(_verify_design_decision_coverage(root, proof))

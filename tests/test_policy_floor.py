@@ -11,7 +11,9 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
+from agentflow import proof as proof_module
 from agentflow.contracts import PLAN_SCHEMA_VERSION
 from agentflow.proof import core_sha256
 
@@ -249,6 +251,29 @@ class PolicyFloorTests(unittest.TestCase):
         self.assertEqual(result.returncode, 1)
         self.assertIn("proof canonical core checksum mismatch", result.stdout)
         self.assertNotIn("policy_below_floor", result.stdout)
+
+    def test_floor_judges_the_bytes_that_were_hashed(self) -> None:
+        # A producer that can still write the root swaps in a strong contract
+        # after verify-proof hashed the weak one. The floor must not see it.
+        root = self.copy()
+        real_core = proof_module.core_sha256
+
+        def swap_then_hash(proof: dict) -> str:
+            _edit_contract(
+                root, lambda c: c["proof_policy"].__setitem__("hunk_attribution", "enforce")
+            )
+            return real_core(proof)
+
+        with mock.patch.object(proof_module, "core_sha256", side_effect=swap_then_hash):
+            findings = proof_module.verify_proof(
+                root, root / ".agent/proof-pack.json", floor=[("hunk_attribution", "enforce")]
+            )
+
+        self.assertIn(
+            "policy_below_floor: hunk_attribution is off; "
+            "the floor requires hunk_attribution=enforce",
+            [finding["message"] for finding in findings],
+        )
 
     def test_section_that_is_not_an_object_fails_closed(self) -> None:
         root = self.copy()
