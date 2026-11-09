@@ -44,7 +44,10 @@ chooses, instead of accepting whatever the agent's own execution contract says
   proof-pack schema is unchanged. Known limit: the floor reads the contract
   `build-proof` hashed, and nothing records which contract the work ran under,
   so `risk_policy`, `lease_policy` and `hunk_attribution` raised after the work
-  still pass. (#111)
+  still pass. Receipt requirements can also be tightened after a step completes
+  without failing the matching floor: an attested receipt can produce a failed
+  gate under `require_managed_receipts_for_validation=true` while the proof
+  still verifies. See `docs/security-model.md` for this limitation. (#111)
 - The MCP `verify_proof` tool takes an optional `require` array of `KEY=MIN`
   strings and passes each one as `--require`. `docs/cli-contract.json` lists
   the new flag. (#111)
