@@ -82,7 +82,7 @@ The supported tool names and arguments are:
 | `verify_run` | optional `strict`, `record`, `root` |
 | `audit_drift` | optional `plan`, `root` |
 | `build_proof` | optional `strict`, `root` |
-| `verify_proof` | optional `replay`, `strict`, `root` |
+| `verify_proof` | optional `replay`, `strict`, `require`, `root` |
 | `record_review` | `manifest`; optional `emit_evidence`, `root` |
 | `next_action` | optional `strict`, `root` |
 | `finish_step` | `step`; optional `attempt`, `agent`, `strict`, `replay`, `root` |

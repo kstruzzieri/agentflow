@@ -174,6 +174,23 @@ class RegistryTests(unittest.TestCase):
         schema = m.TOOLS_BY_NAME["verify_proof"].input_schema
         self.assertIn("strict", schema["properties"])
 
+    def test_verify_proof_argv_forwards_each_policy_requirement(self) -> None:
+        tool = m.TOOLS_BY_NAME["verify_proof"]
+        argv = tool.argv({"root": ".", "require": ["hunk_attribution=enforce", "review_gate=block"]})
+        self.assertEqual(
+            argv,
+            [
+                "verify-proof", "--root", ".",
+                "--require", "hunk_attribution=enforce",
+                "--require", "review_gate=block",
+            ],
+        )
+        parsed = m.cli.build_parser().parse_args(argv)
+        self.assertEqual(parsed.require, [("hunk_attribution", "enforce"), ("review_gate", "block")])
+        self.assertEqual(
+            tool.input_schema["properties"]["require"]["items"], {"type": "string"}
+        )
+
     def test_arbitrary_command_tools_not_exposed(self) -> None:
         names = {tool["name"] for tool in call("tools/list")["result"]["tools"]}
         self.assertNotIn("run", names)

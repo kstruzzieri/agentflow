@@ -236,6 +236,8 @@ def _argv_verify_proof(a: Dict[str, Any]) -> List[str]:
         argv += ["--replay"]
     if a.get("strict"):
         argv += ["--strict"]
+    for requirement in a.get("require") or []:
+        argv += ["--require", str(requirement)]
     return argv
 
 
@@ -438,6 +440,14 @@ TOOLS: List[Tool] = [
             {
                 "replay": {"type": "boolean", "description": "Replay attested command gates."},
                 "strict": {"type": "boolean", "description": "Treat warnings as failures."},
+                "require": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": (
+                        "Minimum execution-contract policies as KEY=MIN, for example "
+                        "'hunk_attribution=enforce'; the proof fails below any of them."
+                    ),
+                },
                 **_ROOT_PROP,
             }
         ),

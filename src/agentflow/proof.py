@@ -1177,8 +1177,78 @@ def render_markdown(
     )
 
 
+# #111: the execution-contract settings a verifier can hold a proof to with
+# `verify-proof --require KEY=MIN`. Each entry is (contract section, values from
+# weakest to strongest, the value Agentflow enforces when the key is missing).
+# ponytail: compares the setting as written; indirect raises (strict_by_default,
+# workflow review_depth) earn no credit, so a floor can only fail safe.
+_POLICY_BOOLEANS = (
+    "strict_by_default",
+    "require_command_receipts_for_validation",
+    "require_file_receipts_for_changed_files",
+    "require_managed_receipts_for_validation",
+    "require_evidence_for_inspection_gates",
+    "require_review_run",
+)
+POLICY_FLOOR_KEYS: Dict[str, Tuple[str, Tuple[Any, ...], Any]] = {
+    "hunk_attribution": ("proof_policy", ("off", "observe", "enforce"), "enforce"),
+    "review_gate": ("proof_policy", ("ignore", "warn", "block"), "warn"),
+    "risk_policy": ("command_policy", ("warn", "require-confirmation", "block"), "warn"),
+    "lease_policy": ("concurrency", ("advisory", "enforce"), "advisory"),
+    **{
+        key: ("proof_policy", (False, True), key == "require_file_receipts_for_changed_files")
+        for key in _POLICY_BOOLEANS
+    },
+}
+
+
+def policy_value_text(value: Any) -> str:
+    """How a policy value is spelled on the command line (``true``, not ``True``)."""
+    return str(value).lower() if isinstance(value, bool) else str(value)
+
+
+def policy_floor_findings(
+    contract: Any, floor: List[Tuple[str, Any]]
+) -> List[Dict[str, Any]]:
+    """#111: one ``policy_below_floor`` error per requirement the contract misses.
+
+    ``contract`` is the parsed, hash-verified execution contract, or ``None``
+    when the proof has none. A value of the wrong type or outside the known set
+    fails closed.
+    """
+    findings: List[Dict[str, Any]] = []
+    for key, minimum in floor:
+        section, order, default = POLICY_FLOOR_KEYS[key]
+        if not isinstance(contract, dict):
+            reason = "the proof has no readable execution contract"
+        else:
+            block = contract.get(section, {})
+            value = block.get(key, default) if isinstance(block, dict) else None
+            # type() rather than isinstance: 1 must not pass for True.
+            if type(value) is type(minimum) and value in order:
+                if order.index(value) >= order.index(minimum):
+                    continue
+                reason = f"{key} is {policy_value_text(value)}"
+            else:
+                reason = f"{key} has unrecognized value {json.dumps(value)}"
+        findings.append(
+            {
+                "severity": "error",
+                "message": (
+                    f"policy_below_floor: {reason}; "
+                    f"the floor requires {key}={policy_value_text(minimum)}"
+                ),
+            }
+        )
+    return findings
+
+
 def _verify_proof(
-    root: Path, proof_path: Path, replay: bool = False, strict: bool = False
+    root: Path,
+    proof_path: Path,
+    replay: bool = False,
+    strict: bool = False,
+    floor: Optional[List[Tuple[str, Any]]] = None,
 ) -> List[Dict[str, Any]]:
     proof, read_error = try_read_json(proof_path)
     if proof is None:
@@ -1233,6 +1303,10 @@ def _verify_proof(
                 "message": "proof generated_from/files path mismatch: " + "; ".join(details),
             }
         )
+    # #111: the floor judges these exact bytes, never a later re-read, so a
+    # contract swapped after hashing on a still-writable root cannot pass it.
+    contract_source = EXECUTION_ARTIFACT_PATHS["execution-contract"]
+    verified_contract: Optional[bytes] = None
     for item in proof.get("files", []):
         if not isinstance(item, dict):
             findings.append({"severity": "error", "message": "proof file entry is malformed"})
@@ -1252,9 +1326,16 @@ def _verify_proof(
         if not path.exists():
             findings.append({"severity": "error", "message": f"missing source {relative_path}"})
             continue
-        actual_hash = sha256_file(resolved_path)
+        contract_bytes = resolved_path.read_bytes() if relative_path == contract_source else None
+        actual_hash = (
+            hashlib.sha256(contract_bytes).hexdigest()
+            if contract_bytes is not None
+            else sha256_file(resolved_path)
+        )
         if actual_hash != expected_hash:
             findings.append({"severity": "error", "message": f"hash mismatch for {relative_path}"})
+        elif contract_bytes is not None:
+            verified_contract = contract_bytes
     # ratchet-v1: honor the build-time policy floor baked into the proof (tamper-evident via core_sha256)
     recorded_review_policy = None
     review_block = proof.get("review")
@@ -1267,7 +1348,8 @@ def _verify_proof(
     effective_proof_strict = strict or recorded_strict
 
     expected_core = proof.get("core_sha256")
-    if isinstance(expected_core, str) and core_sha256(proof) != expected_core:
+    core_intact = core_sha256(proof) == expected_core
+    if not core_intact:
         # #82: canonical_core grows over releases (workflow_contract, capabilities,
         # ...), so a bundle built by an older Agentflow re-hashes to a different
         # core today. The mismatch is indistinguishable from tampering, so this
@@ -1282,6 +1364,17 @@ def _verify_proof(
                 f"{PROOF_PACK_SCHEMA_VERSION}); rebuild with current Agentflow to re-verify"
             )
         findings.append({"severity": "error", "message": message})
+    # #111: judge the floor only on a contract the bundle vouches for. A
+    # contract that fails its hash, or a bundle whose core fails, is already an
+    # integrity error and must not read as a weak policy.
+    if floor and core_intact and contract_source not in file_paths:
+        findings.extend(policy_floor_findings(None, floor))
+    elif floor and core_intact and verified_contract is not None:
+        try:
+            contract = json.loads(verified_contract.decode("utf-8"))
+        except ValueError:  # includes UnicodeDecodeError and JSONDecodeError
+            contract = None
+        findings.extend(policy_floor_findings(contract, floor))
     findings.extend(_verify_requirement_coverage(root, proof))
     findings.extend(_verify_design_decision_coverage(root, proof))
     findings.extend(_verify_validation_gate_coverage(root, proof))
@@ -1297,7 +1390,11 @@ def _verify_proof(
 
 
 def verify_proof(
-    root: Path, proof_path: Path, replay: bool = False, strict: bool = False
+    root: Path,
+    proof_path: Path,
+    replay: bool = False,
+    strict: bool = False,
+    floor: Optional[List[Tuple[str, Any]]] = None,
 ) -> List[Dict[str, Any]]:
     with historical_proof_reads():
-        return _verify_proof(root, proof_path, replay=replay, strict=strict)
+        return _verify_proof(root, proof_path, replay=replay, strict=strict, floor=floor)

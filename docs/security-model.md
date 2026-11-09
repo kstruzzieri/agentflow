@@ -73,3 +73,9 @@ The verifier obtains the intended proof bundle from a trusted channel and can co
 ### Residual user responsibility
 
 Protect the repository, CI system, and proof distribution channel; retain provenance outside the bundle when producer identity matters; and use an external signing or attestation system if authenticity or non-repudiation is a requirement.
+
+Decide the minimum policy yourself. The execution contract that sets hunk attribution, the command risk policy, the review gate, leases, and receipt requirements is written by whoever can write `.agent/`, which is usually the agent being checked. A proof built under a weak contract is a valid proof of a weak run. Pass `verify-proof --require KEY=MIN` from CI configuration the agent cannot edit so that the verifier, not the contract, sets the floor.
+
+The floor judges the contract that `build-proof` hashed, not the contract the work ran under. `risk_policy`, `lease_policy`, and `hunk_attribution` act while the work runs, and Agentflow 1.x does not record which contract the work ran under: an agent can work under a weak setting and raise it before `build-proof`.
+
+Receipt requirements can also be tightened after a step completes without invalidating its completion. For example, a step completed with an attested receipt while `require_managed_receipts_for_validation` is `false` can still pass `verify-proof --require require_managed_receipts_for_validation=true` if the setting is raised before `build-proof`. The proof records that gate as `failed`, but verification can still exit 0 and print `proof verified`. A receipt-policy floor therefore proves the setting at build time, not that completed gates met that policy.
