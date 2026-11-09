@@ -22,6 +22,16 @@ output and `docs/cli-contract.json` unchanged.
 chooses, instead of accepting whatever the agent's own execution contract says
 (#111). Without the new flag, every proof verifies exactly as before.
 
+A floor on `risk_policy`, `lease_policy` or `hunk_attribution` now checks the
+contract the work ran under, not only the one `build-proof` hashed (#117).
+Each record written under a runtime policy names the contract it was decided
+under, and the five ledger schemas that carry the name move to 1.1.0.
+
+**Upgrade note: Agentflow 1.3 and older reject 1.1.0 step-run, command-receipt,
+file-receipt, verification-run and drift-report records** in working state.
+Finish a run with the release that started it. This release reads ledgers
+that mix 1.0 and 1.1 records.
+
 ### Added
 
 - `verify-proof --require KEY=MIN`, repeatable, fails a proof whose execution
@@ -41,16 +51,35 @@ chooses, instead of accepting whatever the agent's own execution contract says
   contract fails any floor. The floor compares each setting as written:
   `strict_by_default` and a workflow `review_depth` do not count toward
   another key's floor. The floor is never written into the proof, and the
-  proof-pack schema is unchanged. Known limit: the floor reads the contract
-  `build-proof` hashed, and nothing records which contract the work ran under,
-  so `risk_policy`, `lease_policy` and `hunk_attribution` raised after the work
-  still pass. Receipt requirements can also be tightened after a step completes
-  without failing the matching floor: an attested receipt can produce a failed
-  gate under `require_managed_receipts_for_validation=true` while the proof
-  still verifies. See `docs/security-model.md` for this limitation. (#111)
+  proof-pack schema is unchanged. Known limit: receipt requirements can be
+  tightened after a step completes without failing the matching floor: an
+  attested receipt can produce a failed gate under
+  `require_managed_receipts_for_validation=true` while the proof still
+  verifies. See `docs/security-model.md` for this limitation. (#111)
 - The MCP `verify_proof` tool takes an optional `require` array of `KEY=MIN`
   strings and passes each one as `--require`. `docs/cli-contract.json` lists
   the new flag. (#111)
+- Step-run events, command receipts (blocked, run, timed out, attested and
+  reconstructed), file receipts, verification runs and the drift report that
+  `audit-drift` writes record `execution_contract_sha256`, the SHA-256 of the
+  execution contract bytes the command read its policy from. Each command
+  reads the contract once, when it starts, so a command started by `run` or a
+  gate replayed by `replay-gates` that rewrites the contract leaves its records
+  naming the contract they ran under. The
+  step-runs, command-receipts, file-receipts, verification-runs and
+  drift-report schemas move to 1.1.0 (additive), and the `--json` output of
+  `claim-step`, `run`, `record-file-change`, `verify-run` and the other
+  commands that print these records carries the field.
+  `docs/cli-contract.json` lists it. (#117)
+- `verify-proof --require` on `risk_policy`, `lease_policy` or
+  `hunk_attribution` also fails with `policy_below_floor` unless every record
+  in the hashed step-runs, command-receipts, file-receipts and
+  verification-runs ledgers, and a hashed drift report written by
+  `audit-drift`, carries the verified contract's hash. A ledger or drift
+  report missing from the proof fails such a floor. A contract changed mid-run
+  fails it even if the change is reverted, and records written before this
+  change carry no pin and fail it too. Floors on other
+  keys, and `verify-proof` without `--require`, are unchanged. (#117)
 
 - `build-proof` writes `coverage.validation_gates` when an execution contract
   exists: one entry per gate of each step's latest completed attempt, with
@@ -84,6 +113,10 @@ chooses, instead of accepting whatever the agent's own execution contract says
   under `properties` or `$defs`. Its version pattern must still accept every
   version it accepted before. Any other change to a released schema still
   fails CI. (#110)
+- `aggregate-ledgers` writes the step-runs, command-receipts, file-receipts
+  and verification-runs ledgers to the canonical root even when they are
+  empty, as `init-execution` does, so a runtime-policy floor can tell a
+  removed ledger from an empty one. (#117)
 
 ## [1.3.0] - 2026-11-04
 

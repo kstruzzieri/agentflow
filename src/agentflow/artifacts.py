@@ -252,6 +252,13 @@ def read_json(path: Path) -> Dict[str, Any]:
     return data
 
 
+def loads_json_artifact(path: Path, data: bytes) -> Any:
+    """``read_json`` for bytes already read from ``path`` (#117)."""
+    parsed = json.loads(data.decode("utf-8"))
+    _validate_artifact_version(path, parsed)
+    return parsed
+
+
 def try_read_json(path: Path) -> Tuple[Optional[Dict[str, Any]], Optional[str]]:
     """Read a JSON object without raising for malformed or non-object JSON."""
     try:

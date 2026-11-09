@@ -5,7 +5,8 @@
   "type": "object",
   "required": ["schema_version", "id", "scope", "recorded_at", "findings"],
   "properties": {
-    "schema_version": { "type": "string", "pattern": "^1\\.0\\.(?:0|[1-9][0-9]*)$" },
+    "schema_version": { "type": "string", "pattern": "^1\\.[01]\\.(?:0|[1-9][0-9]*)$" },
+    "execution_contract_sha256": { "type": ["string", "null"], "pattern": "^[0-9a-f]{64}$" },
     "id": { "type": "string", "pattern": "^(WT[a-z0-9]{1,16}-)?VR[0-9]+$" },
     "scope": { "enum": ["proof", "replay", "run", "step"] },
     "step_id": { "type": "string" },

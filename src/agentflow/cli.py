@@ -35,6 +35,8 @@ from .execution import (
     block_step,
     claim_step,
     doctor,
+    execution_contract_sha256,
+    execution_contract_snapshot,
     fail_step,
     init_execution_artifacts,
     mark_step_verified,
@@ -2227,7 +2229,16 @@ def main(argv: Optional[List[str]] = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
     try:
-        return args.func(args)
+        # #117: one read of the execution contract for the whole command, taken
+        # before it does any work, so a gate it replays or runs before the
+        # first policy read cannot change which contract its records name.
+        with execution_contract_snapshot():
+            if isinstance(getattr(args, "root", None), str):
+                try:
+                    execution_contract_sha256(Path(args.root).resolve())
+                except OSError:
+                    pass  # each reader reports or degrades on its own read
+            return args.func(args)
     except ValueError as exc:
         # Safety net for reader-gate errors (artifact schema_version policy
         # rejections raise ValueError): cross-version .agent state must surface

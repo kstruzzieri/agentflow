@@ -1,0 +1,60 @@
+{
+  "allowed_files": [
+    "fixture.txt",
+    ".agent/"
+  ],
+  "blocked_files": [],
+  "drift_budget": {
+    "architecture_drift": "requires_approval",
+    "formatting_drift": "minimal",
+    "new_dependencies": 0,
+    "test_weakening": 0,
+    "unrelated_edits": 0
+  },
+  "evidence_ids": [],
+  "invariants": [
+    "Fixture only."
+  ],
+  "locked": true,
+  "locked_at": "2026-11-09T02:49:15+00:00",
+  "non_goals": [],
+  "objective": "Pin every run record to the execution contract it ran under.",
+  "risk_level": "low",
+  "rollback_plan": "Delete the fixture.",
+  "schema_version": "1.0.0",
+  "scope": [
+    "Contract pin compatibility fixture."
+  ],
+  "steps": [
+    {
+      "action": "Write the fixture file.",
+      "evidence_ids": [],
+      "expected_diff": [
+        "fixture.txt holds one line."
+      ],
+      "files": [
+        "fixture.txt"
+      ],
+      "gates": [
+        {
+          "kind": "command",
+          "run": [
+            "python3",
+            "-c",
+            "print('pinned')"
+          ]
+        }
+      ],
+      "id": "P1",
+      "preconditions": [
+        "Workspace initialized."
+      ],
+      "validation": [
+        "fixture gate"
+      ]
+    }
+  ],
+  "validation_gates": [
+    "fixture gate"
+  ]
+}

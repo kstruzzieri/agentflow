@@ -7,11 +7,18 @@ import json
 import os
 import shutil
 from contextlib import ExitStack, contextmanager
+from contextvars import ContextVar
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Callable, Dict, Iterator, List, Optional, Tuple
 
-from .artifacts import append_jsonl, dumps_json, read_json, read_jsonl, utc_now
+from .artifacts import (
+    append_jsonl,
+    dumps_json,
+    loads_json_artifact,
+    read_jsonl,
+    utc_now,
+)
 from .contracts import (
     ARTIFACT_COMPATIBILITY_POLICIES,
     DEFAULT_COMMAND_TIMEOUT_SECONDS,
@@ -56,12 +63,7 @@ def _concurrency(root: Path) -> Dict[str, Any]:
     # A malformed/unreadable contract degrades to advisory defaults (the
     # backward-compat guarantee) instead of crashing lease readers; audit_drift
     # and verify_run already tolerate a malformed contract elsewhere.
-    try:
-        contract = load_execution_contract(root) or {}
-    except (ValueError, OSError):
-        return {}
-    if not isinstance(contract, dict):
-        return {}  # structurally-wrong contract (list/scalar) reads as advisory
+    contract = try_load_execution_contract(root) or {}
     block = contract.get("concurrency", {})
     return block if isinstance(block, dict) else {}
 
@@ -178,11 +180,60 @@ def init_execution_artifacts(root: Path, force: bool = False) -> Tuple[List[str]
     return created, skipped
 
 
-def load_execution_contract(root: Path) -> Optional[Dict[str, Any]]:
+# #117: the contract bytes each CLI invocation reads, by resolved path. MCP tool
+# calls run through cli.main too. Every policy reader and every
+# execution_contract_sha256 pin come from these bytes, so a record names the
+# contract its policy was read from even if a command it ran rewrote the file.
+# Outside a snapshot (direct library calls) each read is fresh.
+_CONTRACT_SNAPSHOT: ContextVar[Optional[Dict[str, Optional[bytes]]]] = ContextVar(
+    "agentflow_contract_snapshot", default=None
+)
+
+
+@contextmanager
+def execution_contract_snapshot() -> Iterator[None]:
+    token = _CONTRACT_SNAPSHOT.set({})
+    try:
+        yield
+    finally:
+        _CONTRACT_SNAPSHOT.reset(token)
+
+
+def _execution_contract_bytes(root: Path) -> Optional[bytes]:
     path = root / EXECUTION_ARTIFACT_PATHS["execution-contract"]
-    if not path.exists():
+    snapshot = _CONTRACT_SNAPSHOT.get()
+    key = str(path.resolve())
+    if snapshot is not None and key in snapshot:
+        return snapshot[key]
+    try:
+        data: Optional[bytes] = path.read_bytes()
+    except FileNotFoundError:
+        data = None
+    if snapshot is not None:
+        snapshot[key] = data
+    return data
+
+
+def execution_contract_sha256(root: Path) -> Optional[str]:
+    """#117: digest of the contract bytes this invocation's policies come from."""
+    data = _execution_contract_bytes(root)
+    return hashlib.sha256(data).hexdigest() if data is not None else None
+
+
+def load_execution_contract(root: Path) -> Optional[Dict[str, Any]]:
+    data = _execution_contract_bytes(root)
+    if data is None:
         return None
-    return read_json(path)
+    return loads_json_artifact(root / EXECUTION_ARTIFACT_PATHS["execution-contract"], data)
+
+
+def try_load_execution_contract(root: Path) -> Optional[Dict[str, Any]]:
+    """The contract as an object, or None when missing, unreadable or malformed."""
+    try:
+        contract = load_execution_contract(root)
+    except (ValueError, OSError):
+        return None
+    return contract if isinstance(contract, dict) else None
 
 
 def _positive_int(value: Any) -> bool:
@@ -485,7 +536,12 @@ def _append_step_event(root: Path, event: Dict[str, Any]) -> Dict[str, Any]:
     # Every caller holds _step_runs_lock_path(root), so these checks cannot race an append.
     _refuse_foreign_attempt(root, event["step_id"], event["attempt_id"])
     _refuse_terminal_attempt(root, event["step_id"], event["attempt_id"])
-    event = {"schema_version": STEP_RUNS_SCHEMA_VERSION, "recorded_at": utc_now(), **event}
+    event = {
+        "schema_version": STEP_RUNS_SCHEMA_VERSION,
+        "recorded_at": utc_now(),
+        "execution_contract_sha256": execution_contract_sha256(root),
+        **event,
+    }
     append_jsonl(_step_runs_path(root), event)
     return event
 

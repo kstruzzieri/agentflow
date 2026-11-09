@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Sequence, Tuple
 
-from .artifacts import try_read_json, utc_now
+from .artifacts import utc_now
 from .contracts import (
     AUTHORITIES,
     DRIFT_REPORT_SCHEMA_VERSION,
@@ -19,8 +19,10 @@ from .contracts import (
 from .execution import (
     attempt_is_expired,
     lease_grace_seconds,
+    execution_contract_sha256,
     lease_policy,
     read_step_state,
+    try_load_execution_contract,
 )
 from .git import changed_file_records, changed_files, is_git_repo
 from .hunks import effective_hunk_policy, unmapped_hunks
@@ -599,6 +601,7 @@ def audit_drift(root: Path, plan: Dict[str, Any]) -> Dict[str, Any]:
         "test_weakening": [],
         "notes": [],
         "generated_at": utc_now(),
+        "execution_contract_sha256": execution_contract_sha256(root),
     }
 
     if not is_git_repo(root):
@@ -634,14 +637,9 @@ def audit_drift(root: Path, plan: Dict[str, Any]) -> Dict[str, Any]:
 
     hunk_policy = effective_hunk_policy(root)
     ignore = [".agent/", ".git/"]
-    contract_path = root / ".agent/execution.contract.json"
-    if contract_path.exists():
-        try:
-            contract, _ = try_read_json(contract_path)
-        except OSError:
-            contract = None
-        if contract:
-            ignore = contract.get("concurrency", {}).get("reconcile_ignore", ignore)
+    contract = try_load_execution_contract(root)
+    if contract:
+        ignore = contract.get("concurrency", {}).get("reconcile_ignore", ignore)
     if hunk_policy in ("enforce", "observe") and allowed:
         candidates = [
             record

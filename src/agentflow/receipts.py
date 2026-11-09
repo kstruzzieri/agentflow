@@ -22,11 +22,12 @@ from .execution import (
     attempt_deadline,
     lease_grace_seconds,
     lease_policy,
-    load_execution_contract,
+    execution_contract_sha256,
     read_step_state,
     renew_lease,
     require_writable_attempt,
     resolve_attempt,
+    try_load_execution_contract,
 )
 from .git import changed_file_records, git_blob_for_head
 from .locks import file_lock
@@ -87,10 +88,7 @@ def _ledger_lock_path(ledger_path: Path) -> Path:
 def _contract_policy(root: Path) -> Dict[str, Any]:
     # A malformed/incompatible contract degrades to advisory defaults instead
     # of crashing the receipt-recording path (mirrors execution._concurrency).
-    try:
-        contract = load_execution_contract(root) or {}
-    except (ValueError, OSError):
-        return {}
+    contract = try_load_execution_contract(root) or {}
     policy = contract.get("command_policy", {})
     return policy if isinstance(policy, dict) else {}
 
@@ -340,6 +338,7 @@ def _run_command(
                 "decision": "blocked",
                 "timed_out": False,
                 "risk_policy": risk_policy,
+                "execution_contract_sha256": execution_contract_sha256(root),
             }
             append_jsonl(receipts_path, receipt)
         return receipt
@@ -410,6 +409,7 @@ def _run_command(
             "decision": receipt_decision,
             "timed_out": timed_out,
             "timeout_seconds": timeout_seconds,
+            "execution_contract_sha256": execution_contract_sha256(root),
         }
         _apply_confirmation_fields(
             receipt,
@@ -461,6 +461,7 @@ def record_command(
             "stdout_truncated": False,
             "stderr_truncated": False,
             "truncated": False,
+            "execution_contract_sha256": execution_contract_sha256(root),
         }
         if plan is not None:
             receipt["risk"] = classify_command(command, plan, step_id, root=root)
@@ -508,6 +509,7 @@ def record_file_change(
         "before_git_blob": git_blob_for_head(root, before_path),
         "after_sha256": after_sha256,
         "recorded_at": utc_now(),
+        "execution_contract_sha256": execution_contract_sha256(root),
     }
     if effective_hunk_policy(root) == "off":
         attribution, hunks = "disabled", []

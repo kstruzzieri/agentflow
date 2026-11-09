@@ -16,8 +16,9 @@ from pathlib import Path
 from tempfile import NamedTemporaryFile
 from typing import Any, Dict, List, Optional, Tuple
 
-from .artifacts import read_jsonl, try_read_json
+from .artifacts import read_jsonl
 from .contracts import DIFF_COMMAND_VERSION, EXECUTION_ARTIFACT_PATHS, HUNK_ATTRIBUTION_POLICIES
+from .execution import execution_contract_sha256, try_load_execution_contract
 
 _HUNK_HEADER = re.compile(r"^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@")
 # Number of lines before each hunk to include in the context anchor window.
@@ -181,13 +182,12 @@ def compute_hunks(root: Path, record: Dict[str, Any]) -> Tuple[str, List[Dict[st
 
 
 def effective_hunk_policy(root: Path) -> str:
-    contract_path = root / EXECUTION_ARTIFACT_PATHS["execution-contract"]
-    if not contract_path.exists():
+    if execution_contract_sha256(root) is None:
         return "off"
     # A malformed contract must not crash the proof/CI gate; degrade to the
     # contract-present default ("enforce") rather than raising.
-    contract, _ = try_read_json(contract_path)
-    if not isinstance(contract, dict):
+    contract = try_load_execution_contract(root)
+    if contract is None:
         return "enforce"
     policy = contract.get("proof_policy", {})
     value = policy.get("hunk_attribution", "enforce") if isinstance(policy, dict) else "enforce"
