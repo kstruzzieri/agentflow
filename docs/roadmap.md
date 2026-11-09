@@ -66,19 +66,31 @@ the [tracking issue #11](https://github.com/kstruzzieri/agentflow/issues/11).
   proof-pack schema moves to `1.1.0`, the first additive minor bump under the
   compatibility policy; Agentflow 1.3 and older refuse a `1.1.0` proof and ask
   for an upgrade.
+- `verify-proof --require KEY=MIN` lets the verifier, not the agent's own
+  execution contract, set the minimum policy a proof must meet: hunk
+  attribution, the review gate, the command risk policy, leases, and the
+  receipt requirements. The MCP `verify_proof` tool takes the same list as
+  `require`
+  ([#111](https://github.com/kstruzzieri/agentflow/issues/111)). No schema
+  changes. The floor judges the contract that `build-proof` hashed, not the
+  one the work ran under (#117 below).
 
 ## After 1.0
 
 Open issues that tighten who decides a proof's strictness and who approves
 risky commands:
 
-- A minimum policy that `verify-proof` can require, so the agent's own
-  execution contract no longer decides how strict its proof is
-  ([#111](https://github.com/kstruzzieri/agentflow/issues/111)).
+- A policy floor on the settings that act while the work runs
+  (`risk_policy`, `lease_policy`, `hunk_attribution`) that checks the
+  contract the work ran under, not only the one `build-proof` hashed
+  ([#117](https://github.com/kstruzzieri/agentflow/issues/117)).
 - High-risk confirmations bound to the exact command and an approver outside
   the agent ([#112](https://github.com/kstruzzieri/agentflow/issues/112)).
 - Replaying recorded commands against a proposed risk policy before
   tightening it ([#113](https://github.com/kstruzzieri/agentflow/issues/113)).
+- `replay-gates --record` turning a command the risk policy would block into a
+  trusted receipt
+  ([#119](https://github.com/kstruzzieri/agentflow/issues/119)).
 
 No next milestone is committed. Other candidates, each starting as an issue
 with a concrete use case and compatibility impact:
