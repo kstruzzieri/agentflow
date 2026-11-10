@@ -6,7 +6,7 @@ from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, NamedTuple, Optional, Tuple
 
-from .artifacts import append_jsonl, read_jsonl, try_read_json, utc_now
+from .artifacts import append_jsonl, read_jsonl, utc_now
 from .contracts import TRUSTED_PROVENANCE_VALUES, VERIFICATION_RUNS_SCHEMA_VERSION
 from .execution import (
     ATTEMPT_OPENING_EVENTS,
@@ -14,6 +14,7 @@ from .execution import (
     OPEN_EVENTS,
     TERMINAL_EVENTS,
     attempt_is_expired,
+    execution_contract_sha256,
     lease_grace_seconds,
     latest_completed_attempt,
     lease_policy,
@@ -21,6 +22,7 @@ from .execution import (
     read_step_state,
     receipt_timed_out,
     resolve_attempt,
+    try_load_execution_contract,
 )
 from .git import changed_file_records, is_git_repo
 from .hunks import effective_hunk_policy, unmapped_hunks
@@ -123,15 +125,7 @@ def _timeout_message(gate: str, receipt: Dict[str, Any]) -> str:
 
 
 def _proof_policy(root: Path) -> Dict[str, Any]:
-    contract_path = root / ".agent/execution.contract.json"
-    if not contract_path.exists():
-        return {}
-    try:
-        contract, _ = try_read_json(contract_path)
-    except OSError:
-        return {}
-    if contract is None:
-        return {}
+    contract = try_load_execution_contract(root) or {}
     policy = contract.get("proof_policy", {})
     return policy if isinstance(policy, dict) else {}
 
@@ -159,6 +153,7 @@ def _append_verification(
         "status": result["status"],
         "findings": [*result["errors"], *result["warnings"]],
         "recorded_at": utc_now(),
+        "execution_contract_sha256": execution_contract_sha256(root),
     }
     if step_id is not None:
         entry["step_id"] = step_id
@@ -527,15 +522,7 @@ def _changed_file_pairs(
     severity and message. An open attempt and an unknown producer each have
     their own verify-run error.
     """
-    contract: Dict[str, Any] = {}
-    contract_path = root / ".agent/execution.contract.json"
-    if contract_path.exists():
-        try:
-            contract, _ = try_read_json(contract_path)
-        except OSError:
-            contract = None
-        if contract is None:
-            contract = {}
+    contract = try_load_execution_contract(root) or {}
     ignore = contract.get("concurrency", {}).get("reconcile_ignore", [".agent/", ".git/"])
     latest = latest_file_receipts_by_path(root)
     attempts = read_step_state(root)["attempts"]

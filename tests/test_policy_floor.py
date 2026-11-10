@@ -14,7 +14,9 @@ from pathlib import Path
 from unittest import mock
 
 from agentflow import proof as proof_module
+from agentflow.artifacts import default_drift_report, read_jsonl, write_json
 from agentflow.contracts import PLAN_SCHEMA_VERSION
+from agentflow.execution import execution_contract_sha256, execution_contract_snapshot
 from agentflow.proof import core_sha256
 
 
@@ -109,17 +111,30 @@ def _weaken(contract: dict) -> None:
         contract[SECTIONS[key]][key] = weak
 
 
-def build_fixture(root: Path) -> None:
+def _start(root: Path, edit=None) -> None:
+    """Lock the fixture plan and initialize execution, editing the contract first."""
     _ok(root, "init")
     (root / ".agent/plan.lock.json").write_text(json.dumps(_plan(), indent=2), encoding="utf-8")
     _ok(root, "lock-plan", ".agent/plan.lock.json")
     _ok(root, "init-execution")
-    _edit_contract(root, _weaken)
-    _ok(root, "claim-step", "P1", "--agent", "agent-a")
+    if edit is not None:
+        _edit_contract(root, edit)
+
+
+def _finish(root: Path) -> None:
+    """Satisfy the gate, close P1 and seal the bundle under the current contract."""
     _ok(root, "run", "--step", "P1", "--", *GATE)
     _ok(root, "verify-step", "P1")
     _ok(root, "complete-step", "P1")
+    # #117: a floor on a runtime policy needs a drift report audit-drift wrote.
+    _ok(root, "audit-drift")
     _ok(root, "build-proof")
+
+
+def build_fixture(root: Path, edit=_weaken) -> None:
+    _start(root, edit)
+    _ok(root, "claim-step", "P1", "--agent", "agent-a")
+    _finish(root)
 
 
 def _rehash_contract(root: Path) -> None:
@@ -195,16 +210,19 @@ class PolicyFloorTests(unittest.TestCase):
         self.assertIn("policy_below_floor: review_gate is ignore", result.stdout)
 
     def test_missing_key_counts_as_its_default(self) -> None:
-        root = self.copy()
-
         def drop(contract: dict) -> None:
+            _weaken(contract)
             # The optional keys; build-proof refuses a contract missing the others.
             del contract["proof_policy"]["hunk_attribution"]
             del contract["command_policy"]["risk_policy"]
             del contract["proof_policy"]["require_review_run"]
 
-        _edit_contract(root, drop)
-        _ok(root, "build-proof")
+        # Dropped before the work starts: a contract edited mid-run fails a
+        # runtime-policy floor on its own (#117).
+        tmp = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, tmp)
+        root = Path(tmp)
+        build_fixture(root, drop)
 
         passed = self.verify(root, "hunk_attribution=enforce", "require_review_run=false")
         self.assertEqual(passed.returncode, 0, passed.stdout + passed.stderr)
@@ -339,6 +357,447 @@ class PolicyFloorTests(unittest.TestCase):
                 result = self.verify(self.root, requirement)
                 self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
                 self.assertIn("--require", result.stderr)
+
+
+PIN = "execution_contract_sha256"
+LEDGERS = (
+    ".agent/step-runs.jsonl",
+    ".agent/command-receipts.jsonl",
+    ".agent/file-receipts.jsonl",
+    ".agent/verification-runs.jsonl",
+)
+
+
+def _digest(data: bytes) -> str:
+    return hashlib.sha256(data).hexdigest()
+
+
+def _records(root: Path, ledger: str) -> list:
+    lines = (root / ledger).read_text(encoding="utf-8").splitlines()
+    return [json.loads(line) for line in lines if line.strip()]
+
+
+class ContractPinWriterTests(unittest.TestCase):
+    """#117: a record names the contract its runtime policy was read from."""
+
+    def test_an_unreadable_snapshot_stays_unreadable_after_repair(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            _start(root)
+            path = root / CONTRACT
+            strong = path.read_bytes()
+            path.unlink()
+            path.mkdir()
+            with execution_contract_snapshot():
+                with self.assertRaises(IsADirectoryError):
+                    execution_contract_sha256(root)
+                path.rmdir()
+                path.write_bytes(strong)
+                with self.assertRaises(IsADirectoryError):
+                    execution_contract_sha256(root)
+            self.assertEqual(execution_contract_sha256(root), _digest(strong))
+
+    def test_run_refuses_an_unreadable_contract_before_launching_the_child(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            _start(root)
+            path = root / CONTRACT
+            (root / "strong.json").write_bytes(path.read_bytes())
+            _ok(root, "claim-step", "P1", "--agent", "agent-a")
+            path.unlink()
+            (root / "unreadable").mkdir()
+            path.symlink_to("../unreadable", target_is_directory=True)
+            result = agentflow(root, "run", "--step", "P1", "--", PY, "-c",
+                "from pathlib import Path; Path('child-ran').touch(); "
+                "p = Path('.agent/execution.contract.json'); p.unlink(); "
+                "p.write_bytes(Path('strong.json').read_bytes())")
+
+            self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertFalse((root / "child-ran").exists())
+            self.assertEqual(_records(root, ".agent/command-receipts.jsonl"), [])
+
+    def test_every_runtime_record_carries_the_contract_digest(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            subprocess.run(["git", "init", "-q"], cwd=root, check=True)
+            _start(root, lambda c: c["command_policy"].__setitem__("command_timeout_seconds", 1))
+            digest = _digest((root / CONTRACT).read_bytes())
+            _ok(root, "claim-step", "P1", "--agent", "agent-a")
+            _ok(root, "renew-lease", "P1", "--agent", "agent-a")
+            # Blocked: high risk, unconfirmed, under the default require-confirmation.
+            agentflow(root, "run", "--step", "P1", "--", "rm", "-rf", "nothing-here")
+            agentflow(root, "run", "--step", "P1", "--", PY, "-c", "import time; time.sleep(5)")
+            # A timed-out receipt keeps its attempt from completing.
+            _ok(root, "fail-step", "P1", "--reason", "timed out", "--agent", "agent-a")
+            _ok(root, "claim-step", "P1", "--agent", "agent-a")
+            _ok(root, "run", "--step", "P1", "--", *GATE)
+            _ok(root, "record-command", "--step", "P1", "--gate", "fixture gate",
+                "--exit-code", "0", "--", *GATE)
+            _ok(root, "replay-gates", "--record")
+            (root / "fixture.txt").write_text("changed\n", encoding="utf-8")
+            _ok(root, "record-file-change", "--step", "P1", "--path", "fixture.txt")
+            _ok(root, "verify-step", "P1")
+            _ok(root, "complete-step", "P1")
+            agentflow(root, "verify-run")
+            agentflow(root, "audit-drift")
+
+            receipts = _records(root, ".agent/command-receipts.jsonl")
+            self.assertEqual(
+                {(r["provenance"], r.get("decision")) for r in receipts},
+                {
+                    ("observed", "blocked"),
+                    ("observed", "timeout"),
+                    ("observed", "allowed"),
+                    ("attested", "allowed"),
+                    ("reconstructed", "allowed"),
+                },
+            )
+            events = {e["event"] for e in _records(root, ".agent/step-runs.jsonl")}
+            self.assertEqual(
+                events, {"claimed", "lease_renewed", "failed", "verified", "completed"}
+            )
+            scopes = {v["scope"] for v in _records(root, ".agent/verification-runs.jsonl")}
+            self.assertEqual(scopes, {"step", "run"})
+            for ledger in LEDGERS:
+                for record in _records(root, ledger):
+                    with self.subTest(ledger=ledger, record=record.get("id", record.get("event"))):
+                        self.assertEqual(record.get(PIN), digest)
+                        self.assertEqual(record["schema_version"], "1.1.0")
+            drift = json.loads((root / ".agent/drift-report.json").read_text(encoding="utf-8"))
+            self.assertEqual(drift.get(PIN), digest)
+            self.assertEqual(drift["schema_version"], "1.1.0")
+
+    def test_a_command_that_rewrites_the_contract_is_pinned_to_the_one_it_ran_under(self) -> None:
+        # The child restores a strong contract before exit. The receipt must
+        # name the weak bytes risk_policy was read from, not the restored ones.
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            _start(root, _weaken)
+            weak = (root / CONTRACT).read_bytes()
+            strong = json.loads(weak)
+            strong["command_policy"]["risk_policy"] = "block"
+            (root / "strong.json").write_text(json.dumps(strong), encoding="utf-8")
+            _ok(root, "claim-step", "P1", "--agent", "agent-a")
+
+            _ok(root, "run", "--step", "P1", "--", PY, "-c",
+                "import shutil; shutil.copy('strong.json', '.agent/execution.contract.json')")
+
+            self.assertEqual((root / CONTRACT).read_text(encoding="utf-8"), json.dumps(strong))
+            receipt = _records(root, ".agent/command-receipts.jsonl")[-1]
+            self.assertEqual(receipt[PIN], _digest(weak))
+
+    def test_replayed_gates_are_pinned_to_the_contract_from_before_they_ran(self) -> None:
+        # replay-gates runs a gate before anything else reads the contract, so
+        # the snapshot must be taken when the command starts.
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            _start(root, _weaken)
+            weak = (root / CONTRACT).read_bytes()
+            strong = json.loads(weak)
+            strong["command_policy"]["risk_policy"] = "block"
+            (root / "strong.json").write_text(json.dumps(strong), encoding="utf-8")
+            restore = [PY, "-c",
+                       "import shutil; shutil.copy('strong.json', '.agent/execution.contract.json')"]
+            _ok(root, "claim-step", "P1", "--agent", "agent-a")
+            _ok(root, "record-command", "--step", "P1", "--gate", "fixture gate",
+                "--exit-code", "0", "--", *restore)
+
+            _ok(root, "replay-gates", "--record")
+
+            receipt = _records(root, ".agent/command-receipts.jsonl")[-1]
+            self.assertEqual(receipt["provenance"], "reconstructed")
+            self.assertEqual(receipt[PIN], _digest(weak))
+
+    def test_ledgers_mixing_1_0_and_1_1_records_read(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / ".agent/step-runs.jsonl"
+            path.parent.mkdir()
+            base = {"event": "claimed", "step_id": "P1", "attempt_id": "A1", "recorded_at": "t"}
+            path.write_text(
+                json.dumps({**base, "schema_version": "1.0.0"}) + "\n"
+                + json.dumps({**base, "schema_version": "1.1.0", PIN: "0" * 64}) + "\n",
+                encoding="utf-8",
+            )
+            self.assertEqual(len(read_jsonl(path)), 2)
+
+
+RUNTIME_FLOOR = (
+    "risk_policy=require-confirmation",
+    "lease_policy=advisory",
+    "hunk_attribution=enforce",
+)
+
+
+def _pin_errors(result: subprocess.CompletedProcess) -> list:
+    return [line for line in result.stdout.splitlines() if "pinned to the verified" in line]
+
+
+def _rewrite(root: Path, ledger: str, records: list) -> None:
+    (root / ledger).write_text("".join(json.dumps(r) + "\n" for r in records), encoding="utf-8")
+
+
+class ContractPinFloorTests(unittest.TestCase):
+    """#117: a runtime-policy floor holds the run to the contract it ran under."""
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls._tmp = tempfile.TemporaryDirectory()
+        # The contract never changes, so every record names the hashed one.
+        cls.steady = Path(cls._tmp.name) / "steady"
+        cls.steady.mkdir()
+        build_fixture(cls.steady, edit=None)
+        # The issue's scenario: work and audit under a weak contract, raise it, build.
+        cls.raised = Path(cls._tmp.name) / "raised"
+        cls.raised.mkdir()
+        _start(cls.raised, _weaken)
+        _ok(cls.raised, "claim-step", "P1", "--agent", "agent-a")
+        _ok(cls.raised, "run", "--step", "P1", "--", *GATE)
+        _ok(cls.raised, "verify-step", "P1")
+        _ok(cls.raised, "complete-step", "P1")
+        _ok(cls.raised, "audit-drift")
+
+        def raise_both(contract: dict) -> None:
+            contract["command_policy"]["risk_policy"] = "block"
+            contract["proof_policy"]["hunk_attribution"] = "enforce"
+
+        _edit_contract(cls.raised, raise_both)
+        _ok(cls.raised, "build-proof")
+
+    @classmethod
+    def tearDownClass(cls) -> None:
+        cls._tmp.cleanup()
+
+    def copy(self, root: Path) -> Path:
+        tmp = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, tmp)
+        return Path(shutil.copytree(root, Path(tmp) / root.name))
+
+    def fresh(self) -> Path:
+        tmp = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, tmp)
+        return Path(tmp)
+
+    def verify(self, root: Path, *requirements: str) -> subprocess.CompletedProcess:
+        args = ["verify-proof"]
+        for requirement in requirements:
+            args += ["--require", requirement]
+        return agentflow(root, *args)
+
+    def test_a_run_whose_contract_never_changed_passes(self) -> None:
+        result = self.verify(self.steady, *RUNTIME_FLOOR)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("proof verified", result.stdout)
+
+    def test_raising_the_contract_before_build_fails_the_floor(self) -> None:
+        self.assertEqual(self.verify(self.raised).returncode, 0)
+
+        result = self.verify(self.raised, "risk_policy=block", "hunk_attribution=enforce")
+
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertNotIn("risk_policy is", result.stdout)
+        self.assertNotIn("hunk_attribution is", result.stdout)
+        errors = "\n".join(_pin_errors(result))
+        for source in (*LEDGERS[:2], LEDGERS[3], ".agent/drift-report.json"):
+            self.assertIn(source, errors)
+        self.assertNotIn("proof verified", result.stdout)
+
+    def test_a_build_time_floor_does_not_need_the_pin(self) -> None:
+        # review_gate is judged again under the hashed contract at verify time.
+        result = self.verify(self.raised, "review_gate=ignore")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    def test_dropping_and_restoring_the_contract_between_events_fails(self) -> None:
+        root = self.fresh()
+        _start(root)
+        strong = (root / CONTRACT).read_bytes()
+        _ok(root, "claim-step", "P1", "--agent", "agent-a")
+        _edit_contract(root, lambda c: c["command_policy"].__setitem__("risk_policy", "warn"))
+        _ok(root, "run", "--step", "P1", "--", *GATE)
+        (root / CONTRACT).write_bytes(strong)
+        _ok(root, "verify-step", "P1")
+        _ok(root, "complete-step", "P1")
+        _ok(root, "audit-drift")
+        _ok(root, "build-proof")
+
+        result = self.verify(root, "risk_policy=require-confirmation")
+
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertEqual(
+            _pin_errors(result),
+            [
+                "error: policy_below_floor: .agent/command-receipts.jsonl has 1 record(s) "
+                "not pinned to the verified execution contract "
+                "(1 under another contract, 0 unpinned; first at line 1)"
+            ],
+        )
+
+    def test_a_command_that_restores_the_contract_while_it_runs_fails(self) -> None:
+        root = self.fresh()
+        _start(root)
+        (root / "strong.json").write_bytes((root / CONTRACT).read_bytes())
+        _ok(root, "claim-step", "P1", "--agent", "agent-a")
+        _edit_contract(root, lambda c: c["command_policy"].__setitem__("risk_policy", "warn"))
+        _ok(root, "run", "--step", "P1", "--", PY, "-c",
+            "import shutil; shutil.copy('strong.json', '.agent/execution.contract.json')")
+        _finish(root)
+
+        result = self.verify(root, "risk_policy=require-confirmation")
+
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertIn(".agent/command-receipts.jsonl has 1 record(s) not pinned", result.stdout)
+
+    def test_retargeting_contract_symlinks_cannot_restore_a_runtime_floor(self) -> None:
+        for replacement in ("file", "symlink", "agent_directory"):
+            with self.subTest(replacement=replacement):
+                root = self.fresh()
+                _start(root)
+                path = root / CONTRACT
+                (root / "strong.json").write_bytes(path.read_bytes())
+                _ok(root, "claim-step", "P1", "--agent", "agent-a")
+                _edit_contract(root, lambda c: c["command_policy"].__setitem__("risk_policy", "warn"))
+                weak = path.read_bytes()
+                if replacement == "agent_directory":
+                    (root / ".agent").rename(root / "weak-agent")
+                    (root / ".agent").symlink_to("weak-agent", target_is_directory=True)
+                    restore = (
+                        "import shutil; shutil.copytree('.agent', 'strong-agent'); "
+                        "Path('strong-agent/execution.contract.json').write_bytes(Path('strong.json').read_bytes()); "
+                        "Path('.agent').unlink(); Path('.agent').symlink_to('strong-agent', target_is_directory=True)"
+                    )
+                else:
+                    path.rename(root / "weak.json")
+                    path.symlink_to("../weak.json")
+                    restore = "p = Path('.agent/execution.contract.json'); p.unlink(); "
+                    restore += (
+                        "p.write_bytes(Path('strong.json').read_bytes())"
+                        if replacement == "file" else "p.symlink_to('../strong.json')"
+                    )
+                _ok(root, "run", "--step", "P1", "--", PY, "-c",
+                    "from pathlib import Path; " + restore)
+                receipt = _records(root, ".agent/command-receipts.jsonl")[-1]
+                _finish(root)
+
+                result = self.verify(root, "risk_policy=require-confirmation")
+
+                self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+                self.assertIn(".agent/command-receipts.jsonl has 1 record(s) not pinned", result.stdout)
+                self.assertEqual(receipt[PIN], _digest(weak))
+
+    def test_an_unchanged_symlinked_contract_passes(self) -> None:
+        root = self.fresh()
+        _start(root)
+        path = root / CONTRACT
+        path.rename(root / "strong.json")
+        path.symlink_to("../strong.json")
+        _ok(root, "claim-step", "P1", "--agent", "agent-a")
+        _finish(root)
+
+        result = self.verify(root, *RUNTIME_FLOOR)
+
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("proof verified", result.stdout)
+
+    def test_pins_are_judged_on_the_bytes_that_were_hashed(self) -> None:
+        # A producer repins the ledgers after verify-proof hashed them.
+        root = self.copy(self.raised)
+        digest = _digest((root / CONTRACT).read_bytes())
+        real_core = proof_module.core_sha256
+
+        def repin_then_hash(proof: dict) -> str:
+            for ledger in LEDGERS:
+                _rewrite(root, ledger, [{**r, PIN: digest} for r in _records(root, ledger)])
+            return real_core(proof)
+
+        with mock.patch.object(proof_module, "core_sha256", side_effect=repin_then_hash):
+            findings = proof_module.verify_proof(
+                root, root / ".agent/proof-pack.json", floor=[("risk_policy", "block")]
+            )
+
+        messages = "\n".join(finding["message"] for finding in findings)
+        self.assertIn(".agent/command-receipts.jsonl has 1 record(s) not pinned", messages)
+
+    def test_an_untouched_or_missing_drift_report_fails(self) -> None:
+        untouched = self.copy(self.steady)
+        write_json(untouched / ".agent/drift-report.json", default_drift_report())
+        _ok(untouched, "build-proof")
+        missing = self.copy(self.steady)
+        (missing / ".agent/drift-report.json").unlink()
+        _ok(missing, "build-proof")
+
+        for root, error in (
+            (untouched, "is not pinned to the verified execution contract; "
+                        "run audit-drift under it, then build-proof"),
+            (missing, "is missing; run audit-drift, then build-proof"),
+        ):
+            with self.subTest(error=error):
+                result = self.verify(root, "lease_policy=advisory")
+                self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+                self.assertIn(
+                    f"policy_below_floor: .agent/drift-report.json {error}", result.stdout
+                )
+
+    def test_a_ledger_missing_from_the_proof_fails(self) -> None:
+        # Deleting a ledger of weak-pinned records before build-proof must not
+        # drop them from the check. build-proof only counts verification runs.
+        root = self.copy(self.raised)
+        (root / LEDGERS[3]).unlink()
+        _ok(root, "build-proof")
+
+        result = self.verify(root, "risk_policy=block")
+
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertIn(
+            f"policy_below_floor: {LEDGERS[3]} is missing from the proof", result.stdout
+        )
+
+    def test_a_ledger_listed_under_another_spelling_counts_as_missing(self) -> None:
+        root = self.copy(self.steady)
+        proof_path = root / ".agent/proof-pack.json"
+        proof = json.loads(proof_path.read_text(encoding="utf-8"))
+        respelled = "./" + LEDGERS[0]
+        proof["generated_from"] = [respelled if p == LEDGERS[0] else p for p in proof["generated_from"]]
+        for item in proof["files"]:
+            if item["path"] == LEDGERS[0]:
+                item["path"] = respelled
+        proof["core_sha256"] = core_sha256(proof)
+        proof_path.write_text(json.dumps(proof, indent=2), encoding="utf-8")
+
+        result = self.verify(root, "lease_policy=advisory")
+
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertIn(
+            f"policy_below_floor: {LEDGERS[0]} is missing from the proof", result.stdout
+        )
+
+    def test_records_without_a_pin_fail(self) -> None:
+        # Records written before #117, or stripped of their pin, cannot show
+        # which contract they ran under.
+        root = self.copy(self.steady)
+        records = _records(root, LEDGERS[0])
+        _rewrite(root, LEDGERS[0], [{k: v for k, v in r.items() if k != PIN} for r in records])
+        _ok(root, "build-proof")
+
+        result = self.verify(root, "lease_policy=advisory")
+
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertIn(
+            f".agent/step-runs.jsonl has {len(records)} record(s) not pinned to the "
+            f"verified execution contract (0 under another contract, {len(records)} "
+            "unpinned; first at line 1)",
+            result.stdout,
+        )
+
+    def test_redoing_the_step_in_place_does_not_recover(self) -> None:
+        # Amending keeps the weak attempt's records in the ledgers.
+        root = self.copy(self.raised)
+        _ok(root, "amend-step", "P1", "--agent", "agent-a", "--reason", "redo under block",
+            "--reason-code", "operator_correction")
+        _finish(root)
+
+        result = self.verify(root, "risk_policy=block")
+
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertIn(".agent/command-receipts.jsonl has 1 record(s) not pinned", result.stdout)
 
 
 class EvidenceOnlyFloorTests(unittest.TestCase):

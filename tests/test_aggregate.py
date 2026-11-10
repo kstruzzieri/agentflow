@@ -816,10 +816,10 @@ class HardeningTests(unittest.TestCase):
 class SchemaBumpTests(unittest.TestCase):
     def test_execution_ledger_versions_bumped_for_namespacing(self):
         from agentflow import contracts
-        self.assertEqual(contracts.STEP_RUNS_SCHEMA_VERSION, "1.0.0")
-        self.assertEqual(contracts.COMMAND_RECEIPTS_SCHEMA_VERSION, "1.0.0")
-        self.assertEqual(contracts.FILE_RECEIPTS_SCHEMA_VERSION, "1.0.0")
-        self.assertEqual(contracts.VERIFICATION_RUNS_SCHEMA_VERSION, "1.0.0")
+        self.assertEqual(contracts.STEP_RUNS_SCHEMA_VERSION, "1.1.0")
+        self.assertEqual(contracts.COMMAND_RECEIPTS_SCHEMA_VERSION, "1.1.0")
+        self.assertEqual(contracts.FILE_RECEIPTS_SCHEMA_VERSION, "1.1.0")
+        self.assertEqual(contracts.VERIFICATION_RUNS_SCHEMA_VERSION, "1.1.0")
 
     def test_pre_bump_rows_still_validate_backward_compat(self):
         # The #30 namespacing bump had to keep rows written before it readable.
@@ -1422,6 +1422,43 @@ class EndToEndAggregateTests(unittest.TestCase):
             retampered = self._run(out, "verify-proof")
             self.assertNotEqual(retampered.returncode, 0, retampered.stdout + retampered.stderr)
             self.assertIn("hash mismatch for .agent/aggregation.json", retampered.stdout)
+
+    def test_runtime_policy_floor_needs_an_audit_of_the_aggregate_root(self):
+        # #117: aggregation carries no drift report, so a floor on a runtime
+        # policy fails until audit-drift runs on the canonical root itself.
+        import hashlib
+        import tempfile
+        from agentflow.receipts import sha256_path
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp) / "out"; (out / "src").mkdir(parents=True)
+            self._git(out, "init", "-q"); self._git(out, "config", "user.email", "t@t"); self._git(out, "config", "user.name", "t")
+            (out / "seed.txt").write_text("seed", encoding="utf-8"); self._git(out, "add", "-A"); self._git(out, "commit", "-qm", "seed")
+            a = Path(tmp) / "a"; b = Path(tmp) / "b"
+            self._git(out, "worktree", "add", "-q", "-b", "wa", str(a), "HEAD")
+            self._git(out, "worktree", "add", "-q", "-b", "wb", str(b), "HEAD")
+            fx = out / "src/x.py"; fx.write_text("x", encoding="utf-8"); fy = out / "src/y.py"; fy.write_text("y", encoding="utf-8")
+            contract = default_execution_contract()
+            contract["proof_policy"]["hunk_attribution"] = "off"  # stub receipts carry no hunks
+            for tree, step, path, sha in ((a, "P1", "src/x.py", sha256_path(fx)), (b, "P2", "src/y.py", sha256_path(fy))):
+                build_tree(tree, steps=[step], files=[(path, sha)], contract=contract, plan_steps=("P1", "P2"))
+                pin = hashlib.sha256((tree / ".agent/execution.contract.json").read_bytes()).hexdigest()
+                for ledger in ("step-runs.jsonl", "file-receipts.jsonl"):
+                    ledger_path = tree / ".agent" / ledger
+                    rows = [json.loads(line) for line in ledger_path.read_text(encoding="utf-8").splitlines()]
+                    ledger_path.write_text("".join(json.dumps({**row, "execution_contract_sha256": pin}, sort_keys=True) + "\n" for row in rows), encoding="utf-8")
+            agg = self._run(tmp, "aggregate-ledgers", "--input", str(a), "--source-id", "w1", "--input", str(b), "--source-id", "w2", "--output", str(out), "--base", "HEAD")
+            self.assertEqual(agg.returncode, 0, agg.stdout + agg.stderr)
+            (out / ".git/info/exclude").write_text(".agent/\n", encoding="utf-8")
+            self.assertEqual(self._run(out, "build-proof").returncode, 0)
+
+            unaudited = self._run(out, "verify-proof", "--require", "lease_policy=advisory")
+            self.assertEqual(unaudited.returncode, 1, unaudited.stdout + unaudited.stderr)
+            self.assertIn("policy_below_floor: .agent/drift-report.json is missing", unaudited.stdout)
+
+            self.assertEqual(self._run(out, "audit-drift").returncode, 0)
+            self.assertEqual(self._run(out, "build-proof").returncode, 0)
+            audited = self._run(out, "verify-proof", "--require", "lease_policy=advisory")
+            self.assertEqual(audited.returncode, 0, audited.stdout + audited.stderr)
 
     def test_build_proof_rejects_aggregated_steps_removed_from_plan(self):
         import tempfile

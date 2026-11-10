@@ -933,8 +933,11 @@ def _stage_canonical(plan: Dict[str, Any], agent_dir: Path) -> None:
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_bytes(data)
     for rel, rows in plan["ledgers"].items():
-        if not rows:
-            continue  # an empty ledger is simply absent (matches single-tree runs)
+        # #117: the execution ledgers exist even when empty, as init-execution
+        # leaves them, so a runtime-policy floor can treat a missing one as
+        # removed. Other empty ledgers stay absent.
+        if not rows and rel not in EXECUTION_ARTIFACT_PATHS.values():
+            continue
         _write_row_file(staging_root / rel, rows)
     for src_abs, dst_rel, expected in plan["receipt_copies"] + plan["review_copies"]:
         # Defense in depth: analyze() already fails closed on malformed input ids

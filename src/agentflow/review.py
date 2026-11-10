@@ -26,6 +26,7 @@ from .contracts import (
     review_depth_satisfies,
     strict_mode,
 )
+from .execution import try_load_execution_contract
 from .locks import file_lock
 from .validation import validate_plan
 
@@ -533,11 +534,9 @@ def effective_review_policy(
     recorded run requirement.
     """
     policy: Dict[str, Any] = {}
-    contract_path = root / ".agent/execution.contract.json"
-    if contract_path.exists():
-        data, _ = try_read_json(contract_path)
-        if data and isinstance(data.get("proof_policy"), dict):
-            policy = data["proof_policy"]
+    data = try_load_execution_contract(root)
+    if data and isinstance(data.get("proof_policy"), dict):
+        policy = data["proof_policy"]
     gate = policy.get("review_gate", "warn")
     if gate not in REVIEW_GATE_POLICIES:
         gate = "warn"

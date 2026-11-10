@@ -69,7 +69,11 @@ constant may only rise within its major, and its published schema may only
 grow: new members under `properties` or `$defs`, and a `schema_version`
 pattern that still accepts every version it accepted before. Every other
 change to a released schema fails CI. `PROOF_PACK` 1.1.0, which adds
-`coverage.validation_gates`, is the first such bump.
+`coverage.validation_gates`, is the first such bump. `STEP_RUNS`,
+`COMMAND_RECEIPTS`, `FILE_RECEIPTS`, `VERIFICATION_RUNS` and `DRIFT_REPORT`
+1.1.0 add `execution_contract_sha256` (#117). A 1.1 reader accepts 1.0 records,
+so a ledger can mix both; Agentflow 1.3 and older reject the 1.1 records in
+working state.
 
 ## Compatibility fixtures
 
@@ -86,7 +90,10 @@ The compatibility matrix contains:
 - an aggregated current proof containing `aggregation.json` and namespaced
   worktree roots; and
 - a 1.1 proof (`current-1.1`) whose `coverage.validation_gates` covers every
-  way a validation gate can be satisfied.
+  way a validation gate can be satisfied; and
+- a proof whose 1.1 ledgers pin every record to its execution contract
+  (`current-contract-pin`), verified under a `--require` floor on
+  `risk_policy`, `lease_policy` and `hunk_attribution`.
 
 The matrix invokes only the promised `verify-proof` command surface and asserts
 both acceptance and diagnostic class. Fixtures are never edited in place: a

@@ -9,7 +9,7 @@ import os
 import re
 import tempfile
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Set, Tuple
 
 from . import __version__
 from .artifacts import (
@@ -1243,6 +1243,75 @@ def policy_floor_findings(
     return findings
 
 
+# #117: these act while the work runs, so a floor on one also needs every record
+# written under them to name the contract the proof hash-verifies.
+RUNTIME_POLICY_KEYS = frozenset({"risk_policy", "lease_policy", "hunk_attribution"})
+_PINNED_LEDGERS = tuple(
+    EXECUTION_ARTIFACT_PATHS[name]
+    for name in ("step-runs", "command-receipts", "file-receipts", "verification-runs")
+)
+_DRIFT_REPORT = ARTIFACT_PATHS["drift-report"]
+_PIN = "execution_contract_sha256"
+
+
+def contract_pin_findings(
+    verified: Dict[str, bytes], listed: Set[str]
+) -> List[Dict[str, Any]]:
+    """#117: one ``policy_below_floor`` error per source not pinned to the contract.
+
+    ``verified`` maps each source path to the bytes whose hash the proof
+    vouched for, the contract included; ``listed`` is every path the proof
+    hashes. A source that failed its hash is already an integrity error.
+    """
+    digest = hashlib.sha256(verified[EXECUTION_ARTIFACT_PATHS["execution-contract"]]).hexdigest()
+    errors: List[str] = []
+    for source in _PINNED_LEDGERS:
+        data = verified.get(source)
+        if data is None:
+            # init-execution creates every ledger, so one the proof does not
+            # hash under this exact path was removed or respelled: fail closed.
+            if source not in listed:
+                errors.append(f"{source} is missing from the proof")
+            continue
+        other = unpinned = 0
+        first: Optional[int] = None
+        for number, line in enumerate(data.decode("utf-8", errors="replace").splitlines(), 1):
+            if not line.strip():
+                continue
+            try:
+                record = json.loads(line)
+            except ValueError:
+                record = None
+            pin = record.get(_PIN) if isinstance(record, dict) else None
+            if pin == digest:
+                continue
+            if isinstance(pin, str):
+                other += 1
+            else:
+                unpinned += 1
+            first = first or number
+        if first is not None:
+            errors.append(
+                f"{source} has {other + unpinned} record(s) not pinned to the verified "
+                f"execution contract ({other} under another contract, {unpinned} "
+                f"unpinned; first at line {first})"
+            )
+    drift = verified.get(_DRIFT_REPORT)
+    if drift is None and _DRIFT_REPORT not in listed:
+        errors.append(f"{_DRIFT_REPORT} is missing; run audit-drift, then build-proof")
+    elif drift is not None:
+        try:
+            report = json.loads(drift.decode("utf-8"))
+        except ValueError:
+            report = None
+        if not isinstance(report, dict) or report.get(_PIN) != digest:
+            errors.append(
+                f"{_DRIFT_REPORT} is not pinned to the verified execution contract; "
+                "run audit-drift under it, then build-proof"
+            )
+    return [{"severity": "error", "message": f"policy_below_floor: {error}"} for error in errors]
+
+
 def _verify_proof(
     root: Path,
     proof_path: Path,
@@ -1303,10 +1372,11 @@ def _verify_proof(
                 "message": "proof generated_from/files path mismatch: " + "; ".join(details),
             }
         )
-    # #111: the floor judges these exact bytes, never a later re-read, so a
-    # contract swapped after hashing on a still-writable root cannot pass it.
+    # #111/#117: the floor judges these exact bytes, never a later re-read, so a
+    # file swapped after hashing on a still-writable root cannot pass it.
     contract_source = EXECUTION_ARTIFACT_PATHS["execution-contract"]
-    verified_contract: Optional[bytes] = None
+    floor_sources = {contract_source, _DRIFT_REPORT, *_PINNED_LEDGERS}
+    verified: Dict[str, bytes] = {}
     for item in proof.get("files", []):
         if not isinstance(item, dict):
             findings.append({"severity": "error", "message": "proof file entry is malformed"})
@@ -1326,16 +1396,15 @@ def _verify_proof(
         if not path.exists():
             findings.append({"severity": "error", "message": f"missing source {relative_path}"})
             continue
-        contract_bytes = resolved_path.read_bytes() if relative_path == contract_source else None
+        data = resolved_path.read_bytes() if relative_path in floor_sources else None
         actual_hash = (
-            hashlib.sha256(contract_bytes).hexdigest()
-            if contract_bytes is not None
-            else sha256_file(resolved_path)
+            hashlib.sha256(data).hexdigest() if data is not None else sha256_file(resolved_path)
         )
         if actual_hash != expected_hash:
             findings.append({"severity": "error", "message": f"hash mismatch for {relative_path}"})
-        elif contract_bytes is not None:
-            verified_contract = contract_bytes
+        elif data is not None:
+            verified[relative_path] = data
+    verified_contract = verified.get(contract_source)
     # ratchet-v1: honor the build-time policy floor baked into the proof (tamper-evident via core_sha256)
     recorded_review_policy = None
     review_block = proof.get("review")
@@ -1375,6 +1444,8 @@ def _verify_proof(
         except ValueError:  # includes UnicodeDecodeError and JSONDecodeError
             contract = None
         findings.extend(policy_floor_findings(contract, floor))
+        if any(key in RUNTIME_POLICY_KEYS for key, _ in floor):
+            findings.extend(contract_pin_findings(verified, file_paths))
     findings.extend(_verify_requirement_coverage(root, proof))
     findings.extend(_verify_design_decision_coverage(root, proof))
     findings.extend(_verify_validation_gate_coverage(root, proof))

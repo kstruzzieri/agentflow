@@ -767,8 +767,8 @@ class ReviewSchemaTests(unittest.TestCase):
 class LeaseSchemaContractTests(unittest.TestCase):
     def test_lease_schema_versions_bumped(self) -> None:
         self.assertEqual(PROOF_PACK_SCHEMA_VERSION, "1.1.0")
-        self.assertEqual(DRIFT_REPORT_SCHEMA_VERSION, "1.0.0")
-        self.assertEqual(STEP_RUNS_SCHEMA_VERSION, "1.0.0")
+        self.assertEqual(DRIFT_REPORT_SCHEMA_VERSION, "1.1.0")
+        self.assertEqual(STEP_RUNS_SCHEMA_VERSION, "1.1.0")
 
     def test_proof_pattern_accepts_lease_version(self) -> None:
         schema = load_schema("proof-pack.schema.json")
@@ -824,10 +824,28 @@ class ValidationGateSchemaContractTests(unittest.TestCase):
         )
 
 
+class ContractPinSchemaContractTests(unittest.TestCase):
+    def test_runtime_ledgers_declare_an_optional_contract_pin(self) -> None:
+        # #117: an additive 1.1 field; readers keep accepting 1.0 records.
+        for name in (
+            "step-runs", "command-receipts", "file-receipts", "verification-runs", "drift-report"
+        ):
+            with self.subTest(schema=name):
+                schema = load_schema(f"{name}.schema.json")
+                self.assertEqual(
+                    schema["properties"]["execution_contract_sha256"],
+                    {"type": ["string", "null"], "pattern": "^[0-9a-f]{64}$"},
+                )
+                self.assertNotIn("execution_contract_sha256", schema["required"])
+                pattern = schema["properties"]["schema_version"]["pattern"]
+                for version in ("1.0.0", "1.1.0"):
+                    self.assertRegex(version, pattern)
+
+
 class HunkContractTests(unittest.TestCase):
     def test_versions_bumped(self) -> None:
-        self.assertEqual(FILE_RECEIPTS_SCHEMA_VERSION, "1.0.0")
-        self.assertEqual(DRIFT_REPORT_SCHEMA_VERSION, "1.0.0")
+        self.assertEqual(FILE_RECEIPTS_SCHEMA_VERSION, "1.1.0")
+        self.assertEqual(DRIFT_REPORT_SCHEMA_VERSION, "1.1.0")
 
     def test_hunk_enums_defined(self) -> None:
         self.assertEqual(HUNK_ATTRIBUTION_POLICIES, ("enforce", "observe", "off"))

@@ -25,6 +25,7 @@ STEP_EVENT = {
     "lease_expires_at": "string|null", "reason": "string|null",
     "reason_code": "string|null", "findings": "array|null",
     "amends_attempt": "string|null", "amends_completed_at": "string|null",
+    "execution_contract_sha256": "string|null",
 }
 COMMAND_RECEIPT = {
     "schema_version": "string", "id": "string", "step_id": "string",
@@ -34,6 +35,7 @@ COMMAND_RECEIPT = {
     "timed_out": "boolean", "timeout_seconds": "number|null", "truncated": "boolean",
     "stdout_path": "string", "stdout_sha256": "string", "stdout_truncated": "boolean",
     "stderr_path": "string", "stderr_sha256": "string", "stderr_truncated": "boolean",
+    "execution_contract_sha256": "string|null",
 }
 FILE_RECEIPT = {
     "schema_version": "string", "id": "string", "step_id": "string",
@@ -41,12 +43,13 @@ FILE_RECEIPT = {
     "change_kind": "string", "before_git_blob": "string|null", "after_sha256": "string|null",
     "diff_engine": "string", "diff_algorithm": "string", "diff_command_version": "string",
     "diff_unified": "integer", "hunks": "array", "hunk_attribution": "string",
-    "recorded_at": "string",
+    "recorded_at": "string", "execution_contract_sha256": "string|null",
 }
 VERIFICATION = {
     "schema_version": "string", "id": "string", "scope": "string", "status": "string",
     "step_id": "string|null", "attempt_id": "string|null", "strict": "boolean",
     "replay": "boolean", "findings": "array", "recorded_at": "string",
+    "execution_contract_sha256": "string|null",
 }
 RESUMABILITY = {
     "type": "object|null",

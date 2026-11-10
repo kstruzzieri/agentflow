@@ -150,6 +150,29 @@ class ProofCompatibilityMatrixTests(unittest.TestCase):
             result.stdout,
         )
 
+    def test_contract_pin_fixture_verifies_under_a_runtime_policy_floor(self) -> None:
+        # #117: the first proof whose ledgers pin every record to the contract
+        # it ran under, so later verifiers keep honoring 1.1 pins under --require.
+        root = FIXTURES / "current-contract-pin"
+        env = os.environ.copy()
+        env["PYTHONPATH"] = str(ROOT / "src")
+        result = subprocess.run(
+            [
+                sys.executable, "-m", "agentflow", "verify-proof", "--root", str(root),
+                "--require", "risk_policy=require-confirmation",
+                "--require", "lease_policy=advisory",
+                "--require", "hunk_attribution=enforce",
+            ],
+            cwd=ROOT,
+            env=env,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=False,
+        )
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("proof verified", result.stdout)
+
     def test_current_full_fixture_exercises_load_bearing_optional_blocks(self) -> None:
         root = FIXTURES / "current-full"
         proof = json.loads((root / ".agent/proof-pack.json").read_text(encoding="utf-8"))

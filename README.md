@@ -421,13 +421,13 @@ PYTHONPATH=src python3 -m agentflow verify-proof --root "$PROOF_ROOT" \
 
 A setting below its floor fails with `policy_below_floor`, and so does a proof
 with no execution contract. Keep the floor in CI configuration the agent cannot
-change. `agentflow verify-proof --help` and the CHANGELOG list the keys. The
-floor reads the contract as `build-proof` hashed it, not the contract the work
-ran under. `risk_policy`, `lease_policy` and `hunk_attribution` can be raised
-after the work, and receipt requirements can also be tightened after a step
-completes, without failing the matching floor. A proof can even verify with a
-failed gate under the tighter receipt policy (see
-[docs/security-model.md](docs/security-model.md)).
+change. `agentflow verify-proof --help` and the CHANGELOG list the keys. A
+floor on `risk_policy`, `lease_policy` or `hunk_attribution` also requires every
+run record, and a drift report from `audit-drift`, to name the contract the
+proof hashes, so raising those settings after the work fails it. Receipt
+requirements can still be tightened after a step completes without failing the
+matching floor, and a proof can even verify with a failed gate under the
+tighter receipt policy (see [docs/security-model.md](docs/security-model.md)).
 
 The workflow uses `AGENTFLOW_PROOF_ROOT` to select the committed proof bundle.
 This repository points it at `tests/fixtures/proof-bundle` so CI can regression

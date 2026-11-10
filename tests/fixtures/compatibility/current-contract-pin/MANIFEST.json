@@ -1,0 +1,28 @@
+{
+  "artifacts": {
+    ".agent/amendments.jsonl": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    ".agent/assumptions.json": "c4c98e433ab1d2554ff6dcdb1917b19cc2546428ce14a9634f39d38615b49d26",
+    ".agent/capability-receipts.jsonl": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    ".agent/command-receipts.jsonl": "3b4c424269fd245af2a1dabe4a5258bb9fd8675de77525843ac7239f7d5f18b8",
+    ".agent/context-receipts.jsonl": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    ".agent/drift-report.json": "dc09e6a6a378d203720337a3b5f3e8e4fe1bece1e65810802db7c44774612845",
+    ".agent/evidence.jsonl": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    ".agent/execution.contract.json": "354171195450d1a4f44686358848066c4190f37286fb2ffe2a334aec4d39dfe9",
+    ".agent/failures.jsonl": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    ".agent/file-receipts.jsonl": "2a0c046133f7e144826e27ea34ae8dd5dd0484f74754669ef46cb831bac73d19",
+    ".agent/model-profiles/anthropic.example.json": "c39697f14aa9243aa424ac1fc25ed4af1586867cbf483e25783bb5822e808c1d",
+    ".agent/model-profiles/local.example.json": "d062005370cfd6b33a594c0ab1808203ba8e26026bca5a308db2a6ba93066f78",
+    ".agent/model-profiles/openai.example.json": "f15b10cd53f5551e00b34612145e399c360f441021b123e644701817299060f1",
+    ".agent/plan.lock.json": "2311a3a28099254f51649bc7bb7706b7d30072e422c4b088101840fed1ed6cf5",
+    ".agent/proof-pack.json": "f483cf0065eb729e1cd24d9608f04fd6f74198a17fb9a51ff28c0b4b52b49f1f",
+    ".agent/proof-pack.md": "02c55b227ac9a86fc52f37a8777df826dd52ba18cde885074e7580db7eaf0e7a",
+    ".agent/receipts/A1/CR1.stderr.txt": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    ".agent/receipts/A1/CR1.stdout.txt": "dbdbfc4eea60c31dfdb68830dcf4393aa7e1fb5b64af6377e444c6c42e909203",
+    ".agent/review-runs.jsonl": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    ".agent/runtime-snapshots.jsonl": "987d00f0aff38c6408171bd3cfc04380dff41b58ce58b2ebb32d70ec5834f79a",
+    ".agent/runtime.config.json": "38744c648ec18b3e4406fcf592a13515fa8151a22159ac6bed00667a5608c950",
+    ".agent/step-runs.jsonl": "b84f904206fdfedd1640a09ff6e084e562568b5ac8c0e655686294f3af143669",
+    ".agent/verification-runs.jsonl": "0d5b9f67fd542d5a65b2cedb8df00cb31e6a8dc58b39270036b52655157beba9",
+    "fixture.txt": "af609b5fcb13639bb22652da3837e841989275ed2c77e8189d74f069ec4eea8e"
+  }
+}
