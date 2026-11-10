@@ -72,18 +72,22 @@ the [tracking issue #11](https://github.com/kstruzzieri/agentflow/issues/11).
   receipt requirements. The MCP `verify_proof` tool takes the same list as
   `require`
   ([#111](https://github.com/kstruzzieri/agentflow/issues/111)). No schema
-  changes. The floor judges the contract that `build-proof` hashed, not the
-  one the work ran under (#117 below).
+  changes.
+- A floor on `risk_policy`, `lease_policy` or `hunk_attribution` also checks
+  the contract the work ran under: every step event, command and file
+  receipt, verification run and the drift report records the hash of the
+  contract it was decided under, and `verify-proof --require` on those keys
+  fails unless each names the hash-verified contract
+  ([#117](https://github.com/kstruzzieri/agentflow/issues/117)). The
+  step-runs, command-receipts, file-receipts, verification-runs and
+  drift-report schemas move to `1.1.0`; Agentflow 1.3 and older reject the
+  new records in working state.
 
 ## After 1.0
 
 Open issues that tighten who decides a proof's strictness and who approves
 risky commands:
 
-- A policy floor on the settings that act while the work runs
-  (`risk_policy`, `lease_policy`, `hunk_attribution`) that checks the
-  contract the work ran under, not only the one `build-proof` hashed
-  ([#117](https://github.com/kstruzzieri/agentflow/issues/117)).
 - High-risk confirmations bound to the exact command and an approver outside
   the agent ([#112](https://github.com/kstruzzieri/agentflow/issues/112)).
 - Replaying recorded commands against a proposed risk policy before
