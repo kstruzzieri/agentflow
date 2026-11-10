@@ -180,12 +180,12 @@ def init_execution_artifacts(root: Path, force: bool = False) -> Tuple[List[str]
     return created, skipped
 
 
-# #117: the contract bytes each CLI invocation reads, by resolved path. MCP tool
+# #117: the contract bytes each CLI invocation reads, by absolute path. MCP tool
 # calls run through cli.main too. Every policy reader and every
 # execution_contract_sha256 pin come from these bytes, so a record names the
 # contract its policy was read from even if a command it ran rewrote the file.
 # Outside a snapshot (direct library calls) each read is fresh.
-_CONTRACT_SNAPSHOT: ContextVar[Optional[Dict[str, Optional[bytes]]]] = ContextVar(
+_CONTRACT_SNAPSHOT: ContextVar[Optional[Dict[str, bytes | OSError | None]]] = ContextVar(
     "agentflow_contract_snapshot", default=None
 )
 
@@ -202,13 +202,21 @@ def execution_contract_snapshot() -> Iterator[None]:
 def _execution_contract_bytes(root: Path) -> Optional[bytes]:
     path = root / EXECUTION_ARTIFACT_PATHS["execution-contract"]
     snapshot = _CONTRACT_SNAPSHOT.get()
-    key = str(path.resolve())
+    # Resolving symlinks would change the cache key if a child retargets them.
+    key = str(path.absolute())
     if snapshot is not None and key in snapshot:
-        return snapshot[key]
+        cached = snapshot[key]
+        if isinstance(cached, OSError):
+            raise cached
+        return cached
     try:
         data: Optional[bytes] = path.read_bytes()
     except FileNotFoundError:
         data = None
+    except OSError as exc:
+        if snapshot is not None:
+            snapshot[key] = exc
+        raise
     if snapshot is not None:
         snapshot[key] = data
     return data

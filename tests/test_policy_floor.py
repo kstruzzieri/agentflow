@@ -16,6 +16,7 @@ from unittest import mock
 from agentflow import proof as proof_module
 from agentflow.artifacts import default_drift_report, read_jsonl, write_json
 from agentflow.contracts import PLAN_SCHEMA_VERSION
+from agentflow.execution import execution_contract_sha256, execution_contract_snapshot
 from agentflow.proof import core_sha256
 
 
@@ -379,6 +380,42 @@ def _records(root: Path, ledger: str) -> list:
 class ContractPinWriterTests(unittest.TestCase):
     """#117: a record names the contract its runtime policy was read from."""
 
+    def test_an_unreadable_snapshot_stays_unreadable_after_repair(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            _start(root)
+            path = root / CONTRACT
+            strong = path.read_bytes()
+            path.unlink()
+            path.mkdir()
+            with execution_contract_snapshot():
+                with self.assertRaises(IsADirectoryError):
+                    execution_contract_sha256(root)
+                path.rmdir()
+                path.write_bytes(strong)
+                with self.assertRaises(IsADirectoryError):
+                    execution_contract_sha256(root)
+            self.assertEqual(execution_contract_sha256(root), _digest(strong))
+
+    def test_run_refuses_an_unreadable_contract_before_launching_the_child(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            _start(root)
+            path = root / CONTRACT
+            (root / "strong.json").write_bytes(path.read_bytes())
+            _ok(root, "claim-step", "P1", "--agent", "agent-a")
+            path.unlink()
+            (root / "unreadable").mkdir()
+            path.symlink_to("../unreadable", target_is_directory=True)
+            result = agentflow(root, "run", "--step", "P1", "--", PY, "-c",
+                "from pathlib import Path; Path('child-ran').touch(); "
+                "p = Path('.agent/execution.contract.json'); p.unlink(); "
+                "p.write_bytes(Path('strong.json').read_bytes())")
+
+            self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertFalse((root / "child-ran").exists())
+            self.assertEqual(_records(root, ".agent/command-receipts.jsonl"), [])
+
     def test_every_runtime_record_carries_the_contract_digest(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -608,6 +645,57 @@ class ContractPinFloorTests(unittest.TestCase):
 
         self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
         self.assertIn(".agent/command-receipts.jsonl has 1 record(s) not pinned", result.stdout)
+
+    def test_retargeting_contract_symlinks_cannot_restore_a_runtime_floor(self) -> None:
+        for replacement in ("file", "symlink", "agent_directory"):
+            with self.subTest(replacement=replacement):
+                root = self.fresh()
+                _start(root)
+                path = root / CONTRACT
+                (root / "strong.json").write_bytes(path.read_bytes())
+                _ok(root, "claim-step", "P1", "--agent", "agent-a")
+                _edit_contract(root, lambda c: c["command_policy"].__setitem__("risk_policy", "warn"))
+                weak = path.read_bytes()
+                if replacement == "agent_directory":
+                    (root / ".agent").rename(root / "weak-agent")
+                    (root / ".agent").symlink_to("weak-agent", target_is_directory=True)
+                    restore = (
+                        "import shutil; shutil.copytree('.agent', 'strong-agent'); "
+                        "Path('strong-agent/execution.contract.json').write_bytes(Path('strong.json').read_bytes()); "
+                        "Path('.agent').unlink(); Path('.agent').symlink_to('strong-agent', target_is_directory=True)"
+                    )
+                else:
+                    path.rename(root / "weak.json")
+                    path.symlink_to("../weak.json")
+                    restore = "p = Path('.agent/execution.contract.json'); p.unlink(); "
+                    restore += (
+                        "p.write_bytes(Path('strong.json').read_bytes())"
+                        if replacement == "file" else "p.symlink_to('../strong.json')"
+                    )
+                _ok(root, "run", "--step", "P1", "--", PY, "-c",
+                    "from pathlib import Path; " + restore)
+                receipt = _records(root, ".agent/command-receipts.jsonl")[-1]
+                _finish(root)
+
+                result = self.verify(root, "risk_policy=require-confirmation")
+
+                self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+                self.assertIn(".agent/command-receipts.jsonl has 1 record(s) not pinned", result.stdout)
+                self.assertEqual(receipt[PIN], _digest(weak))
+
+    def test_an_unchanged_symlinked_contract_passes(self) -> None:
+        root = self.fresh()
+        _start(root)
+        path = root / CONTRACT
+        path.rename(root / "strong.json")
+        path.symlink_to("../strong.json")
+        _ok(root, "claim-step", "P1", "--agent", "agent-a")
+        _finish(root)
+
+        result = self.verify(root, *RUNTIME_FLOOR)
+
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("proof verified", result.stdout)
 
     def test_pins_are_judged_on_the_bytes_that_were_hashed(self) -> None:
         # A producer repins the ledgers after verify-proof hashed them.

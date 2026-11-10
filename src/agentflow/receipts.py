@@ -307,6 +307,7 @@ def _run_command(
         root, step_id, resolved_attempt, new_work=True, agent_id=agent_id
     )
     policy = _contract_policy(root)
+    contract_digest = execution_contract_sha256(root)
     risk_policy = policy.get("risk_policy")
     classification = classify_command(command, plan, step_id, root=root)
     decision = evaluate_policy(classification["level"], risk_policy, confirmed)
@@ -338,7 +339,7 @@ def _run_command(
                 "decision": "blocked",
                 "timed_out": False,
                 "risk_policy": risk_policy,
-                "execution_contract_sha256": execution_contract_sha256(root),
+                "execution_contract_sha256": contract_digest,
             }
             append_jsonl(receipts_path, receipt)
         return receipt
@@ -409,7 +410,7 @@ def _run_command(
             "decision": receipt_decision,
             "timed_out": timed_out,
             "timeout_seconds": timeout_seconds,
-            "execution_contract_sha256": execution_contract_sha256(root),
+            "execution_contract_sha256": contract_digest,
         }
         _apply_confirmation_fields(
             receipt,
