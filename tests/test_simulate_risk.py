@@ -138,6 +138,27 @@ class SimulateRiskTests(unittest.TestCase):
             # Drift compares against the current plan, so a plan change is not drift.
             self.assertEqual(report["analyzer_drift"], [])
 
+    def test_invalid_plans_are_rejected_without_mutation(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = make_root(tmp)
+            before = agent_snapshot(root)
+            for field, value in (
+                ("blocked_files", "notes.txt"),
+                ("allowed_files", "fixture.txt"),
+                ("steps", None),
+                ("schema_version", "2.0.0"),
+            ):
+                invalid = dict(plan(), **{field: value})
+                for source in ("current", "proposed"):
+                    with self.subTest(field=field, source=source):
+                        with self.assertRaises(ValueError):
+                            simulate_risk(
+                                root, invalid if source == "current" else plan(),
+                                proposed_plan=invalid if source == "proposed" else plan(),
+                                risk_policy="block",
+                            )
+            self.assertEqual(agent_snapshot(root), before)
+
     def test_commands_agentflow_did_not_run_are_advisory(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = make_root(tmp)
@@ -224,12 +245,46 @@ class SimulateRiskTests(unittest.TestCase):
     def test_malformed_receipts_are_skipped_and_counted(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = make_root(tmp)
-            bad = dict(command_receipts(root)[0], id="CR5", command="rm -rf build")
-            append_jsonl(root / ".agent/command-receipts.jsonl", bad)
+            receipt = dict(command_receipts(root)[2], id="CR5")
+            ledger = root / ".agent/command-receipts.jsonl"
+            original = ledger.read_text(encoding="utf-8")
+            for bad in (
+                None, [], "not a receipt", 42,
+                dict(receipt, command="rm -rf build"),
+                dict(receipt, command=[]),
+                dict(receipt, step_id=None),
+                dict(receipt, id=[]),
+                dict(receipt, provenance=[]),
+                dict(receipt, risk={"level": [], "findings": []}),
+            ):
+                with self.subTest(receipt=bad):
+                    ledger.write_text(json.dumps(bad) + "\n" + original, encoding="utf-8")
+                    before = agent_snapshot(root)
+                    report = simulate_risk(root, plan(), risk_policy="block")
+                    self.assertEqual(report["receipts"], 5)
+                    self.assertEqual(report["skipped"], 1)
+                    self.assertEqual(ids(report["stopped"]), ["CR3"])
+                    out = io.StringIO()
+                    with contextlib.redirect_stdout(out):
+                        code = cli_main([
+                            "simulate-risk", "--root", str(root), "--risk-policy", "block", "--json"
+                        ])
+                    self.assertEqual(code, 0)
+                    self.assertEqual(json.loads(out.getvalue()), report)
+                    self.assertEqual(agent_snapshot(root), before)
+
+    def test_missing_receipt_metadata_remains_advisory(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = make_root(tmp)
+            receipt = dict(command_receipts(root)[2])
+            for field in ("id", "provenance", "risk"):
+                receipt.pop(field)
+            append_jsonl(root / ".agent/command-receipts.jsonl", receipt)
             report = simulate_risk(root, plan(), risk_policy="block")
-            self.assertEqual(report["receipts"], 5)
-            self.assertEqual(report["skipped"], 1)
-            self.assertEqual(ids(report["stopped"]), ["CR3"])
+            self.assertEqual(report["skipped"], 0)
+            self.assertEqual(ids(report["stopped"]), ["CR3", None])
+            self.assertIsNone(report["stopped"][1]["provenance"])
+            self.assertTrue(report["stopped"][1]["advisory"])
 
     def test_simulate_risk_writes_nothing(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -291,6 +346,24 @@ class SimulateRiskCliTests(unittest.TestCase):
             code, _, err = self._run("simulate-risk", "--root", str(root), "--plan", "missing.json")
             self.assertEqual(code, 1)
             self.assertIn("error: cannot read plan missing.json", err)
+
+    def test_invalid_proposed_plan_reports_an_error(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = make_root(tmp)
+            before = agent_snapshot(root)
+            for field, value in (("blocked_files", "notes.txt"), ("schema_version", "2.0.0")):
+                with self.subTest(field=field):
+                    (root / "proposed.json").write_text(
+                        json.dumps(dict(plan(), **{field: value})), encoding="utf-8"
+                    )
+                    code, out, err = self._run(
+                        "simulate-risk", "--root", str(root), "--plan", "proposed.json",
+                        "--risk-policy", "block", "--json",
+                    )
+                    self.assertEqual(code, 1)
+                    self.assertEqual(out, "")
+                    self.assertIn("error:", err)
+            self.assertEqual(agent_snapshot(root), before)
 
 
 if __name__ == "__main__":

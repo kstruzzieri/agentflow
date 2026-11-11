@@ -14,6 +14,7 @@ from .contracts import RISK_POLICIES
 from .execution import load_execution_contract
 from .receipts import command_receipts
 from .risk import classify_command, evaluate_policy
+from .validation import validate_plan
 
 # Only these provenances were started by Agentflow (`run`, `replay-gates`), so
 # only these could a risk policy have stopped. The rest are advisory.
@@ -63,6 +64,10 @@ def simulate_risk(
     if proposed not in RISK_POLICIES:
         raise ValueError(f"unknown risk_policy {proposed!r}")
     scope = plan if proposed_plan is None else proposed_plan
+    for label, candidate in (("current", plan), ("proposed", scope)):
+        errors = validate_plan(candidate)
+        if errors:
+            raise ValueError(f"invalid {label} plan: {'; '.join(errors)}")
     outcome = "blocked" if proposed == "block" else "needs_confirmation"
     receipts = command_receipts(root)
     stopped: List[Dict[str, Any]] = []
@@ -70,16 +75,28 @@ def simulate_risk(
     by_category: Dict[str, List[Any]] = {}
     skipped = 0
     for receipt in receipts:
+        if not isinstance(receipt, dict):
+            skipped += 1
+            continue
         command = receipt.get("command")
         step_id = receipt.get("step_id")
+        provenance = receipt.get("provenance")
+        recorded = receipt.get("risk")
         if (
             not isinstance(command, list)
+            or not command
             or not all(isinstance(item, str) for item in command)
             or not isinstance(step_id, str)
+            or any(
+                value is not None and not isinstance(value, str)
+                for value in (
+                    receipt.get("id"), provenance,
+                    recorded.get("level") if isinstance(recorded, dict) else None,
+                )
+            )
         ):
             skipped += 1
             continue
-        recorded = receipt.get("risk")
         if isinstance(recorded, dict):
             # Against the current plan, so a proposed plan change is not drift.
             now = classify_command(command, plan, step_id, root=root)
@@ -102,7 +119,6 @@ def simulate_risk(
         if evaluate_policy(risk["level"], proposed, confirmed=False) != "block":
             continue
         categories = _categories(risk)
-        provenance = receipt.get("provenance")
         stopped.append(
             {
                 "receipt_id": receipt.get("id"),
