@@ -13,13 +13,16 @@ from typing import Any, Dict, List, Optional, Set, Tuple
 
 from . import __version__
 from .artifacts import (
+    UnverifiedSourceError,
     dumps_json,
     plan_binding_sha256,
     historical_proof_reads,
     read_json,
     read_jsonl,
+    source_exists,
     try_read_json,
     utc_now,
+    verified_source_reads,
     write_json,
 )
 from .contracts import (
@@ -465,7 +468,7 @@ def _verify_requirement_coverage(
         if isinstance(recorded_coverage, dict) and key in recorded_coverage
     }
     plan_path = root / ".agent/plan.lock.json"
-    if not plan_path.exists():
+    if not source_exists(plan_path):
         return []
     try:
         plan = read_json(plan_path)
@@ -529,7 +532,7 @@ def _verify_design_decision_coverage(
         else {}
     )
     plan_path = root / ".agent/plan.lock.json"
-    if not plan_path.exists():
+    if not source_exists(plan_path):
         return []
     try:
         plan = read_json(plan_path)
@@ -576,7 +579,8 @@ def _verify_validation_gate_coverage(
         proof.get("schema_version"), VALIDATION_GATES_SINCE
     ):
         return []
-    if recorded is None and not (root / EXECUTION_ARTIFACT_PATHS["execution-contract"]).exists():
+    contract_path = root / EXECUTION_ARTIFACT_PATHS["execution-contract"]
+    if recorded is None and not source_exists(contract_path):
         return []
     # Older 1.1 bundles used the default plan; custom builds bind their source.
     source = coverage.get("validation_gate_plan", ".agent/plan.lock.json")
@@ -585,9 +589,9 @@ def _verify_validation_gate_coverage(
     plan_path = root / source
     if not plan_path.resolve().is_relative_to(root.resolve()):
         return [{"severity": "error", "message": "validation gate plan escapes root"}]
-    if not plan_path.exists():
+    if not source_exists(plan_path):
         return [{"severity": "error", "message": "validation gate plan is missing"}]
-    if not (root / EXECUTION_ARTIFACT_PATHS["execution-contract"]).exists():
+    if not source_exists(contract_path):
         expected = None
     else:
         try:
@@ -1372,11 +1376,12 @@ def _verify_proof(
                 "message": "proof generated_from/files path mismatch: " + "; ".join(details),
             }
         )
-    # #111/#117: the floor judges these exact bytes, never a later re-read, so a
-    # file swapped after hashing on a still-writable root cannot pass it.
+    # #111/#117/#126: the floor and every later check judge these exact bytes,
+    # never a re-read, so a file swapped after hashing on a still-writable root
+    # cannot change the verdict. ``sources`` serves them to the later checks.
     contract_source = EXECUTION_ARTIFACT_PATHS["execution-contract"]
-    floor_sources = {contract_source, _DRIFT_REPORT, *_PINNED_LEDGERS}
     verified: Dict[str, bytes] = {}
+    sources: Dict[str, Optional[bytes]] = {}
     for item in proof.get("files", []):
         if not isinstance(item, dict):
             findings.append({"severity": "error", "message": "proof file entry is malformed"})
@@ -1394,16 +1399,18 @@ def _verify_proof(
             findings.append({"severity": "error", "message": f"proof path escapes root: {relative_path}"})
             continue
         if not path.exists():
+            # Left out of ``sources``: later checks see it absent, and one that
+            # appears now cannot lift this error.
             findings.append({"severity": "error", "message": f"missing source {relative_path}"})
             continue
-        data = resolved_path.read_bytes() if relative_path in floor_sources else None
-        actual_hash = (
-            hashlib.sha256(data).hexdigest() if data is not None else sha256_file(resolved_path)
-        )
-        if actual_hash != expected_hash:
+        key = str(path.absolute())
+        data = resolved_path.read_bytes()
+        if hashlib.sha256(data).hexdigest() != expected_hash:
             findings.append({"severity": "error", "message": f"hash mismatch for {relative_path}"})
-        elif data is not None:
+            sources[key] = None
+        else:
             verified[relative_path] = data
+            sources.setdefault(key, data)
     verified_contract = verified.get(contract_source)
     # ratchet-v1: honor the build-time policy floor baked into the proof (tamper-evident via core_sha256)
     recorded_review_policy = None
@@ -1446,18 +1453,31 @@ def _verify_proof(
         findings.extend(policy_floor_findings(contract, floor))
         if any(key in RUNTIME_POLICY_KEYS for key, _ in floor):
             findings.extend(contract_pin_findings(verified, file_paths))
-    findings.extend(_verify_requirement_coverage(root, proof))
-    findings.extend(_verify_design_decision_coverage(root, proof))
-    findings.extend(_verify_validation_gate_coverage(root, proof))
-    findings.extend(verify_proof_checks(proof, effective_proof_strict))
-    findings.extend(verify_receipt_outputs(root))
-    findings.extend(verify_review_integrity(root, strict, recorded_review_policy))
-    if replay and (root / EXECUTION_ARTIFACT_PATHS["execution-contract"]).exists():
+    with verified_source_reads(sources):
+        findings.extend(_unless_unverified(_verify_requirement_coverage, root, proof))
+        findings.extend(_unless_unverified(_verify_design_decision_coverage, root, proof))
+        findings.extend(_unless_unverified(_verify_validation_gate_coverage, root, proof))
+        findings.extend(verify_proof_checks(proof, effective_proof_strict))
+        findings.extend(_unless_unverified(verify_receipt_outputs, root))
+        findings.extend(
+            _unless_unverified(verify_review_integrity, root, strict, recorded_review_policy)
+        )
         plan_path = root / ".agent/plan.lock.json"
-        if plan_path.exists():
-            replay_result = replay_gates(root, read_json(plan_path), record=False)
-            findings.extend(replay_result["errors"])
+        if replay and source_exists(root / contract_source) and source_exists(plan_path):
+            findings.extend(
+                _unless_unverified(
+                    lambda: replay_gates(root, read_json(plan_path), record=False)["errors"]
+                )
+            )
     return findings
+
+
+def _unless_unverified(check, *args: Any) -> List[Dict[str, Any]]:
+    """#126: a check that needs a source which failed its hash says so instead."""
+    try:
+        return check(*args)
+    except UnverifiedSourceError as exc:
+        return [{"severity": "error", "message": str(exc)}]
 
 
 def verify_proof(

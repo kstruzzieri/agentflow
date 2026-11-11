@@ -1119,12 +1119,19 @@ class CoverageTests(unittest.TestCase):
 
     def test_verify_proof_revalidates_requirement_traceability(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
-            root, _proof = self._traceability_proof_fixture(tmp)
+            root, proof = self._traceability_proof_fixture(tmp)
             plan_path = root / ".agent/plan.lock.json"
             plan = json.loads(plan_path.read_text(encoding="utf-8"))
             criterion = plan["requirements"][0]["acceptance_criteria"][0]
             plan["requirements"][0]["acceptance_criteria"].append(dict(criterion))
             write_json(plan_path, plan)
+            # #126: a plan that fails its hash is not read again, so re-seal it
+            # for the traceability check to judge it, as a hand-made bundle would.
+            for item in proof["files"]:
+                if item["path"] == ".agent/plan.lock.json":
+                    item["sha256"] = sha256_file(plan_path)
+            proof["core_sha256"] = core_sha256(proof)
+            write_json(root / ".agent/proof-pack.json", proof)
 
             findings = verify_proof(root, root / ".agent/proof-pack.json")
 

@@ -822,5 +822,97 @@ class EvidenceOnlyFloorTests(unittest.TestCase):
             )
 
 
+class VerifiedSourceReadTests(unittest.TestCase):
+    """#126: every check after the hash check judges the bytes that were hashed."""
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls._tmp = tempfile.TemporaryDirectory()
+        cls.root = Path(cls._tmp.name) / "fixture"
+        cls.root.mkdir()
+        build_fixture(cls.root, edit=None)
+
+    @classmethod
+    def tearDownClass(cls) -> None:
+        cls._tmp.cleanup()
+
+    def copy(self) -> Path:
+        tmp = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, tmp)
+        return Path(shutil.copytree(self.root, Path(tmp) / "fixture"))
+
+    def verify(self, root: Path, swap=None) -> list:
+        """verify-proof --replay, running ``swap`` right after the hash check."""
+        real_core = proof_module.core_sha256
+
+        def swap_then_hash(proof: dict) -> str:
+            if swap is not None:
+                swap()
+            return real_core(proof)
+
+        with mock.patch.object(proof_module, "core_sha256", side_effect=swap_then_hash):
+            return proof_module.verify_proof(root, root / ".agent/proof-pack.json", replay=True)
+
+    def test_untouched_bundle_still_verifies(self) -> None:
+        findings = self.verify(self.copy())
+
+        self.assertEqual([f for f in findings if f["severity"] == "error"], [])
+
+    def test_swapping_any_hashed_source_after_its_hash_check_changes_nothing(self) -> None:
+        baseline = self.verify(self.copy())
+        proof = json.loads((self.root / ".agent/proof-pack.json").read_text(encoding="utf-8"))
+        swaps = {
+            "rewritten": lambda path: path.write_bytes(b"{not json\n"),
+            "deleted": Path.unlink,
+        }
+        for item in proof["files"]:
+            for name, swap in swaps.items():
+                with self.subTest(path=item["path"], swap=name):
+                    root = self.copy()
+                    self.assertEqual(self.verify(root, lambda: swap(root / item["path"])), baseline)
+
+    def test_receipt_outputs_are_judged_against_the_hashed_ledger(self) -> None:
+        # The issue's example: forge a receipt output, then swap in a ledger that
+        # vouches for the forgery once verify-proof has hashed the real one.
+        root = self.copy()
+        ledger = root / ".agent/command-receipts.jsonl"
+        receipts = read_jsonl(ledger)
+        stdout_path = receipts[0]["stdout_path"]
+        (root / stdout_path).write_bytes(b"forged\n")
+        receipts[0]["stdout_sha256"] = hashlib.sha256(b"forged\n").hexdigest()
+        forged = "".join(json.dumps(receipt, sort_keys=True) + "\n" for receipt in receipts)
+
+        findings = self.verify(root, lambda: ledger.write_text(forged, encoding="utf-8"))
+
+        self.assertIn(
+            f"receipt output hash mismatch for {stdout_path}",
+            [finding["message"] for finding in findings],
+        )
+
+    def test_a_source_that_fails_its_hash_is_not_reread(self) -> None:
+        root = self.copy()
+        (root / ".agent/command-receipts.jsonl").write_bytes(b"{not json\n")
+
+        messages = [finding["message"] for finding in self.verify(root)]
+
+        self.assertIn("hash mismatch for .agent/command-receipts.jsonl", messages)
+        self.assertEqual([m for m in messages if "invalid JSONL" in m], [])
+
+    def test_contract_read_before_the_hash_check_does_not_decide(self) -> None:
+        # The CLI reads the contract once before any work (#117). If it changed
+        # between that read and the hash check, the hashed bytes still decide.
+        root = self.copy()
+        baseline = self.verify(root)
+        honest = (root / CONTRACT).read_bytes()
+        with execution_contract_snapshot():
+            _edit_contract(
+                root, lambda c: c["proof_policy"].update(review_gate="block", require_review_run=True)
+            )
+            execution_contract_sha256(root)
+            (root / CONTRACT).write_bytes(honest)
+
+            self.assertEqual(self.verify(root), baseline)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -3,12 +3,13 @@
 from __future__ import annotations
 
 import hashlib
+import io
 import json
 from contextlib import contextmanager
 from contextvars import ContextVar
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Optional, Tuple
+from typing import Any, Dict, Iterable, Iterator, List, Optional, Tuple
 
 from .contracts import (
     ARTIFACT_COMPATIBILITY_POLICIES,
@@ -245,7 +246,56 @@ def historical_proof_reads() -> Iterable[None]:
         _VALIDATE_ARTIFACT_VERSIONS.reset(token)
 
 
+class UnverifiedSourceError(ValueError):
+    """#126: a check asked for a proof source whose hash did not verify."""
+
+
+# #126: inside one verify-proof call, every source the proof hashes, by absolute
+# path: the bytes whose hash verified, or None for one that failed it. The
+# checks after the hash check read these, never the disk, so a file swapped
+# after it was hashed cannot change what they judge. Keyed like #117's contract
+# snapshot, so retargeting a symlink cannot dodge it either.
+_VERIFIED_SOURCES: ContextVar[Optional[Dict[str, Optional[bytes]]]] = ContextVar(
+    "agentflow_verified_sources", default=None
+)
+
+
+@contextmanager
+def verified_source_reads(sources: Dict[str, Optional[bytes]]) -> Iterator[None]:
+    token = _VERIFIED_SOURCES.set(sources)
+    try:
+        yield
+    finally:
+        _VERIFIED_SOURCES.reset(token)
+
+
+def verified_bytes(path: Path) -> Optional[bytes]:
+    """The hashed bytes of ``path``, or None when it is not a hashed source.
+
+    Raises UnverifiedSourceError for a hashed source that failed its hash.
+    """
+    sources = _VERIFIED_SOURCES.get()
+    key = str(path.absolute())
+    if sources is None or key not in sources:
+        return None
+    data = sources[key]
+    if data is None:
+        raise UnverifiedSourceError(
+            f"{path} did not pass its proof hash check; verify-proof does not reread it"
+        )
+    return data
+
+
+def source_exists(path: Path) -> bool:
+    """``path.exists()``, except a hashed source exists as it did when hashed."""
+    sources = _VERIFIED_SOURCES.get()
+    return (sources is not None and str(path.absolute()) in sources) or path.exists()
+
+
 def read_json(path: Path) -> Dict[str, Any]:
+    data = verified_bytes(path)
+    if data is not None:
+        return loads_json_artifact(path, data)
     with path.open("r", encoding="utf-8") as handle:
         data = json.load(handle)
     _validate_artifact_version(path, data)
@@ -296,11 +346,18 @@ def append_jsonl(path: Path, item: Dict[str, Any]) -> None:
 
 
 def read_jsonl(path: Path) -> List[Dict[str, Any]]:
-    if not path.exists():
+    data = verified_bytes(path)
+    if data is None and not path.exists():
         return []
 
     items: List[Dict[str, Any]] = []
-    with path.open("r", encoding="utf-8") as handle:
+    # The same text decoding open() applies, so verified bytes split into lines alike.
+    handle = (
+        io.TextIOWrapper(io.BytesIO(data), encoding="utf-8")
+        if data is not None
+        else path.open("r", encoding="utf-8")
+    )
+    with handle:
         for line_number, line in enumerate(handle, start=1):
             stripped = line.strip()
             if not stripped:
