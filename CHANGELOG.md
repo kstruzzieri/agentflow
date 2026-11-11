@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `agentflow simulate-risk` shows which recorded commands a stricter
+  `risk_policy` or a proposed plan would have stopped, without changing
+  anything. It classifies every command receipt again under the proposed plan
+  (`--plan`, default the locked plan) and evaluates it under the proposed
+  policy (`--risk-policy`, default the contract's) with no confirmation. It
+  lists the commands that would newly be blocked or need confirmation, grouped
+  by finding category, marks commands Agentflow did not start as advisory, and
+  reports analyzer drift: receipts whose recorded risk differs from today's
+  classification under the current plan. `--json` prints the report;
+  `docs/cli-contract.json` lists the command and its output. It writes nothing
+  to `.agent/` and exits 0 unless the plan or contract cannot be read. (#113)
+
 ## [1.4.0] - 2026-11-10
 
 Agentflow 1.4.0 lets whoever verifies a proof, not the agent that built it,

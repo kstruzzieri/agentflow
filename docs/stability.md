@@ -32,8 +32,8 @@ The supported command names are:
 `audit-drift`, `next-step`, `claim-step`, `amend-step`, `complete-step`,
 `block-step`, `fail-step`, `reclaim-step`, `renew-lease`, `run`,
 `record-command`, `record-file-change`, `verify-step`, `verify-run`,
-`aggregate-ledgers`, `detect-stuck`, `export-handoff`, `lint-handoff`,
-`replay-gates`, `runtime-status`, `build-proof`, `verify-proof`, `view-proof`,
+`aggregate-ledgers`, `detect-stuck`, `simulate-risk`, `export-handoff`,
+`lint-handoff`, `replay-gates`, `runtime-status`, `build-proof`, `verify-proof`, `view-proof`,
 `events`, `next-action`, `finish-step`, `finish-run`, and `status`.
 
 The machine-readable [CLI contract manifest](cli-contract.json) enumerates every

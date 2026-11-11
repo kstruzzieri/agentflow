@@ -13,6 +13,7 @@ from agentflow.cli_contract import JSON_OUTPUTS, build_cli_contract
 from agentflow.events import project_events
 from agentflow.execution import doctor
 from agentflow.porcelain import Action, next_action
+from agentflow.simulate import simulate_risk
 from agentflow.versioning import parse_schema_version
 
 
@@ -181,6 +182,43 @@ class StabilityPolicyTests(unittest.TestCase):
             ("record-file-change", [rows("file-receipts.jsonl")[0]]),
             ("verify-run", rows("verification-runs.jsonl")[0]),
             ("runtime-status", rows("runtime-snapshots.jsonl")[0]),
+            (
+                "simulate-risk",
+                simulate_risk(root, read_json(root / ".agent/plan.lock.json"), risk_policy="block"),
+            ),
+            (
+                "simulate-risk",
+                {
+                    "current_risk_policy": "warn",
+                    "proposed_risk_policy": "block",
+                    "plan": ".agent/plan.lock.json",
+                    "receipts": 2,
+                    "skipped": 0,
+                    "stopped": [
+                        {
+                            "receipt_id": "CR2",
+                            "step_id": "P1",
+                            "command": ["rm", "-rf", "build"],
+                            "provenance": "attested",
+                            "advisory": True,
+                            "level": "high",
+                            "categories": ["destructive_delete"],
+                            "outcome": "blocked",
+                        }
+                    ],
+                    "by_category": {"destructive_delete": ["CR2"]},
+                    "analyzer_drift": [
+                        {
+                            "receipt_id": "CR1",
+                            "step_id": "P1",
+                            "recorded_level": "low",
+                            "current_level": "high",
+                            "recorded_categories": [],
+                            "current_categories": ["destructive_delete"],
+                        }
+                    ],
+                },
+            ),
             (
                 "record-review",
                 {

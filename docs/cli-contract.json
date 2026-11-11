@@ -2338,6 +2338,56 @@
         "takes_value": false
       }
     ],
+    "simulate-risk": [
+      {
+        "choices": null,
+        "default": ".",
+        "multiple": false,
+        "names": [
+          "--root"
+        ],
+        "nargs": null,
+        "required": false,
+        "takes_value": true
+      },
+      {
+        "choices": null,
+        "default": null,
+        "multiple": false,
+        "names": [
+          "--plan"
+        ],
+        "nargs": null,
+        "required": false,
+        "takes_value": true
+      },
+      {
+        "choices": [
+          "block",
+          "require-confirmation",
+          "warn"
+        ],
+        "default": null,
+        "multiple": false,
+        "names": [
+          "--risk-policy"
+        ],
+        "nargs": null,
+        "required": false,
+        "takes_value": true
+      },
+      {
+        "choices": null,
+        "default": false,
+        "multiple": false,
+        "names": [
+          "--json"
+        ],
+        "nargs": 0,
+        "required": false,
+        "takes_value": false
+      }
+    ],
     "status": [
       {
         "choices": null,
@@ -3311,6 +3361,49 @@
           "runtimes": "array|null",
           "schema_version": "string|null",
           "status": "string|null"
+        },
+        "type": "object"
+      }
+    ],
+    "simulate-risk": [
+      {
+        "keys": {
+          "analyzer_drift": {
+            "items": {
+              "keys": {
+                "current_categories": "array",
+                "current_level": "string",
+                "receipt_id": "string|null",
+                "recorded_categories": "array",
+                "recorded_level": "string|null",
+                "step_id": "string"
+              },
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "by_category": "object",
+          "current_risk_policy": "string",
+          "plan": "string",
+          "proposed_risk_policy": "string",
+          "receipts": "integer",
+          "skipped": "integer",
+          "stopped": {
+            "items": {
+              "keys": {
+                "advisory": "boolean",
+                "categories": "array",
+                "command": "array",
+                "level": "string",
+                "outcome": "string",
+                "provenance": "string|null",
+                "receipt_id": "string|null",
+                "step_id": "string"
+              },
+              "type": "object"
+            },
+            "type": "array"
+          }
         },
         "type": "object"
       }
