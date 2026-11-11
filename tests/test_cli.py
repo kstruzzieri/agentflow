@@ -2346,6 +2346,37 @@ class AgentflowCliTests(unittest.TestCase):
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             self.assertEqual(json.loads(result.stdout)["status"], "passed")
 
+    def test_replay_gates_record_cli_refuses_gate_the_default_policy_blocks(self) -> None:
+        # #119 end to end: a new contract defaults to require-confirmation, and
+        # replay has no confirmation input, so a high-risk attested gate is refused.
+        with tempfile.TemporaryDirectory() as tmp:
+            cwd = Path(tmp)
+            self.assertEqual(run_agentflow(cwd, "init").returncode, 0)
+            self.assertEqual(run_agentflow(cwd, "init-execution").returncode, 0)
+            plan = valid_plan()
+            plan["locked"] = True
+            (cwd / ".agent/plan.lock.json").write_text(json.dumps(plan, indent=2), encoding="utf-8")
+            self.assertEqual(
+                run_agentflow(cwd, "claim-step", "P1", "--agent", "agent-a").returncode, 0
+            )
+            recorded = run_agentflow(
+                cwd, "record-command", "--step", "P1", "--exit-code", "0",
+                "--gate", "manual inspection", "--",
+                "sh", "-c", "echo written > outside.txt",
+            )
+            self.assertEqual(recorded.returncode, 0, recorded.stdout + recorded.stderr)
+
+            result = run_agentflow(cwd, "replay-gates", "--step", "P1", "--record", "--json")
+
+            self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+            self.assertIn(
+                "replay blocked by risk_policy require-confirmation",
+                json.loads(result.stdout)["errors"][0]["message"],
+            )
+            self.assertFalse((cwd / "outside.txt").exists())
+            receipts = (cwd / ".agent/command-receipts.jsonl").read_text(encoding="utf-8")
+            self.assertEqual(len(receipts.splitlines()), 1)
+
 
 class PorcelainCommandTests(unittest.TestCase):
     def _driven_plan(self) -> dict:

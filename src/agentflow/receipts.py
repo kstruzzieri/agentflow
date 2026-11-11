@@ -576,6 +576,8 @@ def replay_gates(
     record: bool = False,
 ) -> Dict[str, Any]:
     result: Dict[str, Any] = {"status": "passed", "errors": [], "warnings": [], "replayed": []}
+    policy = _contract_policy(root)
+    risk_policy = policy.get("risk_policy")
     candidates = [
         receipt
         for receipt in command_receipts(root)
@@ -590,13 +592,42 @@ def replay_gates(
                 {"severity": "error", "message": f"{receipt.get('id')} has malformed command"}
             )
             continue
-        proc = subprocess.run(
-            command,
-            cwd=str(root),
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            check=False,
+        # #119: an attested receipt is executable input, not a pre-approved
+        # command. Screen and bound every replay as run does; replay has no
+        # confirmation input, so require-confirmation blocks a high-risk gate.
+        receipt_step = str(receipt.get("step_id"))
+        level = classify_command(command, plan, receipt_step, root=root)["level"]
+        if evaluate_policy(level, risk_policy, confirmed=False) == "block":
+            result["errors"].append(
+                {
+                    "severity": "error",
+                    "message": (
+                        f"{receipt.get('id')} replay blocked by risk_policy {risk_policy}: "
+                        f"{level}-risk command not executed"
+                    ),
+                }
+            )
+            continue
+        timeout_seconds = resolve_command_timeout_seconds(
+            plan, receipt_step, command, str(receipt["gate"]), policy
         )
+        try:
+            proc = subprocess.run(
+                command,
+                cwd=str(root),
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                check=False,
+                timeout=timeout_seconds,
+            )
+        except subprocess.TimeoutExpired:
+            result["errors"].append(
+                {
+                    "severity": "error",
+                    "message": f"{receipt.get('id')} replay timed out after {timeout_seconds}s",
+                }
+            )
+            continue
         if proc.returncode != receipt.get("exit_code"):
             result["errors"].append(
                 {
