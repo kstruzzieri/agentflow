@@ -82,6 +82,14 @@ the [tracking issue #11](https://github.com/kstruzzieri/agentflow/issues/11).
   step-runs, command-receipts, file-receipts, verification-runs and
   drift-report schemas move to `1.1.0`; Agentflow 1.3 and older reject the
   new records in working state.
+- Every replay of an attested gate (`replay-gates`, the `--replay` options of
+  `verify-step`, `finish-step` and `verify-proof`, and MCP `replay`) applies
+  the risk policy and command timeout that `run` applies, and refuses to run
+  under an invalid execution contract, so `replay-gates --record` can no
+  longer turn a command the policy would block into a trusted receipt
+  ([#119](https://github.com/kstruzzieri/agentflow/issues/119)). No schema
+  changes; `verify-proof --replay` now fails on a proof whose contract blocks
+  one of its high-risk attested gates.
 
 ## After 1.0
 
@@ -92,9 +100,6 @@ risky commands:
   the agent ([#112](https://github.com/kstruzzieri/agentflow/issues/112)).
 - Replaying recorded commands against a proposed risk policy before
   tightening it ([#113](https://github.com/kstruzzieri/agentflow/issues/113)).
-- `replay-gates --record` turning a command the risk policy would block into a
-  trusted receipt
-  ([#119](https://github.com/kstruzzieri/agentflow/issues/119)).
 
 No next milestone is committed. Other candidates, each starting as an issue
 with a concrete use case and compatibility impact:
