@@ -15,6 +15,7 @@ from .contracts import (
     DIFF_COMMAND_VERSION,
     EXECUTION_ARTIFACT_PATHS,
     FILE_RECEIPTS_SCHEMA_VERSION,
+    RISK_POLICIES,
 )
 from .hunks import compute_hunks, effective_hunk_policy
 from .execution import (
@@ -23,6 +24,7 @@ from .execution import (
     lease_grace_seconds,
     lease_policy,
     execution_contract_sha256,
+    load_execution_contract,
     read_step_state,
     renew_lease,
     require_writable_attempt,
@@ -576,8 +578,23 @@ def replay_gates(
     record: bool = False,
 ) -> Dict[str, Any]:
     result: Dict[str, Any] = {"status": "passed", "errors": [], "warnings": [], "replayed": []}
-    policy = _contract_policy(root)
-    risk_policy = policy.get("risk_policy")
+    # Advisory receipt readers tolerate invalid state; execution must fail closed.
+    try:
+        contract = load_execution_contract(root)
+        if not isinstance(contract, dict):
+            raise ValueError("execution contract must be an object")
+        policy = contract.get("command_policy")
+        if not isinstance(policy, dict):
+            raise ValueError("command_policy must be an object")
+        risk_policy = policy.get("risk_policy", "warn")
+        if risk_policy not in RISK_POLICIES:
+            raise ValueError(f"unknown risk_policy {risk_policy!r}")
+    except (OSError, ValueError) as exc:
+        result["status"] = "failed"
+        result["errors"].append(
+            {"severity": "error", "message": f"replay blocked: invalid execution contract: {exc}"}
+        )
+        return result
     candidates = [
         receipt
         for receipt in command_receipts(root)

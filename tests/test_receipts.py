@@ -12,6 +12,7 @@ from agentflow.artifacts import append_jsonl, create_initial_artifacts, write_js
 from agentflow.contracts import (
     COMMAND_RECEIPTS_SCHEMA_VERSION,
     DEFAULT_COMMAND_TIMEOUT_SECONDS,
+    EXECUTION_CONTRACT_SCHEMA_VERSION,
     PLAN_SCHEMA_VERSION,
     STEP_RUNS_SCHEMA_VERSION,
 )
@@ -804,6 +805,33 @@ class ReceiptTests(unittest.TestCase):
                     [r["provenance"] for r in command_receipts(root)],
                     ["attested", "reconstructed"],
                 )
+
+    def test_replay_rejects_invalid_execution_contract_before_running(self) -> None:
+        invalid_contracts = ["{", "null", "[]", json.dumps({
+            "schema_version": EXECUTION_CONTRACT_SCHEMA_VERSION,
+        })]
+        for policy in (None, [], {"risk_policy": None}, {"risk_policy": "typo"}):
+            invalid_contracts.append(json.dumps({
+                "schema_version": EXECUTION_CONTRACT_SCHEMA_VERSION,
+                "command_policy": policy,
+            }))
+        for record in (False, True):
+            for content in invalid_contracts:
+                with self.subTest(record=record, content=content), tempfile.TemporaryDirectory() as tmp:
+                    root = self._root(tmp)
+                    self._attest_high_risk_gate(root)
+                    contract = root / ".agent/execution.contract.json"
+                    contract.write_text(content, encoding="utf-8")
+                    ledger = root / ".agent/command-receipts.jsonl"
+                    before = ledger.read_bytes()
+
+                    result = replay_gates(root, plan(), step_id="P1", record=record)
+
+                    self.assertFalse((root / "outside.txt").exists())
+                    self.assertEqual(ledger.read_bytes(), before)
+                    self.assertEqual(result["status"], "failed")
+                    self.assertEqual(result["replayed"], [])
+                    self.assertIn("execution contract", result["errors"][0]["message"])
 
     def test_replay_applies_command_timeout_and_records_nothing(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
