@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.4.0] - 2026-11-10
+
+Agentflow 1.4.0 lets whoever verifies a proof, not the agent that built it,
+decide how strict it must be. A verifier can require a minimum policy, check
+that the work ran under that policy, and see how each validation gate was
+satisfied. Replaying a recorded gate is now screened like any other command.
+
 The proof now shows, gate by gate, how each validation gate was satisfied, and
 the docs define what each command-receipt provenance value means (#110). The
 proof-pack schema moves to 1.1.0, the first additive minor bump of a
@@ -598,7 +605,8 @@ repository, so this heading is intentionally unlinked._
 
 - Existing v0.2 proof artifacts remain valid when no execution contract exists.
 
-[Unreleased]: https://github.com/kstruzzieri/agentflow/compare/v1.3.0...HEAD
+[Unreleased]: https://github.com/kstruzzieri/agentflow/compare/v1.4.0...HEAD
+[1.4.0]: https://github.com/kstruzzieri/agentflow/compare/v1.3.0...v1.4.0
 [1.3.0]: https://github.com/kstruzzieri/agentflow/compare/v1.2.2...v1.3.0
 [1.2.2]: https://github.com/kstruzzieri/agentflow/compare/v1.2.1...v1.2.2
 [1.2.1]: https://github.com/kstruzzieri/agentflow/compare/v1.2.0...v1.2.1
