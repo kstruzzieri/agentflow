@@ -1,8 +1,8 @@
 # Agentflow Roadmap
 
-Last updated: 2026-11-08
+Last updated: 2026-11-10
 
-Agentflow `1.3.0` is a standard-library-only Python CLI for plan-locked,
+Agentflow `1.4.0` is a standard-library-only Python CLI for plan-locked,
 auditable agent work. It supports Python 3.11–3.13 and ships as the
 `agentflow-proof` distribution on PyPI, as source, and as single-file CLI and
 MCP zipapps through GitHub Releases.
@@ -56,7 +56,7 @@ the [tracking issue #11](https://github.com/kstruzzieri/agentflow/issues/11).
   `agentflow` PyPI name is pursued separately under PEP 541; if it transfers,
   only `project.name` changes.
 
-## On main, not yet released
+## v1.4.0 (shipped 2026-11-10)
 
 - The proof records how each validation gate was satisfied (run by Agentflow,
   replayed, self-reported, inspection evidence, or missing), `verify-proof`
