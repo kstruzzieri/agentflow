@@ -1,6 +1,6 @@
 # Agentflow Roadmap
 
-Last updated: 2026-11-10
+Last updated: 2026-11-11
 
 Agentflow `1.4.0` is a standard-library-only Python CLI for plan-locked,
 auditable agent work. It supports Python 3.11–3.13 and ships as the
@@ -91,15 +91,25 @@ the [tracking issue #11](https://github.com/kstruzzieri/agentflow/issues/11).
   changes; `verify-proof --replay` now fails on a proof whose contract blocks
   one of its high-risk attested gates.
 
+## On main, not yet released
+
+- `agentflow simulate-risk` re-checks every recorded command against a
+  proposed `risk_policy` (`--risk-policy`) and, optionally, a proposed plan
+  (`--plan`), and reports which commands it would have blocked or held for
+  confirmation, grouped by risk category, before a team adopts the stricter
+  setting. Commands Agentflow did not start itself (self-reported or
+  external) are marked advisory, and receipts whose recorded risk no longer
+  matches today's analyzer are listed separately as analyzer drift. It writes
+  nothing and exits 0 whatever it finds, so it is a report, not a gate
+  ([#113](https://github.com/kstruzzieri/agentflow/issues/113)). No schema
+  changes.
+
 ## After 1.0
 
-Open issues that tighten who decides a proof's strictness and who approves
-risky commands:
+Open issue that tightens who approves risky commands:
 
 - High-risk confirmations bound to the exact command and an approver outside
   the agent ([#112](https://github.com/kstruzzieri/agentflow/issues/112)).
-- Replaying recorded commands against a proposed risk policy before
-  tightening it ([#113](https://github.com/kstruzzieri/agentflow/issues/113)).
 
 No next milestone is committed. Other candidates, each starting as an issue
 with a concrete use case and compatibility impact:
