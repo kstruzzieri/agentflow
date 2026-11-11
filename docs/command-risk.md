@@ -84,6 +84,15 @@ Externally recorded commands (`agentflow record-command`) are classified too,
 but the risk is **advisory only** — it never blocks, because the command already
 ran.
 
+Replaying an attested gate runs it again, so replay is screened like `run`
+(#119). `replay-gates`, `verify-step --replay`, `finish-step --replay`,
+`verify-proof --replay`, and the MCP `replay` option classify the command under
+the current plan and apply the policy with no confirmation, because replay has
+no confirmation input. Under `block` or `require-confirmation`, a high-risk gate
+is not executed, `replay-gates --record` writes no `reconstructed` receipt for
+it, and the replay fails. Replay also uses the timeout `run` would use; a replay
+that runs past it fails and records nothing.
+
 ## Timeout outcomes
 
 Risk policy and timeout policy answer different questions. Risk screening runs

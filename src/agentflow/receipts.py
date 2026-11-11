@@ -15,6 +15,7 @@ from .contracts import (
     DIFF_COMMAND_VERSION,
     EXECUTION_ARTIFACT_PATHS,
     FILE_RECEIPTS_SCHEMA_VERSION,
+    RISK_POLICIES,
 )
 from .hunks import compute_hunks, effective_hunk_policy
 from .execution import (
@@ -23,6 +24,7 @@ from .execution import (
     lease_grace_seconds,
     lease_policy,
     execution_contract_sha256,
+    load_execution_contract,
     read_step_state,
     renew_lease,
     require_writable_attempt,
@@ -576,6 +578,23 @@ def replay_gates(
     record: bool = False,
 ) -> Dict[str, Any]:
     result: Dict[str, Any] = {"status": "passed", "errors": [], "warnings": [], "replayed": []}
+    # Advisory receipt readers tolerate invalid state; execution must fail closed.
+    try:
+        contract = load_execution_contract(root)
+        if not isinstance(contract, dict):
+            raise ValueError("execution contract must be an object")
+        policy = contract.get("command_policy")
+        if not isinstance(policy, dict):
+            raise ValueError("command_policy must be an object")
+        risk_policy = policy.get("risk_policy", "warn")
+        if risk_policy not in RISK_POLICIES:
+            raise ValueError(f"unknown risk_policy {risk_policy!r}")
+    except (OSError, ValueError) as exc:
+        result["status"] = "failed"
+        result["errors"].append(
+            {"severity": "error", "message": f"replay blocked: invalid execution contract: {exc}"}
+        )
+        return result
     candidates = [
         receipt
         for receipt in command_receipts(root)
@@ -590,13 +609,42 @@ def replay_gates(
                 {"severity": "error", "message": f"{receipt.get('id')} has malformed command"}
             )
             continue
-        proc = subprocess.run(
-            command,
-            cwd=str(root),
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            check=False,
+        # #119: an attested receipt is executable input, not a pre-approved
+        # command. Screen and bound every replay as run does; replay has no
+        # confirmation input, so require-confirmation blocks a high-risk gate.
+        receipt_step = str(receipt.get("step_id"))
+        level = classify_command(command, plan, receipt_step, root=root)["level"]
+        if evaluate_policy(level, risk_policy, confirmed=False) == "block":
+            result["errors"].append(
+                {
+                    "severity": "error",
+                    "message": (
+                        f"{receipt.get('id')} replay blocked by risk_policy {risk_policy}: "
+                        f"{level}-risk command not executed"
+                    ),
+                }
+            )
+            continue
+        timeout_seconds = resolve_command_timeout_seconds(
+            plan, receipt_step, command, str(receipt["gate"]), policy
         )
+        try:
+            proc = subprocess.run(
+                command,
+                cwd=str(root),
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                check=False,
+                timeout=timeout_seconds,
+            )
+        except subprocess.TimeoutExpired:
+            result["errors"].append(
+                {
+                    "severity": "error",
+                    "message": f"{receipt.get('id')} replay timed out after {timeout_seconds}s",
+                }
+            )
+            continue
         if proc.returncode != receipt.get("exit_code"):
             result["errors"].append(
                 {

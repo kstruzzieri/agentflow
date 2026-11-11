@@ -12,6 +12,7 @@ from agentflow.artifacts import append_jsonl, create_initial_artifacts, write_js
 from agentflow.contracts import (
     COMMAND_RECEIPTS_SCHEMA_VERSION,
     DEFAULT_COMMAND_TIMEOUT_SECONDS,
+    EXECUTION_CONTRACT_SCHEMA_VERSION,
     PLAN_SCHEMA_VERSION,
     STEP_RUNS_SCHEMA_VERSION,
 )
@@ -757,6 +758,99 @@ class ReceiptTests(unittest.TestCase):
             ]
             self.assertEqual(len(receipts), 1)
 
+    def _attest_high_risk_gate(self, root: Path) -> None:
+        # outside.txt is outside P1's effective scope, so the redirect classifies
+        # as write_outside_scope=high. record-command never evaluates the policy.
+        record_command(
+            root, "P1", None, ["sh", "-c", "echo written > outside.txt"], 0,
+            gate="g", provenance="attested", plan=plan(),
+        )
+
+    def test_replay_does_not_run_high_risk_gate_the_policy_blocks(self) -> None:
+        # #119: replay applies run's risk policy, so --record cannot turn a
+        # command the policy would block into a trusted reconstructed receipt.
+        for risk_policy in ("block", "require-confirmation"):
+            with self.subTest(risk_policy=risk_policy), tempfile.TemporaryDirectory() as tmp:
+                root = self._root(tmp)
+                self._set_risk_policy(root, risk_policy)
+                self._attest_high_risk_gate(root)
+
+                result = replay_gates(root, plan(), step_id="P1", record=True)
+
+                self.assertEqual(result["status"], "failed")
+                self.assertEqual(result["replayed"], [])
+                self.assertEqual(len(result["errors"]), 1)
+                self.assertIn(
+                    f"CR1 replay blocked by risk_policy {risk_policy}",
+                    result["errors"][0]["message"],
+                )
+                self.assertFalse((root / "outside.txt").exists())
+                self.assertEqual(
+                    [r["provenance"] for r in command_receipts(root)], ["attested"]
+                )
+
+    def test_replay_runs_high_risk_gate_under_warn_as_before(self) -> None:
+        for risk_policy in ("warn", None):
+            with self.subTest(risk_policy=risk_policy), tempfile.TemporaryDirectory() as tmp:
+                root = self._root(tmp)
+                self._set_risk_policy(root, risk_policy)
+                self._attest_high_risk_gate(root)
+
+                result = replay_gates(root, plan(), step_id="P1", record=True)
+
+                self.assertEqual(result["status"], "passed")
+                self.assertEqual(result["replayed"], ["CR1"])
+                self.assertTrue((root / "outside.txt").exists())
+                self.assertEqual(
+                    [r["provenance"] for r in command_receipts(root)],
+                    ["attested", "reconstructed"],
+                )
+
+    def test_replay_rejects_invalid_execution_contract_before_running(self) -> None:
+        invalid_contracts = ["{", "null", "[]", json.dumps({
+            "schema_version": EXECUTION_CONTRACT_SCHEMA_VERSION,
+        })]
+        for policy in (None, [], {"risk_policy": None}, {"risk_policy": "typo"}):
+            invalid_contracts.append(json.dumps({
+                "schema_version": EXECUTION_CONTRACT_SCHEMA_VERSION,
+                "command_policy": policy,
+            }))
+        for record in (False, True):
+            for content in invalid_contracts:
+                with self.subTest(record=record, content=content), tempfile.TemporaryDirectory() as tmp:
+                    root = self._root(tmp)
+                    self._attest_high_risk_gate(root)
+                    contract = root / ".agent/execution.contract.json"
+                    contract.write_text(content, encoding="utf-8")
+                    ledger = root / ".agent/command-receipts.jsonl"
+                    before = ledger.read_bytes()
+
+                    result = replay_gates(root, plan(), step_id="P1", record=record)
+
+                    self.assertFalse((root / "outside.txt").exists())
+                    self.assertEqual(ledger.read_bytes(), before)
+                    self.assertEqual(result["status"], "failed")
+                    self.assertEqual(result["replayed"], [])
+                    self.assertIn("execution contract", result["errors"][0]["message"])
+
+    def test_replay_applies_command_timeout_and_records_nothing(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = self._root(tmp)
+            self._set_command_timeout(root, 1)
+            command = ["python3", "-c", "print('ok')"]
+            record_command(root, "P1", None, command, 0, gate="python3 -c \"print('ok')\"")
+
+            with patch(
+                "agentflow.receipts.subprocess.run",
+                side_effect=subprocess.TimeoutExpired(command, 1),
+            ) as run:
+                result = replay_gates(root, plan(), step_id="P1", record=True)
+
+            self.assertEqual(run.call_args.kwargs["timeout"], 1)
+            self.assertEqual(result["status"], "failed")
+            self.assertEqual(result["replayed"], [])
+            self.assertIn("CR1 replay timed out after 1s", result["errors"][0]["message"])
+            self.assertEqual(len(command_receipts(root)), 1)
 
     def test_record_file_change_captures_hunks(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

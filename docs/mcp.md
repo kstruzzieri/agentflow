@@ -52,8 +52,11 @@ exposed, so an MCP client cannot submit a new argv directly. This is not a
 categorically non-executing surface: `verify_step`, `verify_proof`, and
 `finish_step` expose `replay`, which executes attested command gates already
 present under the client-selected root with the server process's permissions.
-Treat every selected root and its attested receipt ledger as executable input,
-and do not allow an untrusted client to select or replay it.
+Replay applies the risk policy and command timeout of that root's own execution
+contract (#119), and a root can set `risk_policy` to `warn`, so the check does
+not make an untrusted root safe to replay. Treat every selected root and its
+attested receipt ledger as executable input, and do not allow an untrusted
+client to select or replay it.
 
 `fail-step` is also not exposed: it is a deliberately CLI-only break-glass
 operator action, and an MCP adapter closes an attempt with `block_step`.

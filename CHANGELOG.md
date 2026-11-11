@@ -32,6 +32,10 @@ file-receipt, verification-run and drift-report records** in working state.
 Finish a run with the release that started it. This release reads ledgers
 that mix 1.0 and 1.1 records.
 
+Replaying an attested gate now applies the risk policy and command timeout
+that `run` applies, so `replay-gates --record` can no longer turn a command
+the policy would block into a trusted receipt (#119).
+
 ### Added
 
 - `verify-proof --require KEY=MIN`, repeatable, fails a proof whose execution
@@ -117,6 +121,19 @@ that mix 1.0 and 1.1 records.
   and verification-runs ledgers to the canonical root even when they are
   empty, as `init-execution` does, so a runtime-policy floor can tell a
   removed ledger from an empty one. (#117)
+- Every replay of an attested gate (`replay-gates`, `verify-step --replay`,
+  `finish-step --replay`, `verify-proof --replay` and the MCP `replay` option)
+  classifies the command under the current plan and applies
+  `command_policy.risk_policy` as `run` does. Replay has no confirmation
+  input, so under `block` or `require-confirmation` a high-risk gate is not
+  executed, `replay-gates --record` writes no receipt for it, and the replay
+  fails with `replay blocked by risk_policy ...`. Replay also applies the
+  timeout `run` uses (`command_timeout_seconds`, or the gate's
+  `timeout_seconds`); a replay that runs past it fails with `replay timed out`
+  and records nothing. Under `warn`, or a contract without `risk_policy`, a
+  replay that finishes in time behaves as before. Upgrade impact:
+  `verify-proof --replay` fails for a proof whose contract blocks one of its
+  high-risk attested gates; verify it without `--replay`. (#119)
 
 ## [1.3.0] - 2026-11-04
 

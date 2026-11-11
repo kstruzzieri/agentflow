@@ -2346,6 +2346,75 @@ class AgentflowCliTests(unittest.TestCase):
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             self.assertEqual(json.loads(result.stdout)["status"], "passed")
 
+    def test_replay_gates_record_cli_refuses_gate_the_default_policy_blocks(self) -> None:
+        # #119 end to end: a new contract defaults to require-confirmation, and
+        # replay has no confirmation input, so a high-risk attested gate is refused.
+        with tempfile.TemporaryDirectory() as tmp:
+            cwd = Path(tmp)
+            self.assertEqual(run_agentflow(cwd, "init").returncode, 0)
+            self.assertEqual(run_agentflow(cwd, "init-execution").returncode, 0)
+            plan = valid_plan()
+            plan["locked"] = True
+            (cwd / ".agent/plan.lock.json").write_text(json.dumps(plan, indent=2), encoding="utf-8")
+            self.assertEqual(
+                run_agentflow(cwd, "claim-step", "P1", "--agent", "agent-a").returncode, 0
+            )
+            recorded = run_agentflow(
+                cwd, "record-command", "--step", "P1", "--exit-code", "0",
+                "--gate", "manual inspection", "--",
+                "sh", "-c", "echo written > outside.txt",
+            )
+            self.assertEqual(recorded.returncode, 0, recorded.stdout + recorded.stderr)
+
+            result = run_agentflow(cwd, "replay-gates", "--step", "P1", "--record", "--json")
+
+            self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+            self.assertIn(
+                "replay blocked by risk_policy require-confirmation",
+                json.loads(result.stdout)["errors"][0]["message"],
+            )
+            self.assertFalse((cwd / "outside.txt").exists())
+            receipts = (cwd / ".agent/command-receipts.jsonl").read_text(encoding="utf-8")
+            self.assertEqual(len(receipts.splitlines()), 1)
+
+
+    def test_replay_refuses_unreadable_or_missing_contract_before_launch(self) -> None:
+        for missing in (False, True):
+            for record in (False, True):
+                with self.subTest(missing=missing, record=record), tempfile.TemporaryDirectory() as tmp:
+                    cwd = Path(tmp)
+                    self.assertEqual(run_agentflow(cwd, "init").returncode, 0)
+                    self.assertEqual(run_agentflow(cwd, "init-execution").returncode, 0)
+                    plan = valid_plan()
+                    plan["locked"] = True
+                    (cwd / ".agent/plan.lock.json").write_text(json.dumps(plan), encoding="utf-8")
+                    self.assertEqual(
+                        run_agentflow(cwd, "claim-step", "P1", "--agent", "reviewer").returncode, 0
+                    )
+                    recorded = run_agentflow(
+                        cwd, "record-command", "--step", "P1", "--exit-code", "0",
+                        "--gate", "manual inspection", "--",
+                        "sh", "-c", "echo written > outside.txt",
+                    )
+                    self.assertEqual(recorded.returncode, 0, recorded.stdout + recorded.stderr)
+                    contract = cwd / ".agent/execution.contract.json"
+                    contract.unlink()
+                    if not missing:
+                        contract.mkdir()
+                    ledger = cwd / ".agent/command-receipts.jsonl"
+                    before = ledger.read_bytes()
+
+                    flags = ["--record"] if record else []
+                    result = run_agentflow(cwd, "replay-gates", "--step", "P1", "--json", *flags)
+
+                    self.assertFalse((cwd / "outside.txt").exists())
+                    self.assertEqual(ledger.read_bytes(), before)
+                    self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+                    self.assertNotIn("Traceback", result.stderr)
+                    output = json.loads(result.stdout)
+                    self.assertEqual(output["status"], "failed")
+                    self.assertIn("execution contract", output["errors"][0]["message"])
+
 
 class PorcelainCommandTests(unittest.TestCase):
     def _driven_plan(self) -> dict:
