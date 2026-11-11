@@ -68,6 +68,34 @@ When a confirmation lets a high-risk command through, the receipt records
 `risk_policy`, `confirmed: true`, and `confirmation_source` (`cli` or `env`).
 `block` is absolute and ignores confirmation.
 
+## Trying a stricter policy first
+
+`agentflow simulate-risk` shows what a stricter setting would have stopped,
+using the commands already recorded, without changing anything (#113):
+
+```bash
+agentflow simulate-risk --risk-policy block
+agentflow simulate-risk --risk-policy require-confirmation --plan proposed.json --json
+```
+
+It classifies every command receipt again with today's analyzer, scoped by the
+proposed plan (`--plan`, default `.agent/plan.lock.json`), and evaluates it
+under the proposed `risk_policy` (`--risk-policy`, default the contract's) with
+no confirmation. It lists the commands that would newly be blocked, or would
+need confirmation, grouped by finding category. A command that was already
+blocked is not listed. Under `require-confirmation`, a command that was
+confirmed is not listed either; under `block`, which ignores confirmation, it
+is.
+
+- Commands Agentflow did not start (`attested` and `managed` receipts) are
+  marked advisory: no policy could have stopped them.
+- Analyzer drift lists receipts whose recorded risk differs from today's
+  classification under the current plan, because the analyzer changed or the
+  plan was amended since, so neither is mistaken for the proposed policy's
+  effect.
+- It writes nothing to `.agent/` and exits 0. An unreadable plan or an invalid
+  `risk_policy` in the contract is an error (exit 1).
+
 ## Receipts and observability
 
 - An executed command records `risk: {level, findings}` and `decision: "allowed"`.

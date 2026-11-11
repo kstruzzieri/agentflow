@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import shlex
 import sys
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
@@ -26,6 +27,7 @@ from .contracts import (
     EVIDENCE_KINDS,
     EVIDENCE_SCHEMA_VERSION,
     FAILURES_SCHEMA_VERSION,
+    RISK_POLICIES,
     WORKFLOW_REVIEW_DEPTHS,
     strict_mode,
 )
@@ -80,6 +82,7 @@ from .proof import (
 )
 from .viewer import collect_view_model, render_html
 from .stuck import Thresholds, detect_stuck
+from .simulate import simulate_risk
 from .recommend import (
     RecommendError,
     recommend as recommend_workflow,
@@ -1062,6 +1065,60 @@ def command_detect_stuck(args: argparse.Namespace) -> int:
             print(_terminal_safe(f"warning [{location}]: {finding['message']}"))
             print(f"  -> {finding['suggested_action']}")
     return 1 if (args.strict and report["findings"]) else 0
+
+
+def command_simulate_risk(args: argparse.Namespace) -> int:
+    root = Path(args.root).resolve()
+    plan = _load_root_plan(root)
+    proposed = None
+    source = ".agent/plan.lock.json"
+    if args.plan is not None:
+        path = Path(args.plan)
+        if not path.is_absolute():
+            path = root / path
+        try:
+            proposed = read_json(path)
+        except OSError as exc:
+            raise ValueError(f"cannot read plan {args.plan}: {exc.strerror or exc}") from exc
+        if not isinstance(proposed, dict):
+            raise ValueError(f"plan {args.plan} must be a JSON object")
+        source = args.plan
+    report = simulate_risk(root, plan, proposed, args.risk_policy, plan_source=source)
+    if args.json:
+        print(json.dumps(report, indent=2, sort_keys=True))
+        return 0
+    skipped = f", {report['skipped']} skipped" if report["skipped"] else ""
+    print(
+        f"simulate-risk: risk_policy {report['current_risk_policy']} -> "
+        f"{report['proposed_risk_policy']} under {source}; "
+        f"{report['receipts']} receipt(s){skipped}"
+    )
+    stopped = report["stopped"]
+    if stopped:
+        verb = "block" if report["proposed_risk_policy"] == "block" else "need confirmation for"
+        print(f"would {verb} {len(stopped)} command(s):")
+        for category, receipt_ids in report["by_category"].items():
+            print(_terminal_safe(f"  {category}: {', '.join(map(str, receipt_ids))}"))
+        for entry in stopped:
+            note = f" (advisory: {entry['provenance']})" if entry["advisory"] else ""
+            print(
+                _terminal_safe(
+                    f"  {entry['receipt_id']} [{entry['step_id']}] {entry['level']}{note}: "
+                    f"{shlex.join(entry['command'])}"
+                )
+            )
+    else:
+        print("would stop no recorded command")
+    if report["analyzer_drift"]:
+        print(f"analyzer drift: {len(report['analyzer_drift'])} receipt(s)")
+        for entry in report["analyzer_drift"]:
+            print(
+                _terminal_safe(
+                    f"  {entry['receipt_id']} [{entry['step_id']}] recorded "
+                    f"{entry['recorded_level']}, now {entry['current_level']}"
+                )
+            )
+    return 0
 
 
 def command_export_handoff(args: argparse.Namespace) -> int:
@@ -2117,6 +2174,16 @@ def build_parser() -> argparse.ArgumentParser:
     detect_stuck_parser.add_argument("--min-verify-failures", type=_positive_int, default=2)
     detect_stuck_parser.add_argument("--min-cycle-repeats", type=_positive_int, default=3)
     detect_stuck_parser.set_defaults(func=command_detect_stuck)
+
+    simulate_risk_parser = subparsers.add_parser(
+        "simulate-risk",
+        help="show which recorded commands a proposed risk policy or plan would stop",
+    )
+    simulate_risk_parser.add_argument("--root", default=".")
+    simulate_risk_parser.add_argument("--plan", help="proposed plan to scope the check (default: the locked plan)")
+    simulate_risk_parser.add_argument("--risk-policy", choices=list(RISK_POLICIES), dest="risk_policy")
+    simulate_risk_parser.add_argument("--json", action="store_true")
+    simulate_risk_parser.set_defaults(func=command_simulate_risk)
 
     export_handoff_parser = subparsers.add_parser("export-handoff", help="write a provider-neutral work packet")
     export_handoff_parser.add_argument("--root", default=".")
