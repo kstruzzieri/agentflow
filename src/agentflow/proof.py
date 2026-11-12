@@ -45,6 +45,7 @@ from .coverage import (
 from .execution import (
     _now,
     confirmation_mode,
+    execution_contract_sha256,
     load_execution_contract,
     read_step_events,
     read_step_state,
@@ -181,9 +182,11 @@ def _normalized_execution_hash(root: Path) -> str:
         if not path.exists():
             continue
         if path.suffix == ".jsonl":
+            # #112: read_confirmations refuses a hand-broken row (ValueError).
+            rows = read_confirmations(root) if name == "command-confirmations" else read_jsonl(path)
             payload[name] = [
                 {key: value for key, value in row.items() if key not in volatile}
-                for row in read_jsonl(path)
+                for row in rows
             ]
         else:
             payload[name] = read_json(path)
@@ -668,23 +671,9 @@ def validation_gate_summary(proof: Dict[str, Any]) -> Optional[str]:
     return f"{line}; {failed} failed" if failed else line
 
 
-def _confirmation_mode(contract: Any) -> str:
-    """#112: the contract's confirmation mode, failing closed like ``run`` does.
-
-    An invalid mode, or ``bound`` without require-confirmation, raises
-    ValueError; it never reads as ``bound`` or quietly as ``self``.
-    """
-    if contract is not None and not isinstance(contract, dict):
-        raise ValueError("execution contract must be an object")
-    mode = confirmation_mode(contract)
-    if mode == "bound" and contract["command_policy"].get("risk_policy") != "require-confirmation":
-        raise ValueError("confirmation bound requires risk_policy require-confirmation")
-    return mode
-
-
 def _confirmation_problem(contract: Any) -> Optional[str]:
     try:
-        _confirmation_mode(contract)
+        confirmation_mode(contract)
     except ValueError as exc:
         return str(exc)
     return None
@@ -707,7 +696,7 @@ def confirmation_summary(root: Path) -> Optional[Dict[str, Any]]:
     ``None`` under ``self`` with no confirmations ledger, so a run that never
     used confirmations keeps its proof core byte-identical (#82 growth path).
     """
-    mode = _confirmation_mode(load_execution_contract(root))
+    mode = confirmation_mode(load_execution_contract(root))
     if mode == "self" and not source_exists(confirmations_path(root)):
         return None
     executed = [r for r in command_receipts(root) if _ran_high_risk(r)]
@@ -739,8 +728,9 @@ def confirmation_findings(root: Path) -> List[Dict[str, str]]:
     confirmation expired after its run.
     """
     try:
-        mode = _confirmation_mode(load_execution_contract(root))
-        rows = [r for r in read_confirmations(root) if isinstance(r, dict)]
+        mode = confirmation_mode(load_execution_contract(root))
+        contract_hash = execution_contract_sha256(root)
+        rows = read_confirmations(root)
         receipts = [r for r in command_receipts(root) if isinstance(r, dict)]
     except UnverifiedSourceError:
         raise
@@ -749,11 +739,20 @@ def confirmation_findings(root: Path) -> List[Dict[str, str]]:
     issued: Dict[str, List[Dict[str, Any]]] = {}
     consumed: Dict[str, List[Dict[str, Any]]] = {}
     for row in rows:
-        events = {"issued": issued, "consumed": consumed}.get(row.get("event"))
-        # A non-string id names nothing, so a receipt using it fails below.
-        if events is not None and isinstance(row.get("id"), str):
+        events = {"issued": issued, "consumed": consumed}.get(row["event"])
+        if events is not None:
             events.setdefault(row["id"], []).append(row)
     errors: List[str] = []
+    for confirmation, rows_issued in issued.items():
+        for row in rows_issued:
+            # The readable argv is what a reviewer reads; it must be the hashed one.
+            argv = row.get("argv")
+            if not (
+                isinstance(argv, list)
+                and all(isinstance(arg, str) for arg in argv)
+                and argv_sha256(argv) == row.get("argv_sha256")
+            ):
+                errors.append(f"confirmation {confirmation} argv does not match its argv_sha256")
     for receipt in receipts:
         receipt_id, confirmation = receipt.get("id"), receipt.get("confirmation_id")
         known = isinstance(confirmation, str) and confirmation in issued
@@ -778,9 +777,19 @@ def confirmation_findings(root: Path) -> List[Dict[str, str]]:
                     f"confirmation {confirmation} was consumed by attempt {spent[0].get('attempt_id')} "
                     f"but {receipt_id} ran in attempt {receipt.get('attempt_id')}"
                 )
-        source = receipt.get("confirmation_source")
-        if mode == "bound" and source is not None and _ran_high_risk(receipt):
-            errors.append(f"{receipt_id} was confirmed by {source} under confirmation bound")
+        # Only receipts written under the verified bound contract: one written
+        # under an earlier contract stays a self/unbound count, and a
+        # confirmation=bound floor rejects it through the #117 pins.
+        if (
+            mode == "bound"
+            and _ran_high_risk(receipt)
+            and receipt.get("execution_contract_sha256") == contract_hash
+        ):
+            source = receipt.get("confirmation_source")
+            if source is not None:
+                errors.append(f"{receipt_id} was confirmed by {source} under confirmation bound")
+            elif confirmation is None:
+                errors.append(f"{receipt_id} ran with no bound confirmation under confirmation bound")
     # R9: single use -- one confirmation vouches for one run.
     named = Counter(
         r.get("confirmation_id") for r in receipts if isinstance(r.get("confirmation_id"), str)
@@ -833,10 +842,12 @@ def confirmation_summary_line(proof: Dict[str, Any]) -> Optional[str]:
     block = proof.get("confirmations")
     if not isinstance(block, dict):
         return None
+    unbound = block.get("unbound")
     return (
         f"command confirmations: {block.get('mode')}, "
         f"{block.get('high_risk_executed')} high-risk run(s), "
-        f"{block.get('bound')} bound, {block.get('self')} self; "
+        f"{block.get('bound')} bound, {block.get('self')} self, "
+        f"{len(unbound) if isinstance(unbound, list) else unbound} unbound; "
         "self-confirmation proves binding, not who confirmed"
     )
 

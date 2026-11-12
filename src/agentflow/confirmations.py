@@ -31,7 +31,19 @@ def confirmations_path(root: Path) -> Path:
 
 
 def read_confirmations(root: Path) -> List[Dict[str, Any]]:
-    return read_jsonl(confirmations_path(root))
+    """The ledger rows; ValueError (never a traceback) for a hand-broken row."""
+    rows = read_jsonl(confirmations_path(root))
+    for number, row in enumerate(rows, 1):
+        if not (
+            isinstance(row, dict)
+            and isinstance(row.get("id"), str)
+            and isinstance(row.get("event"), str)
+        ):
+            raise ValueError(
+                f"{EXECUTION_ARTIFACT_PATHS['command-confirmations']} row {number} "
+                "must be an object with a string id and event"
+            )
+    return rows
 
 
 def argv_sha256(argv: List[str]) -> str:
@@ -42,11 +54,11 @@ def argv_sha256(argv: List[str]) -> str:
 def parse_expiry(text: str) -> timedelta:
     if not _EXPIRY_RE.fullmatch(text):
         raise ValueError("--expires must look like 15m or 2h")
-    value = int(text[:-1])
-    delta = timedelta(minutes=value) if text[-1] == "m" else timedelta(hours=value)
-    if delta > MAX_EXPIRY:
+    # Compare plain integers first: a huge value overflows timedelta.
+    minutes = int(text[:-1]) * (1 if text[-1] == "m" else 60)
+    if minutes > MAX_EXPIRY // timedelta(minutes=1):
         raise ValueError("--expires is capped at 24h")
-    return delta
+    return timedelta(minutes=minutes)
 
 
 def issue_confirmation(

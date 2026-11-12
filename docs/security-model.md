@@ -32,7 +32,8 @@ command, the plan and the contract, usable once. It proves binding, not
 authority. It cannot show who confirmed: anything the agent can reach, the
 agent can also use to confirm. Timestamps come from the local clock, which the
 agent can set. History left out of the proof bundle cannot be seen.
-`verify-proof` says so in its summary line.
+The `verify-proof` summary line states the first limit ("self-confirmation
+proves binding, not who confirmed"); the markdown proof states all three.
 
 Authority needs an issuer the agent cannot impersonate. That is phase 2,
 `confirmation: "host"`: approvals issued by the host (Golem). It is not built.

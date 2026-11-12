@@ -24,12 +24,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   confirmed; host approval (`confirmation: "host"`) is phase 2, owned by
   Golem, and not built. No MCP tool creates confirmations.
 
+### Changed
+
+- `run` now exits 2 and starts nothing when an execution contract is present
+  but unreadable or incompatible, or sets an invalid `confirmation`. It used to
+  fall back to advisory defaults. Only a missing contract still does. This
+  applies to every user, not just `bound`. (#112)
+
 ### Upgrade notes
 
 - Execution contract 1.1.0, command receipts 1.2.0 and proof packs 1.2.0 are
-  new schema versions. Agentflow 1.5 and older reject a 1.1.0 execution
-  contract, 1.2.0 command receipts and 1.2.0 proofs. Contracts that do not use
-  `confirmation` stay 1.0.0 and remain readable by Agentflow 1.4 and 1.5.
+  new schema versions. Every command receipt and proof this version writes is
+  1.2.0, under `self` too, and Agentflow 1.5 and older reject 1.2.0 command
+  receipts and proofs. So a worktree this version has worked in cannot go back
+  to Agentflow 1.4 or 1.5. A contract that does not use `confirmation` stays
+  1.0.0, but only that file stays readable by them.
+- Agentflow 1.5 and older reject a 1.1.0 execution contract in `doctor` and
+  `build-proof`, but their `run` falls back to advisory defaults and runs
+  high-risk commands with no confirmation. Do not run an older Agentflow in a
+  worktree whose contract sets `confirmation: "bound"`. `verify-proof` reports
+  each such run written under the bound contract: `CRn ran with no bound
+  confirmation under confirmation bound`.
 
 ## [1.5.0] - 2026-11-12
 

@@ -79,9 +79,13 @@ confirmation counts as coming from. It applies only under
 | `self` (default) | `--confirm-risk` or `AGENTFLOW_CONFIRM_RISK=1`, as above |
 | `bound` | a separate `confirm-command` step must name the exact command first |
 
-`bound` requires `risk_policy: "require-confirmation"`: the contract validator
-and `run` both refuse it with any other policy (`run` exits 2). A contract that
-sets `confirmation` is schema 1.1.0; one that does not stays 1.0.0.
+To enable `bound`, set three things in the execution contract together:
+`schema_version` to `1.1.0`, `command_policy.confirmation` to `"bound"`, and
+`command_policy.risk_policy` to `"require-confirmation"`. The contract
+validator, `run` and `confirm-command` all refuse `bound` with any other risk
+policy (`confirmation bound requires risk_policy require-confirmation`; the
+commands exit 2), and a 1.0.0 contract cannot carry `confirmation` at all. A
+contract that does not set `confirmation` stays 1.0.0.
 
 Under `bound`, confirm one command for one step, then run it:
 
@@ -110,14 +114,23 @@ Without a usable confirmation `run` blocks, exits 2 and prints the
 `confirmation_stale` (issued, but the plan or contract changed since). An
 allowed receipt carries `confirmation_id`. Command receipts are schema 1.2.0.
 
-The proof gains a `confirmations` block (mode, high-risk runs executed, and how
-many were bound or self-confirmed) whenever the ledger exists or the mode is
-not `self`. `verify-proof` recomputes it, checks the ledger against the
-receipts, and prints:
+The proof gains a `confirmations` block (mode, high-risk runs executed, how
+many were bound or self-confirmed, and the ids of unbound ones) whenever the
+ledger exists or the mode is not `self`. `verify-proof` recomputes it, checks
+the ledger against the receipts, requires every high-risk run written under the
+bound contract to carry a bound confirmation, and prints:
 
 ```text
-command confirmations: bound, 1 high-risk run(s), 1 bound, 0 self; self-confirmation proves binding, not who confirmed
+command confirmations: bound, 1 high-risk run(s), 1 bound, 0 self, 0 unbound; self-confirmation proves binding, not who confirmed
 ```
+
+A run written under an earlier contract, such as one confirmed with
+`--confirm-risk` before the contract switched to `bound`, stays a `self` or
+`unbound` count; `--require confirmation=bound` rejects it because it is not
+pinned to the verified contract.
+
+`aggregate-ledgers` refuses any source whose confirmations ledger is not empty
+(`unsupported_ledger`), even one holding only unused confirmations.
 
 `verify-proof --require confirmation=bound` fails a proof whose recorded mode
 is below `bound` (order: `self` < `bound` < `host`). An older proof, or a

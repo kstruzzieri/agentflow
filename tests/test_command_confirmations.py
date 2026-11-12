@@ -102,6 +102,17 @@ class ContractVersionTests(unittest.TestCase):
             )
         )
 
+    def test_confirmation_mode_refuses_what_run_refuses(self) -> None:
+        # One rule for the validator, run, confirm-command and verify-proof.
+        with self.assertRaisesRegex(
+            ValueError, "^confirmation bound requires risk_policy require-confirmation$"
+        ):
+            confirmation_mode(_contract("1.1.0", confirmation="bound", risk_policy="warn"))
+        for contract in ([], [1], "x", 3):
+            with self.subTest(contract=contract):
+                with self.assertRaisesRegex(ValueError, "^execution contract must be an object$"):
+                    confirmation_mode(contract)
+
     def test_unknown_mode_is_rejected(self) -> None:
         contract = _contract("1.1.0", confirmation="bnd")
         self.assertTrue(any("confirmation bnd is invalid" in m for m in _messages(contract)))
@@ -194,11 +205,37 @@ class IssueTests(unittest.TestCase):
             init_execution_artifacts(root)
             self._refuses(root, "P1", HIGH, "confirmation bound")
 
+    def test_issue_refuses_bound_without_require_confirmation(self) -> None:
+        # run refuses this contract, so confirm-command must not issue for it.
+        with tempfile.TemporaryDirectory() as tmp:
+            root = _bound_root(tmp)
+            contract = load_execution_contract(root)
+            contract["command_policy"]["risk_policy"] = "warn"
+            write_json(root / ".agent/execution.contract.json", contract)
+            self._refuses(root, "P1", HIGH, "confirmation bound requires risk_policy require-confirmation")
+
+    def test_read_confirmations_rejects_malformed_rows(self) -> None:
+        v = {"schema_version": "1.0.0"}
+        rows = ([], "x", {**v, "event": "issued"}, {**v, "id": ["CC1"], "event": "issued"},
+                {**v, "id": "CC1", "event": []})
+        for row in rows:
+            with self.subTest(row=row), tempfile.TemporaryDirectory() as tmp:
+                root = _bound_root(tmp)
+                confirmations_path(root).write_text(
+                    json.dumps(_issued(1)) + "\n" + json.dumps(row) + "\n", encoding="utf-8"
+                )
+                with self.assertRaisesRegex(
+                    ValueError,
+                    "^.agent/command-confirmations.jsonl row 2 must be an object with a string id and event$",
+                ):
+                    read_confirmations(root)
+
     def test_parse_expiry_cap(self) -> None:
         self.assertEqual(parse_expiry("24h"), timedelta(hours=24))
         self.assertEqual(parse_expiry("15m"), timedelta(minutes=15))
-        with self.assertRaisesRegex(ValueError, "capped at 24h"):
-            parse_expiry("25h")
+        for over in ("25h", "1441m", "99999999999999999999h", "99999999999999999999m"):
+            with self.subTest(expires=over), self.assertRaisesRegex(ValueError, "^--expires is capped at 24h$"):
+                parse_expiry(over)
         for bad in ("0m", "15", "-1m", "1d", ""):
             with self.assertRaises(ValueError):
                 parse_expiry(bad)
@@ -295,10 +332,42 @@ class ConfirmCommandCliTests(unittest.TestCase):
             self.assertFalse(confirmations_path(root).exists())
 
     def test_expiry_cap_exits_2(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            code, _, err = self._run(_bound_root(tmp), "--expires", "25h")
-            self.assertEqual(code, 2)
-            self.assertIn("capped at 24h", err)
+        for expires in ("25h", "99999999999999999999h"):
+            with self.subTest(expires=expires), tempfile.TemporaryDirectory() as tmp:
+                code, _, err = self._run(_bound_root(tmp), "--expires", expires)
+                self.assertEqual(code, 2)
+                self.assertIn("capped at 24h", err)
+
+    def test_unusable_contract_or_ledger_exits_2(self) -> None:
+        def array_contract(root):
+            (root / ".agent/execution.contract.json").write_text(json.dumps([1]), encoding="utf-8")
+
+        def warn_policy(root):
+            contract = load_execution_contract(root)
+            contract["command_policy"]["risk_policy"] = "warn"
+            write_json(root / ".agent/execution.contract.json", contract)
+
+        def bad_row(row):
+            return lambda root: confirmations_path(root).write_text(row + "\n", encoding="utf-8")
+
+        cases = {
+            "JSON array contract": (array_contract, "execution contract must be an object"),
+            "bound with warn": (warn_policy, "confirmation bound requires risk_policy require-confirmation"),
+            "non-object row": (bad_row("[]"), "row 1 must be an object with a string id and event"),
+            "list event": (
+                bad_row('{"schema_version": "1.0.0", "id": "CC1", "event": []}'), "row 1 must be an object"
+            ),
+        }
+        for name, (corrupt, text) in cases.items():
+            with self.subTest(case=name), tempfile.TemporaryDirectory() as tmp:
+                root = _bound_root(tmp)
+                corrupt(root)
+                before = confirmations_path(root).read_bytes() if confirmations_path(root).exists() else None
+                code, out, err = self._run(root)
+                self.assertEqual(code, 2, err)
+                self.assertIn(text, err)
+                after = confirmations_path(root).read_bytes() if confirmations_path(root).exists() else None
+                self.assertEqual(after, before)
 
 
 
@@ -602,8 +671,14 @@ class BoundRunTests(unittest.TestCase):
         # too, so warn (or no policy) cannot run high-risk commands unconfirmed.
         for risk_policy in ("block", "warn", None):
             with self.subTest(risk_policy=risk_policy), tempfile.TemporaryDirectory() as tmp:
-                root = _bound_run_root(tmp, risk_policy=risk_policy)
+                # confirm-command refuses these contracts too, so issue first.
+                root = _bound_run_root(tmp)
                 self._issue(root)
+                contract = load_execution_contract(root)
+                contract["command_policy"].pop("risk_policy")
+                if risk_policy is not None:
+                    contract["command_policy"]["risk_policy"] = risk_policy
+                write_json(root / CONTRACT, contract)
                 ledger = confirmations_path(root).read_bytes()
                 for flags in ([], ["--confirm-risk"]):
                     code, err = self._cli_run(root, *flags)
@@ -668,6 +743,17 @@ class BoundRunTests(unittest.TestCase):
                 self.assertEqual(command_receipts(root), [])
                 self.assertFalse(confirmations_path(root).exists())
 
+    def test_malformed_ledger_row_exits_2(self) -> None:
+        for row in ("[]", '{"schema_version": "1.0.0", "id": "CC1", "event": []}'):
+            with self.subTest(row=row), tempfile.TemporaryDirectory() as tmp:
+                root = _bound_run_root(tmp)
+                confirmations_path(root).write_text(row + "\n", encoding="utf-8")
+                code, err = self._cli_run(root)
+                self.assertEqual(code, 2, err)
+                self.assertIn("row 1 must be an object with a string id and event", err)
+                self.assertEqual(command_receipts(root), [])
+                self.assertEqual(_runs(root), 0)
+
     def test_missing_contract_keeps_advisory_degrade(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = _bound_run_root(tmp)
@@ -698,6 +784,14 @@ class ReceiptSchemaTests(unittest.TestCase):
             self.assertRegex(version, props["schema_version"]["pattern"])
         self.assertNotRegex("1.3.0", props["schema_version"]["pattern"])
 
+    def test_ledger_and_receipt_agree_on_confirmation_ids(self) -> None:
+        schemas = REPO / "schemas"
+        ledger = json.loads((schemas / "command-confirmations.schema.json").read_text(encoding="utf-8"))
+        receipt = json.loads((schemas / "command-receipts.schema.json").read_text(encoding="utf-8"))
+        self.assertEqual(
+            ledger["properties"]["id"]["pattern"], receipt["properties"]["confirmation_id"]["pattern"]
+        )
+
     def test_proof_schema_declares_the_confirmations_block(self) -> None:
         schema = json.loads(
             (REPO / "schemas/proof-pack.schema.json").read_text(encoding="utf-8")
@@ -716,7 +810,7 @@ RISKY = ["rm", "-rf", "nothing-here"]
 CONFIRMATIONS = ".agent/command-confirmations.jsonl"
 RECEIPTS = ".agent/command-receipts.jsonl"
 SUMMARY_LINE = (
-    "command confirmations: bound, 1 high-risk run(s), 1 bound, 0 self; "
+    "command confirmations: bound, 1 high-risk run(s), 1 bound, 0 self, 0 unbound; "
     "self-confirmation proves binding, not who confirmed"
 )
 # canonical_core before #112; a run that never used confirmations keeps it.
@@ -854,22 +948,22 @@ class ProofConfirmationTests(unittest.TestCase):
             return [dict(r, confirmation_id="CC2") if "confirmation_id" in r else r for r in rows]
 
         def mismatched(rows):
-            return [dict(r, argv_sha256="0" * 64) if r["event"] == "issued" else r for r in rows]
+            # A self-consistent row for another command, so only the receipt mismatch fires.
+            other = ["rm", "-rf", "elsewhere"]
+            return [
+                dict(r, argv=other, argv_sha256=argv_sha256(other)) if r["event"] == "issued" else r
+                for r in rows
+            ]
 
         def listed_id(rows):
             return [dict(r, confirmation_id=["CC1"]) if "confirmation_id" in r else r for r in rows]
 
-        def listed_row_id(rows):
-            return [dict(r, id=["CC1"]) if r["event"] == "issued" else r for r in rows]
-
         cases = {
             "unissued id": (RECEIPTS, unissued, "CR1 names confirmation CC2, which was never issued"),
-            # A non-string id is an error finding, not a traceback.
+            # A non-string id is an error finding, not a traceback. One on a
+            # ledger row: test_malformed_ledger_row_is_a_finding.
             "list id on the receipt": (
                 RECEIPTS, listed_id, "CR1 names confirmation ['CC1'], which was never issued"
-            ),
-            "list id on the issued row": (
-                CONFIRMATIONS, listed_row_id, "CR1 names confirmation CC1, which was never issued"
             ),
             "argv differs": (
                 CONFIRMATIONS, mismatched, "CR1 does not match confirmation CC1 (step, argv or contract)"
@@ -933,6 +1027,111 @@ class ProofConfirmationTests(unittest.TestCase):
 
         errors = self._tampered(lambda root: _edit_rows(root, RECEIPTS, self_confirmed))
         self.assertEqual(errors, ["error: CR1 was confirmed by cli under confirmation bound"])
+
+    def test_unconfirmed_run_under_bound_fails(self) -> None:
+        # What Agentflow 1.5's run writes when it degrades a bound contract to
+        # advisory: a high-risk receipt pinned to the contract, with no confirmation.
+        def unconfirmed(rows):
+            for row in rows:
+                if row.pop("confirmation_id", None):
+                    row.pop("confirmed", None)
+            return rows
+
+        errors = self._tampered(lambda root: _edit_rows(root, RECEIPTS, unconfirmed))
+        self.assertEqual(
+            errors, ["error: CR1 ran with no bound confirmation under confirmation bound"]
+        )
+
+    def test_tightening_self_to_bound_mid_run_still_verifies(self) -> None:
+        # A receipt written under the earlier self contract stays a self count;
+        # only a confirmation=bound floor rejects it, through the #117 pins.
+        tmp = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, tmp)
+        root = Path(tmp)
+        _ok(root, "init")
+        write_json(root / ".agent/plan.lock.json", _proof_plan())
+        _ok(root, "lock-plan", ".agent/plan.lock.json")
+        _ok(root, "init-execution")
+        _ok(root, "claim-step", "P1", "--agent", "agent-a")
+        _ok(root, "run", "--step", "P1", "--confirm-risk", "--", *RISKY)
+        _set_version(root, "1.1.0")
+        _set_policy(root, confirmation="bound")
+        _ok(root, "confirm-command", "--step", "P1", "--", *RISKY)
+        _ok(root, "run", "--step", "P1", "--", *RISKY)
+        _ok(root, "run", "--step", "P1", "--", *GATE)
+        for args in (("verify-step", "P1"), ("complete-step", "P1"), ("audit-drift",), ("build-proof",)):
+            _ok(root, *args)
+        result = _agentflow(root, "verify-proof")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn(
+            "command confirmations: bound, 2 high-risk run(s), 1 bound, 1 self, 0 unbound; "
+            "self-confirmation proves binding, not who confirmed",
+            result.stdout.splitlines(),
+        )
+        floor = _agentflow(root, "verify-proof", "--require", "confirmation=bound")
+        self.assertEqual(floor.returncode, 1, floor.stdout + floor.stderr)
+        self.assertIn(
+            "error: policy_below_floor: .agent/command-receipts.jsonl has 1 record(s) not "
+            "pinned to the verified execution contract (1 under another contract, 0 unpinned; "
+            "first at line 1)",
+            _errors(floor),
+        )
+
+    def test_issued_argv_must_match_its_hash(self) -> None:
+        # The readable argv is what a reviewer reads; it must be the hashed one.
+        for name, argv in {"argv swapped": ["echo", "harmless"], "argv not a list": 7}.items():
+            with self.subTest(case=name):
+                errors = self._tampered(lambda root: _edit_rows(
+                    root, CONFIRMATIONS,
+                    lambda rows: [dict(r, argv=argv) if r["event"] == "issued" else r for r in rows],
+                ))
+                self.assertEqual(
+                    errors, ["error: confirmation CC1 argv does not match its argv_sha256"]
+                )
+
+    def test_malformed_ledger_row_is_a_finding(self) -> None:
+        # build-proof refuses these rows, so seal the bundle by hand, as a forger would.
+        cases = {
+            "list event": lambda rows: [dict(r, event=[]) if r["event"] == "issued" else r for r in rows],
+            "list id on the issued row": lambda rows: [
+                dict(r, id=["CC1"]) if r["event"] == "issued" else r for r in rows
+            ],
+            "non-object row": lambda rows: [[]] + rows,
+        }
+        for name, edit in cases.items():
+            with self.subTest(case=name):
+                tmp = tempfile.mkdtemp()
+                self.addCleanup(shutil.rmtree, tmp)
+                root = Path(shutil.copytree(self.roots["bound"], Path(tmp) / "bound"))
+                _edit_rows(root, CONFIRMATIONS, edit)
+                path = root / ".agent/proof-pack.json"
+                proof = json.loads(path.read_text(encoding="utf-8"))
+                for item in proof["files"]:
+                    if item["path"] == CONFIRMATIONS:
+                        item["sha256"] = hashlib.sha256((root / CONFIRMATIONS).read_bytes()).hexdigest()
+                proof["core_sha256"] = proof_module.core_sha256(proof)
+                path.write_text(json.dumps(proof, indent=2), encoding="utf-8")
+                result = _agentflow(root, "verify-proof")
+                self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+                self.assertNotIn("Traceback", result.stderr)
+                self.assertEqual(
+                    _errors(result),
+                    ["error: command confirmations could not be checked: "
+                     f"{CONFIRMATIONS} row 1 must be an object with a string id and event"],
+                )
+
+    def test_build_proof_refuses_a_malformed_ledger_row(self) -> None:
+        tmp = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, tmp)
+        root = Path(shutil.copytree(self.roots["bound"], Path(tmp) / "bound"))
+        _edit_rows(root, CONFIRMATIONS, lambda rows: [[]] + rows)
+        result = _agentflow(root, "build-proof")
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertNotIn("Traceback", result.stderr)
+        self.assertEqual(
+            result.stderr.strip(),
+            f"invalid ledger: {CONFIRMATIONS} row 1 must be an object with a string id and event",
+        )
 
     def test_expiry_after_the_run_never_fails(self) -> None:
         def long_ago(rows):

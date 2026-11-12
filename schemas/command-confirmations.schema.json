@@ -6,7 +6,7 @@
   "required": ["schema_version", "id", "event"],
   "properties": {
     "schema_version": { "type": "string", "pattern": "^1\\.(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)$" },
-    "id": { "type": "string", "pattern": "^CC[0-9]+$" },
+    "id": { "type": "string", "pattern": "^CC[1-9][0-9]*$" },
     "event": { "enum": ["issued", "consumed"] },
     "step_id": { "type": "string" },
     "argv": { "type": "array", "items": { "type": "string" } },

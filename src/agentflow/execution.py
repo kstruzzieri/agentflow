@@ -119,8 +119,15 @@ def contract_schema_version_for(contract: Dict[str, Any]) -> str:
     return "1.0.0"
 
 
-def confirmation_mode(contract: Optional[Dict[str, Any]]) -> str:
-    """Return the confirmation mode, raising ValueError on a bad contract."""
+def confirmation_mode(contract: Any) -> str:
+    """Return the confirmation mode, raising ValueError on a bad contract.
+
+    The one rule (#112) the validator, ``run``, ``confirm-command`` and
+    ``verify-proof`` share: a mode the contract cannot mean, or ``bound``
+    without require-confirmation, never reads as ``bound`` or quietly as ``self``.
+    """
+    if contract is not None and not isinstance(contract, dict):
+        raise ValueError("execution contract must be an object")
     policy = (contract or {}).get("command_policy")
     if not isinstance(policy, dict) or "confirmation" not in policy:
         return "self"
@@ -129,6 +136,8 @@ def confirmation_mode(contract: Optional[Dict[str, Any]]) -> str:
     mode = policy["confirmation"]
     if mode not in CONFIRMATION_MODES:
         raise ValueError(f"confirmation {mode} is invalid")
+    if mode == "bound" and policy.get("risk_policy") != "require-confirmation":
+        raise ValueError("confirmation bound requires risk_policy require-confirmation")
     return mode
 
 
@@ -425,18 +434,10 @@ def validate_execution_contract(contract: Any) -> List[Dict[str, str]]:
             and command_policy["risk_policy"] not in RISK_POLICIES
         ):
             error(f"risk_policy {command_policy['risk_policy']} is invalid")
-        if "confirmation" in command_policy:
-            if contract.get("schema_version") == "1.0.0":
-                error("execution contract 1.0.0 cannot carry confirmation")
-            elif command_policy["confirmation"] not in CONFIRMATION_MODES:
-                error(f"confirmation {command_policy['confirmation']} is invalid")
-            elif (
-                command_policy["confirmation"] == "bound"
-                and command_policy.get("risk_policy") != "require-confirmation"
-            ):
-                error(
-                    "confirmation bound requires risk_policy require-confirmation"
-                )
+        try:
+            confirmation_mode(contract)
+        except ValueError as exc:
+            error(str(exc))
 
     proof_policy = contract.get("proof_policy")
     if "proof_policy" in contract and not isinstance(proof_policy, dict):

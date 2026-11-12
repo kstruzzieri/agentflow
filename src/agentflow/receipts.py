@@ -94,22 +94,17 @@ def _run_policy(root: Path) -> Tuple[str, Dict[str, Any]]:
 
     Unlike ``_contract_policy``, only a missing contract degrades (to ``self``
     and advisory defaults): a present contract that cannot be read, or whose
-    confirmation is invalid, must never turn ``bound`` into ``self``. ``bound``
-    with any other risk_policy is refused too, as the validator does, so it
-    cannot look like protection while running high-risk commands unconfirmed.
+    confirmation is invalid, must never turn ``bound`` into ``self``.
+    ``confirmation_mode`` also refuses ``bound`` with any other risk_policy, so
+    it cannot look like protection while running high-risk commands unconfirmed.
     """
     try:
         contract = load_execution_contract(root)
-        if contract is not None and not isinstance(contract, dict):
-            raise ValueError("execution contract must be an object")
         mode = confirmation_mode(contract)
-        policy = (contract or {}).get("command_policy", {})
-        policy = policy if isinstance(policy, dict) else {}
-        if mode == "bound" and policy.get("risk_policy") != "require-confirmation":
-            raise ValueError("confirmation bound requires risk_policy require-confirmation")
     except (OSError, ValueError) as exc:
         raise ValueError(f"run refused: invalid execution contract: {exc}") from exc
-    return mode, policy
+    policy = (contract or {}).get("command_policy", {})
+    return mode, policy if isinstance(policy, dict) else {}
 
 
 def _receipt_output_paths(root: Path, attempt_id: str, receipt_id: str) -> Tuple[Path, Path]:
