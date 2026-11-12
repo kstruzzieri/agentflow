@@ -171,6 +171,28 @@ SCHEMA_FILE_CONSTANTS = {
 # load-bearing schemas admit the supported major through the supported minor.
 EXACT_SCHEMA_PATHS = frozenset({"schemas/execution-contract.schema.json"})
 
+
+# Mirror of contracts.EXACT_READABLE_VERSIONS["execution-contract"]; the guard
+# does not import agentflow. tests/test_schema_soak.py pins the two together.
+EXACT_READABLE_MIRROR = ("1.0.0", "1.1.0")
+
+
+def _exact_pattern(versions: Sequence[str]) -> str:
+    """Pattern admitting exactly ``versions`` (same major/patch, minors 0..n)."""
+    parsed = sorted({_version_tuple(v) for v in versions})
+    major, _, patch = parsed[0]
+    minors = [m for _, m, _ in parsed]
+    if len(parsed) == 1:
+        return rf"^{re.escape(versions[0])}$"
+    if (
+        all(p[0] == major and p[2] == patch for p in parsed)
+        and minors == list(range(len(minors)))
+        and len(minors) <= 10
+    ):
+        token = "[01]" if minors[-1] == 1 else f"[0-{minors[-1]}]"
+        return rf"^{major}\.{token}\.{patch}$"
+    return "^(?:" + "|".join(re.escape(v) for v in sorted(set(versions))) + ")$"
+
 # Immutable fixture trees. The 1.0 transition adds a fixture built by the 1.0
 # code; issue #5 requires the existing snapshots to survive untouched, so these
 # accept additions and nothing else.
@@ -578,7 +600,10 @@ def _require_pattern_coherence(subject: Subject, supported: dict[str, str]) -> N
             continue
         major, minor, _ = _version_tuple(version)
         if path in EXACT_SCHEMA_PATHS:
-            expected = rf"^{re.escape(version)}$"
+            # ponytail: the exact contract reads released + current only.
+            expected = _exact_pattern(
+                [v for v in EXACT_READABLE_MIRROR if _version_tuple(v) <= _version_tuple(version)]
+            )
         elif path == "schemas/proof-pack.schema.json":
             expected = (
                 r"^(?:0\.(?:[4-9]|[1-9][0-9]+)\.(?:0|[1-9][0-9]*)"
@@ -854,7 +879,8 @@ def _is_additive_schema(
     """#110: ``current`` may only grow ``released`` and must admit ``version``.
 
     A same-major reader keeps accepting every version its released pattern
-    did; the exact-policy execution contract admits only its own version.
+    did; the exact-policy execution contract admits exactly its released
+    version plus the current one (contracts.EXACT_READABLE_VERSIONS).
     """
     try:
         before = _load_json(released.decode("utf-8"))
@@ -867,7 +893,12 @@ def _is_additive_schema(
     for field, pattern in new_patterns.items():
         old = old_patterns[field]
         if path in EXACT_SCHEMA_PATHS:
-            valid = pattern == rf"^{re.escape(version)}$"
+            # Released alone, or exactly released + current; never wider,
+            # never dropping the released version.
+            valid = pattern in (
+                _exact_pattern([released_version]),
+                _exact_pattern([released_version, version]),
+            )
         else:
             # Recognize the released grammar, then widen only its minor token.
             major, minor, _ = _version_tuple(version)
