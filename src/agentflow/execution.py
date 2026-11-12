@@ -18,6 +18,7 @@ from .artifacts import (
     loads_json_artifact,
     read_jsonl,
     utc_now,
+    verified_bytes,
 )
 from .contracts import (
     ARTIFACT_COMPATIBILITY_POLICIES,
@@ -201,6 +202,11 @@ def execution_contract_snapshot() -> Iterator[None]:
 
 def _execution_contract_bytes(root: Path) -> Optional[bytes]:
     path = root / EXECUTION_ARTIFACT_PATHS["execution-contract"]
+    # #126: inside verify-proof the hashed bytes win, even over this command's
+    # snapshot, which was read before anything was hashed.
+    verified = verified_bytes(path)
+    if verified is not None:
+        return verified
     snapshot = _CONTRACT_SNAPSHOT.get()
     # Resolving symlinks would change the cache key if a child retargets them.
     key = str(path.absolute())

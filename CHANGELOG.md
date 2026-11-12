@@ -21,6 +21,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `docs/cli-contract.json` lists the command and its output. It writes nothing
   to `.agent/` and exits 0 unless the plan or contract cannot be read. (#113)
 
+### Fixed
+
+- `verify-proof` now judges every hashed source by the bytes it hashed. Since
+  #117 the policy-floor check did, but the checks after it read the plan, the
+  evidence, the execution contract and the step-runs, command-receipts and
+  review-runs ledgers from disk again: criterion, design-decision and
+  validation-gate coverage, receipt outputs, review integrity and `--replay`.
+  On a root still writable during verification, a file swapped after its hash
+  check was the one they judged, so a tampered bundle could pass. They now read
+  the bytes that passed the hash check, a hashed file deleted after it counts
+  as present, and a source that failed its hash is reported instead of read
+  again. Parent-path, symlink and hardlink aliases share the hashed snapshot;
+  conflicting snapshots of the same source fail verification. The contract
+  `verify-proof` reads when it starts no longer decides
+  either. Output is unchanged for a bundle whose files do not change during
+  verification. No schema, CLI, `docs/cli-contract.json` or exit-code change.
+  (#126)
+
 ## [1.4.0] - 2026-11-10
 
 Agentflow 1.4.0 lets whoever verifies a proof, not the agent that built it,

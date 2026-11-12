@@ -14,7 +14,14 @@ import re
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from .artifacts import append_jsonl, plan_binding_sha256, read_jsonl, try_read_json, utc_now
+from .artifacts import (
+    append_jsonl,
+    plan_binding_sha256,
+    read_jsonl,
+    source_exists,
+    try_read_json,
+    utc_now,
+)
 from .contracts import (
     REVIEW_DEPTH_ORDER,
     REVIEW_DEPTH_POLICY,
@@ -499,7 +506,7 @@ def _workflow_review_policy(root: Path):
     depth: Optional[str] = None
     wf_requires_run = False
     contract_path = root / ".agent/workflow.contract.json"
-    if contract_path.exists():
+    if source_exists(contract_path):
         data, _ = try_read_json(contract_path)
         if isinstance(data, dict):
             raw_depth = data.get("review_depth")
@@ -622,7 +629,7 @@ def review_summary(
     current_plan_sha256 = None
     if plan is None:
         plan_path = root / ".agent/plan.lock.json"
-        if plan_path.is_file():
+        if source_exists(plan_path):
             try:
                 plan, _ = try_read_json(plan_path)
             except OSError:

@@ -822,5 +822,252 @@ class EvidenceOnlyFloorTests(unittest.TestCase):
             )
 
 
+class VerifiedSourceReadTests(unittest.TestCase):
+    """#126: every check after the hash check judges the bytes that were hashed."""
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls._tmp = tempfile.TemporaryDirectory()
+        cls.root = Path(cls._tmp.name) / "fixture"
+        cls.root.mkdir()
+        build_fixture(cls.root, edit=None)
+
+    @classmethod
+    def tearDownClass(cls) -> None:
+        cls._tmp.cleanup()
+
+    def copy(self) -> Path:
+        tmp = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, tmp)
+        return Path(shutil.copytree(self.root, Path(tmp) / "fixture"))
+
+    def verify(self, root: Path, swap=None) -> list:
+        """verify-proof --replay, running ``swap`` right after the hash check."""
+        real_core = proof_module.core_sha256
+
+        def swap_then_hash(proof: dict) -> str:
+            if swap is not None:
+                swap()
+            return real_core(proof)
+
+        with mock.patch.object(proof_module, "core_sha256", side_effect=swap_then_hash):
+            return proof_module.verify_proof(root, root / ".agent/proof-pack.json", replay=True)
+
+    def respell(self, root: Path, source: str, spelling: str) -> None:
+        proof_path = root / ".agent/proof-pack.json"
+        proof = json.loads(proof_path.read_text(encoding="utf-8"))
+        proof["generated_from"] = [
+            spelling if path == source else path for path in proof["generated_from"]
+        ]
+        for item in proof["files"]:
+            if item["path"] == source:
+                item["path"] = spelling
+        proof["core_sha256"] = core_sha256(proof)
+        write_json(proof_path, proof)
+
+    def test_untouched_bundle_still_verifies(self) -> None:
+        findings = self.verify(self.copy())
+
+        self.assertEqual([f for f in findings if f["severity"] == "error"], [])
+
+    def test_an_unhashed_symlink_loop_does_not_affect_verification(self) -> None:
+        root = self.copy()
+        baseline = self.verify(root)
+        (root / ".agent/runtime.config.json").symlink_to("runtime.config.json")
+
+        self.assertEqual(self.verify(root), baseline)
+
+    def test_swapping_any_hashed_source_after_its_hash_check_changes_nothing(self) -> None:
+        baseline = self.verify(self.copy())
+        proof = json.loads((self.root / ".agent/proof-pack.json").read_text(encoding="utf-8"))
+        swaps = {
+            "rewritten": lambda path: path.write_bytes(b"{not json\n"),
+            "deleted": Path.unlink,
+        }
+        for item in proof["files"]:
+            for name, swap in swaps.items():
+                with self.subTest(path=item["path"], swap=name):
+                    root = self.copy()
+                    self.assertEqual(self.verify(root, lambda: swap(root / item["path"])), baseline)
+
+    def test_receipt_outputs_are_judged_against_the_hashed_ledger(self) -> None:
+        # The issue's example: forge a receipt output, then swap in a ledger that
+        # vouches for the forgery once verify-proof has hashed the real one.
+        for alias in ("canonical", "parent", "symlink", "hardlink", "reader_symlink"):
+            with self.subTest(alias=alias):
+                root = self.copy()
+                source = ".agent/command-receipts.jsonl"
+                ledger = root / source
+                spelling = source
+                if alias == "parent":
+                    spelling = ".agent/../.agent/command-receipts.jsonl"
+                elif alias == "symlink":
+                    spelling = "ledger-link.jsonl"
+                    (root / spelling).symlink_to(source)
+                elif alias == "hardlink":
+                    spelling = "ledger-hardlink.jsonl"
+                    (root / spelling).hardlink_to(ledger)
+                elif alias == "reader_symlink":
+                    spelling = "original-ledger.jsonl"
+                    ledger.rename(root / spelling)
+                    ledger.symlink_to("../" + spelling)
+                proof_path = root / ".agent/proof-pack.json"
+                self.respell(root, source, spelling)
+                sealed = proof_path.read_bytes()
+                self.assertEqual(
+                    [f for f in self.verify(root) if f["severity"] == "error"], []
+                )
+                receipts = read_jsonl(ledger)
+                stdout_path = receipts[0]["stdout_path"]
+                (root / stdout_path).write_bytes(b"forged\n")
+                receipts[0]["stdout_sha256"] = hashlib.sha256(b"forged\n").hexdigest()
+                forged = "".join(json.dumps(receipt, sort_keys=True) + "\n" for receipt in receipts)
+
+                def swap() -> None:
+                    if alias == "reader_symlink":
+                        (root / "forged-ledger.jsonl").write_text(forged, encoding="utf-8")
+                        ledger.unlink()
+                        ledger.symlink_to("../forged-ledger.jsonl")
+                    else:
+                        ledger.write_text(forged, encoding="utf-8")
+
+                findings = self.verify(root, swap)
+
+                self.assertIn(
+                    f"receipt output hash mismatch for {stdout_path}",
+                    [finding["message"] for finding in findings],
+                )
+                self.assertEqual(proof_path.read_bytes(), sealed)
+
+    def test_symlink_parent_path_does_not_shadow_a_different_source(self) -> None:
+        root = self.copy()
+        (root / "other/child").mkdir(parents=True)
+        (root / ".agent/link").symlink_to("../other/child", target_is_directory=True)
+        spelling = ".agent/link/../command-receipts.jsonl"
+        (root / "other/command-receipts.jsonl").write_bytes(b"different source\n")
+        proof_path = root / ".agent/proof-pack.json"
+        proof = json.loads(proof_path.read_text(encoding="utf-8"))
+        proof["generated_from"].append(spelling)
+        proof["files"].append({"path": spelling, "sha256": _digest(b"different source\n")})
+        proof["core_sha256"] = core_sha256(proof)
+        write_json(proof_path, proof)
+
+        self.assertEqual([f for f in self.verify(root) if f["severity"] == "error"], [])
+
+    def test_replacing_a_reader_during_hashing_cannot_drop_its_alias(self) -> None:
+        root = self.copy()
+        source = ".agent/command-receipts.jsonl"
+        spelling = ".agent/../.agent/command-receipts.jsonl"
+        ledger = root / source
+        self.respell(root, source, spelling)
+        receipts = read_jsonl(ledger)
+        stdout_path = receipts[0]["stdout_path"]
+        (root / stdout_path).write_bytes(b"forged\n")
+        receipts[0]["stdout_sha256"] = _digest(b"forged\n")
+        replacement = root / "replacement.jsonl"
+        replacement.write_text("".join(json.dumps(r) + "\n" for r in receipts), encoding="utf-8")
+        real_open = Path.open
+        resolved_ledger = ledger.resolve()
+
+        def replace_after_open(path, *args, **kwargs):
+            handle = real_open(path, *args, **kwargs)
+            if path == resolved_ledger and args == ("rb",) and replacement.exists():
+                replacement.replace(ledger)
+            return handle
+
+        with mock.patch.object(Path, "open", replace_after_open):
+            findings = self.verify(root)
+
+        self.assertFalse(replacement.exists())
+        self.assertIn(
+            f"receipt output hash mismatch for {stdout_path}",
+            [f["message"] for f in findings],
+        )
+
+    def test_alias_binding_survives_directory_replacement_during_hashing(self) -> None:
+        root = self.copy()
+        source = ".agent/command-receipts.jsonl"
+        self.respell(root, source, ".agent/../.agent/command-receipts.jsonl")
+        ledger = root / source
+        receipts = read_jsonl(ledger)
+        stdout_path = receipts[0]["stdout_path"]
+        (root / stdout_path).write_bytes(b"forged\n")
+        receipts[0]["stdout_sha256"] = _digest(b"forged\n")
+        forged = "".join(json.dumps(r) + "\n" for r in receipts)
+        real_sha256 = hashlib.sha256
+        replaced = False
+
+        def replace_before_ledger_hash(data=b""):
+            nonlocal replaced
+            digest = real_sha256(data)
+            if not replaced and data == b"":
+                replaced = True
+                (root / ".agent").rename(root / "old-agent")
+                shutil.copytree(root / "old-agent", root / "new-agent")
+                (root / ".agent").symlink_to("new-agent", target_is_directory=True)
+            return digest
+
+        with mock.patch.object(proof_module.hashlib, "sha256", side_effect=replace_before_ledger_hash):
+            findings = self.verify(root, lambda: ledger.write_text(forged, encoding="utf-8"))
+
+        self.assertTrue(replaced)
+        self.assertIn(
+            f"receipt output hash mismatch for {stdout_path}",
+            [f["message"] for f in findings],
+        )
+
+    def test_conflicting_alias_snapshots_are_rejected(self) -> None:
+        root = self.copy()
+        ledger = root / ".agent/command-receipts.jsonl"
+        original = ledger.read_bytes()
+        changed = original + b"\n"
+        spelling = ".agent/../.agent/command-receipts.jsonl"
+        proof_path = root / ".agent/proof-pack.json"
+        proof = json.loads(proof_path.read_text(encoding="utf-8"))
+        proof["generated_from"].append(spelling)
+        proof["files"].append({"path": spelling, "sha256": _digest(changed)})
+        proof["core_sha256"] = core_sha256(proof)
+        write_json(proof_path, proof)
+        real_sha256 = hashlib.sha256
+
+        def swap_after_first_hash(data=b""):
+            digest = real_sha256(data)
+            if data == original:
+                ledger.write_bytes(changed)
+            return digest
+
+        with mock.patch.object(proof_module.hashlib, "sha256", side_effect=swap_after_first_hash):
+            findings = self.verify(root)
+
+        self.assertTrue(any(
+            f["severity"] == "error" and "conflicting proof sources" in f["message"]
+            for f in findings
+        ), findings)
+
+    def test_a_source_that_fails_its_hash_is_not_reread(self) -> None:
+        root = self.copy()
+        (root / ".agent/command-receipts.jsonl").write_bytes(b"{not json\n")
+
+        messages = [finding["message"] for finding in self.verify(root)]
+
+        self.assertIn("hash mismatch for .agent/command-receipts.jsonl", messages)
+        self.assertEqual([m for m in messages if "invalid JSONL" in m], [])
+
+    def test_contract_read_before_the_hash_check_does_not_decide(self) -> None:
+        # The CLI reads the contract once before any work (#117). If it changed
+        # between that read and the hash check, the hashed bytes still decide.
+        root = self.copy()
+        baseline = self.verify(root)
+        honest = (root / CONTRACT).read_bytes()
+        with execution_contract_snapshot():
+            _edit_contract(
+                root, lambda c: c["proof_policy"].update(review_gate="block", require_review_run=True)
+            )
+            execution_contract_sha256(root)
+            (root / CONTRACT).write_bytes(honest)
+
+            self.assertEqual(self.verify(root), baseline)
+
+
 if __name__ == "__main__":
     unittest.main()
