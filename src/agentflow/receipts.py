@@ -94,17 +94,22 @@ def _run_policy(root: Path) -> Tuple[str, Dict[str, Any]]:
 
     Unlike ``_contract_policy``, only a missing contract degrades (to ``self``
     and advisory defaults): a present contract that cannot be read, or whose
-    confirmation is invalid, must never turn ``bound`` into ``self``.
+    confirmation is invalid, must never turn ``bound`` into ``self``. ``bound``
+    with any other risk_policy is refused too, as the validator does, so it
+    cannot look like protection while running high-risk commands unconfirmed.
     """
     try:
         contract = load_execution_contract(root)
         if contract is not None and not isinstance(contract, dict):
             raise ValueError("execution contract must be an object")
         mode = confirmation_mode(contract)
+        policy = (contract or {}).get("command_policy", {})
+        policy = policy if isinstance(policy, dict) else {}
+        if mode == "bound" and policy.get("risk_policy") != "require-confirmation":
+            raise ValueError("confirmation bound requires risk_policy require-confirmation")
     except (OSError, ValueError) as exc:
         raise ValueError(f"run refused: invalid execution contract: {exc}") from exc
-    policy = (contract or {}).get("command_policy", {})
-    return mode, policy if isinstance(policy, dict) else {}
+    return mode, policy
 
 
 def _receipt_output_paths(root: Path, attempt_id: str, receipt_id: str) -> Tuple[Path, Path]:
@@ -331,16 +336,15 @@ def _run_command(
     classification = classify_command(command, plan, step_id, root=root)
     confirmation_id = block_reason = None
     if mode == "bound" and classification["level"] == "high":
-        # #112: only a bound confirmation counts; --confirm-risk and the env
-        # switch are ignored. block stays absolute and spends nothing. The
-        # confirmation is burned (under its own lock, released on return)
-        # before launch, so it authorizes at most one run even if this crashes.
-        confirmed, confirmation_source = False, None
-        if risk_policy == "require-confirmation":
-            confirmation_id, block_reason = consume_confirmation(
-                root, plan, step_id, resolved_attempt, command, contract_digest
-            )
-            confirmed = confirmation_id is not None
+        # #112: only a bound confirmation counts (_run_policy guarantees
+        # require-confirmation here); --confirm-risk and the env switch are
+        # ignored. The confirmation is burned (under its own lock, released on
+        # return) before launch, so it authorizes at most one run even if this
+        # crashes.
+        confirmation_id, block_reason = consume_confirmation(
+            root, plan, step_id, resolved_attempt, command, contract_digest
+        )
+        confirmed, confirmation_source = confirmation_id is not None, None
     decision = evaluate_policy(classification["level"], risk_policy, confirmed)
     receipts_path = _command_receipts_path(root)
 

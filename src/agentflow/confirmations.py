@@ -35,7 +35,8 @@ def read_confirmations(root: Path) -> List[Dict[str, Any]]:
 
 
 def argv_sha256(argv: List[str]) -> str:
-    return hashlib.sha256(json.dumps(argv, separators=(",", ":")).encode("utf-8")).hexdigest()
+    payload = json.dumps(argv, ensure_ascii=False, separators=(",", ":"))
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 
 def parse_expiry(text: str) -> timedelta:

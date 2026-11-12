@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import contextlib
 import copy
+import hashlib
 import io
 import json
 import multiprocessing
@@ -11,17 +12,25 @@ import subprocess
 import tempfile
 import unittest
 from concurrent.futures import ProcessPoolExecutor
+from concurrent.futures import TimeoutError as FutureTimeout
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from unittest import mock
 
 from agentflow import cli
-from agentflow.artifacts import create_initial_artifacts, plan_binding_sha256, write_json
+from agentflow.artifacts import (
+    append_jsonl,
+    create_initial_artifacts,
+    ledger_lock_path,
+    plan_binding_sha256,
+    write_json,
+)
 from agentflow.contracts import PLAN_SCHEMA_VERSION
 from agentflow.confirmations import (
     DEFAULT_EXPIRY,
     argv_sha256,
     confirmations_path,
+    consume_confirmation,
     issue_confirmation,
     match_confirmation,
     parse_expiry,
@@ -37,6 +46,7 @@ from agentflow.execution import (
     load_execution_contract,
     validate_execution_contract,
 )
+from agentflow.locks import file_lock
 from agentflow.receipts import command_receipts, record_command, replay_gates, run_command
 
 
@@ -239,6 +249,17 @@ class MatchTests(unittest.TestCase):
         self.assertEqual(self._match([]), (None, "confirmation_missing"))
         self.assertEqual(self._match([_issued(1)], argv=["rm", "-rf", "dist"]), (None, "confirmation_missing"))
 
+    def test_argv_hash_keeps_non_ascii_as_utf8(self) -> None:
+        argv = ["rm", "-rf", "caf\u00e9"]
+        expected = hashlib.sha256(
+            json.dumps(argv, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+        ).hexdigest()
+        escaped = hashlib.sha256(
+            json.dumps(argv, separators=(",", ":")).encode("utf-8")
+        ).hexdigest()
+        self.assertEqual(argv_sha256(argv), expected)
+        self.assertNotEqual(argv_sha256(argv), escaped)
+
     def test_sudo_prefix_does_not_match(self) -> None:
         self.assertEqual(self._match([_issued(1)], argv=["sudo"] + HIGH), (None, "confirmation_missing"))
 
@@ -351,6 +372,12 @@ def _concurrent_run_worker(args) -> dict:
     return run_command(Path(root_str), _run_plan(), "P1", None, RUN)
 
 
+def _contended_consume_worker(args):
+    root_str, contract_hash, started = args
+    started.set()
+    return consume_confirmation(Path(root_str), _run_plan(), "P1", "A1", RUN, contract_hash)
+
+
 class BoundRunTests(unittest.TestCase):
     def _issue(self, root, argv=RUN, step="P1", now=None):
         return issue_confirmation(root, _run_plan(), step, argv, DEFAULT_EXPIRY, now=now)
@@ -417,6 +444,22 @@ class BoundRunTests(unittest.TestCase):
             # sudo form so a regression would run the plain command, not sudo.
             self._issue(root, argv=["sudo"] + RUN)
             self._blocked(root, "confirmation_missing")
+
+    def test_block_argv_with_trailing_space(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = _bound_run_root(tmp)
+            self._issue(root)
+            self._blocked(root, "confirmation_missing", argv=RUN[:-1] + [RUN[-1] + " "])
+
+    def test_block_plain_confirmation_offered_to_wrapped_argv(self) -> None:
+        # normalize_command strips env, so risk sees the same command; the
+        # confirmation is bound to the exact argv and must not carry over.
+        with tempfile.TemporaryDirectory() as tmp:
+            root = _bound_run_root(tmp)
+            (root / "build").mkdir()
+            self._issue(root, argv=["rm", "-rf", "build"])
+            self._blocked(root, "confirmation_missing", argv=["env", "rm", "-rf", "build"])
+            self.assertTrue((root / "build").is_dir())
 
     def test_bound_run_consumes_and_records(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -509,6 +552,34 @@ class BoundRunTests(unittest.TestCase):
             self.assertEqual(_runs(root), 1)
             self.assertEqual([r["id"] for r in self._consumed(root)], ["CC1"])
 
+    @unittest.skipIf(os.name == "nt", "fcntl-backed POSIX locking; Windows covered by locks.py tests")
+    def test_consume_waits_for_the_ledger_lock_and_rereads_under_it(self) -> None:
+        # The attempt lock does not apply here: only the confirmations lock
+        # stands between the child's match and a row the parent writes.
+        with tempfile.TemporaryDirectory() as tmp:
+            root = _bound_run_root(tmp)
+            issued = self._issue(root)
+            spent = {"schema_version": "1.0.0", "id": "CC1", "event": "consumed",
+                     "attempt_id": "A9", "consumed_at": issued["issued_at"]}
+            with multiprocessing.Manager() as manager, \
+                    ProcessPoolExecutor(max_workers=1) as pool:
+                started = manager.Event()
+                pool.submit(os.getpid).result()  # start the worker before locking
+                with file_lock(ledger_lock_path(confirmations_path(root))):
+                    future = pool.submit(
+                        _contended_consume_worker,
+                        (str(root), issued["execution_contract_sha256"], started),
+                    )
+                    self.assertTrue(started.wait(BARRIER_TIMEOUT))
+                    # ponytail: a 1s bound proves the child is held at the lock;
+                    # a lock-free consume returns in milliseconds.
+                    with self.assertRaises(FutureTimeout):
+                        future.result(timeout=1)
+                    append_jsonl(confirmations_path(root), spent)
+                result = future.result(timeout=BARRIER_TIMEOUT)
+            self.assertEqual(result, (None, "confirmation_used"))
+            self.assertEqual(read_confirmations(root), [issued, spent])
+
     def test_replay_stays_blocked_under_bound(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = _bound_run_root(tmp)
@@ -523,15 +594,23 @@ class BoundRunTests(unittest.TestCase):
             self.assertEqual(read_confirmations(root), [issued])
             self.assertEqual(_runs(root), 0)
 
-    def test_block_policy_never_consumes(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            root = _bound_run_root(tmp, risk_policy="block")
-            issued = self._issue(root)
-            receipt = run_command(root, _run_plan(), "P1", None, RUN)
-            self.assertEqual(receipt["decision"], "blocked")
-            self.assertNotIn("confirmation_block_reason", receipt)
-            self.assertEqual(read_confirmations(root), [issued])
-            self.assertEqual(_runs(root), 0)
+    def test_bound_without_require_confirmation_fails_closed(self) -> None:
+        # The validator rejects bound with any other risk_policy; run refuses it
+        # too, so warn (or no policy) cannot run high-risk commands unconfirmed.
+        for risk_policy in ("block", "warn", None):
+            with self.subTest(risk_policy=risk_policy), tempfile.TemporaryDirectory() as tmp:
+                root = _bound_run_root(tmp, risk_policy=risk_policy)
+                self._issue(root)
+                ledger = confirmations_path(root).read_bytes()
+                for flags in ([], ["--confirm-risk"]):
+                    code, err = self._cli_run(root, *flags)
+                    self.assertEqual(code, 2, err)
+                    self.assertIn(
+                        "confirmation bound requires risk_policy require-confirmation", err
+                    )
+                self.assertEqual(confirmations_path(root).read_bytes(), ledger)
+                self.assertEqual(command_receipts(root), [])
+                self.assertEqual(_runs(root), 0)
 
     def test_non_high_command_never_touches_ledger(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
