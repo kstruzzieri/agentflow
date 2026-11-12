@@ -78,6 +78,15 @@ loopback (or another interface you fully trust) and do not expose it to untruste
 networks. Tool calls are serialized by a process-wide lock, because the
 underlying CLI redirects the process stdout/stderr and is not reentrant.
 
+## Why there is no confirmation tool
+
+No MCP tool issues command confirmations (`confirm-command` is CLI-only). The
+line is capability: anything the agent can reach, including an MCP tool, is
+self-confirmation. A confirmation tool would let the agent approve its own
+high-risk commands and look like an independent check. Host approvals
+(`confirmation: "host"`, not built) must come from an issuer the agent cannot
+impersonate. See [Command risk](command-risk.md#confirmation-modes).
+
 ## Running
 
 ### stdio (Claude Code, Codex CLI)

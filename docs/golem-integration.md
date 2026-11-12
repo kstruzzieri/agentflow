@@ -242,6 +242,14 @@ state over MCP still shells out for `run` and `record-file-change`.
   confirmation, but classification is advisory string analysis. It does not
   isolate the process, limit filesystem access, or make a dangerous command
   safe. Command approval and sandboxing are Golem's responsibility.
+- **Phase 2 confirmation is host-owned.** Agentflow's `bound` confirmation
+  (`command_policy.confirmation`, see
+  [docs/command-risk.md](command-risk.md#confirmation-modes)) proves a run
+  used a confirmation tied to the exact command, plan and contract, not who
+  gave it. A confirmation that carries authority (`confirmation: "host"`) must
+  come from Golem's own approval, through an issuer the agent cannot
+  impersonate. That mode is not built; Agentflow offers no MCP tool to create
+  confirmations.
 - **The MCP HTTP transport is unauthenticated.** Bind loopback only; the
   `Origin` check defends against browsers, not arbitrary local clients. For
   a single-machine adapter, prefer stdio.
