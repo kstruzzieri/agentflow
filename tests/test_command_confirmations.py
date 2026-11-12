@@ -887,6 +887,34 @@ class ProofConfirmationTests(unittest.TestCase):
         errors = self._tampered(lambda root: _edit_rows(root, CONFIRMATIONS, double))
         self.assertEqual(errors, ["error: confirmation CC1 was consumed 2 times"])
 
+    def test_one_confirmation_named_by_two_receipts_fails(self) -> None:
+        # R9: one consumed row cannot vouch for two runs.
+        def replayed(rows):
+            confirmed = next(r for r in rows if "confirmation_id" in r)
+            return rows + [dict(confirmed, id=f"CR{len(rows) + 1}")]
+
+        errors = self._tampered(lambda root: _edit_rows(root, RECEIPTS, replayed))
+        self.assertEqual(errors, ["error: confirmation CC1 is named by 2 receipts"])
+
+    def test_consumed_by_another_attempt_fails(self) -> None:
+        receipt = next(
+            r for r in (
+                json.loads(line) for line in
+                (self.roots["bound"] / RECEIPTS).read_text(encoding="utf-8").splitlines()
+            )
+            if "confirmation_id" in r
+        )
+
+        def elsewhere(rows):
+            return [dict(r, attempt_id="A99") if r["event"] == "consumed" else r for r in rows]
+
+        errors = self._tampered(lambda root: _edit_rows(root, CONFIRMATIONS, elsewhere))
+        self.assertEqual(
+            errors,
+            [f"error: confirmation CC1 was consumed by attempt A99 but {receipt['id']} "
+             f"ran in attempt {receipt['attempt_id']}"],
+        )
+
     def test_consumed_after_expiry_fails(self) -> None:
         def late(rows):
             expires = next(r["expires_at"] for r in rows if r["event"] == "issued")

@@ -9,6 +9,7 @@ import os
 import re
 import stat
 import tempfile
+from collections import Counter
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, Iterator, List, Optional, Set, Tuple
@@ -769,11 +770,26 @@ def confirmation_findings(root: Path) -> List[Dict[str, str]]:
                 errors.append(
                     f"{receipt_id} does not match confirmation {confirmation} (step, argv or contract)"
                 )
-            if confirmation not in consumed:
+            spent = consumed.get(confirmation, [])
+            if not spent:
                 errors.append(f"{receipt_id} names confirmation {confirmation}, which was never consumed")
+            elif len(spent) == 1 and spent[0].get("attempt_id") != receipt.get("attempt_id"):
+                errors.append(
+                    f"confirmation {confirmation} was consumed by attempt {spent[0].get('attempt_id')} "
+                    f"but {receipt_id} ran in attempt {receipt.get('attempt_id')}"
+                )
         source = receipt.get("confirmation_source")
         if mode == "bound" and source is not None and _ran_high_risk(receipt):
             errors.append(f"{receipt_id} was confirmed by {source} under confirmation bound")
+    # R9: single use -- one confirmation vouches for one run.
+    named = Counter(
+        r.get("confirmation_id") for r in receipts if isinstance(r.get("confirmation_id"), str)
+    )
+    errors.extend(
+        f"confirmation {confirmation} is named by {count} receipts"
+        for confirmation, count in named.items()
+        if count > 1
+    )
     for confirmation, spent in consumed.items():
         if len(spent) > 1:
             errors.append(f"confirmation {confirmation} was consumed {len(spent)} times")
