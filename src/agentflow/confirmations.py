@@ -129,3 +129,38 @@ def match_confirmation(
     if issued:
         return None, "confirmation_stale"
     return None, "confirmation_missing"
+
+
+def consume_confirmation(
+    root: Path,
+    plan: Dict[str, Any],
+    step_id: str,
+    attempt_id: str,
+    argv: List[str],
+    contract_hash: Optional[str],
+    now: Optional[datetime] = None,
+) -> Tuple[Optional[str], Optional[str]]:
+    """Burn a matching confirmation: ``(id, None)`` after appending its
+    ``consumed`` row, else ``(None, reason)`` with nothing written.
+
+    Match and append happen under one ledger lock, so two runs cannot spend
+    the same confirmation. Callers launch only after this returns, with the
+    lock released, and must not hold the receipts lock while calling it.
+    """
+    at = _now(now)
+    path = confirmations_path(root)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with file_lock(ledger_lock_path(path)):
+        found, reason = match_confirmation(
+            read_confirmations(root), step_id, argv_sha256(argv),
+            plan_binding_sha256(plan), contract_hash, at,
+        )
+        if found is not None:
+            append_jsonl(path, {
+                "schema_version": COMMAND_CONFIRMATIONS_SCHEMA_VERSION,
+                "id": found,
+                "event": "consumed",
+                "attempt_id": attempt_id,
+                "consumed_at": at.replace(microsecond=0).isoformat(),
+            })
+    return found, reason

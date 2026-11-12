@@ -462,7 +462,9 @@ class ContractPinWriterTests(unittest.TestCase):
                 for record in _records(root, ledger):
                     with self.subTest(ledger=ledger, record=record.get("id", record.get("event"))):
                         self.assertEqual(record.get(PIN), digest)
-                        self.assertEqual(record["schema_version"], "1.1.0")
+                        # #112 moved command receipts to 1.2.0 (bound confirmation fields).
+                        expected = "1.2.0" if ledger == ".agent/command-receipts.jsonl" else "1.1.0"
+                        self.assertEqual(record["schema_version"], expected)
             drift = json.loads((root / ".agent/drift-report.json").read_text(encoding="utf-8"))
             self.assertEqual(drift.get(PIN), digest)
             self.assertEqual(drift["schema_version"], "1.1.0")

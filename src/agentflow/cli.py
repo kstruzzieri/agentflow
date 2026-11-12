@@ -871,9 +871,15 @@ def command_run(args: argparse.Namespace) -> int:
             + ", ".join(categories)
             + f"); risk_policy={risk_policy} refused execution."
         )
-        if risk_policy == "require-confirmation":
+        if receipt.get("confirmation_block_reason"):
+            message += (
+                f" Confirmation is bound: run `agentflow confirm-command --step {args.step}"
+                f" -- {shlex.join(command)}` first; --confirm-risk and"
+                " AGENTFLOW_CONFIRM_RISK=1 are not accepted."
+            )
+        elif risk_policy == "require-confirmation":
             message += " Re-run with --confirm-risk to override."
-        print(message, file=sys.stderr)
+        print(_terminal_safe(message), file=sys.stderr)
         if args.json:
             print(json.dumps(receipt, indent=2, sort_keys=True))
         return 2
