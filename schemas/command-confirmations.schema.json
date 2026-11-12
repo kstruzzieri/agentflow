@@ -5,7 +5,7 @@
   "type": "object",
   "required": ["schema_version", "id", "event"],
   "properties": {
-    "schema_version": { "type": "string", "pattern": "^1\\.(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)$" },
+    "schema_version": { "type": "string", "pattern": "^1\\.0\\.(?:0|[1-9][0-9]*)$" },
     "id": { "type": "string", "pattern": "^CC[1-9][0-9]*$" },
     "event": { "enum": ["issued", "consumed"] },
     "step_id": { "type": "string" },
@@ -26,7 +26,7 @@
     },
     {
       "if": { "properties": { "event": { "const": "consumed" } } },
-      "then": { "required": ["attempt_id", "consumed_at"] }
+      "then": { "required": ["attempt_id", "plan_sha256", "consumed_at"] }
     }
   ],
   "additionalProperties": true

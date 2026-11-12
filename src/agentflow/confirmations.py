@@ -160,13 +160,14 @@ def consume_confirmation(
     the same confirmation. Callers launch only after this returns, with the
     lock released, and must not hold the receipts lock while calling it.
     """
-    at = _now(now)
     path = confirmations_path(root)
     path.parent.mkdir(parents=True, exist_ok=True)
     with file_lock(ledger_lock_path(path)):
+        at = _now(now)
+        plan_hash = plan_binding_sha256(plan)
         found, reason = match_confirmation(
             read_confirmations(root), step_id, argv_sha256(argv),
-            plan_binding_sha256(plan), contract_hash, at,
+            plan_hash, contract_hash, at,
         )
         if found is not None:
             append_jsonl(path, {
@@ -174,6 +175,7 @@ def consume_confirmation(
                 "id": found,
                 "event": "consumed",
                 "attempt_id": attempt_id,
+                "plan_sha256": plan_hash,
                 "consumed_at": at.replace(microsecond=0).isoformat(),
             })
     return found, reason

@@ -759,7 +759,7 @@ def confirmation_findings(root: Path) -> List[Dict[str, str]]:
         if confirmation is not None and not known:
             errors.append(f"{receipt_id} names confirmation {confirmation}, which was never issued")
         elif confirmation is not None:
-            # R1: receipts carry no plan hash, so step, argv and contract only.
+            # The consumption record below pins the execution-time plan.
             if any(
                 row.get("step_id") != receipt.get("step_id")
                 or row.get("argv_sha256") != argv_sha256(receipt.get("command"))
@@ -800,10 +800,20 @@ def confirmation_findings(root: Path) -> List[Dict[str, str]]:
         if count > 1
     )
     for confirmation, spent in consumed.items():
+        if confirmation not in issued:
+            errors.append(f"confirmation {confirmation} was consumed but never issued")
+            continue
         if len(spent) > 1:
             errors.append(f"confirmation {confirmation} was consumed {len(spent)} times")
         for row in spent:
-            for issue in issued.get(confirmation, []):
+            for issue in issued[confirmation]:
+                plan_hash = row.get("plan_sha256")
+                if not (
+                    isinstance(plan_hash, str)
+                    and re.fullmatch(r"[0-9a-f]{64}", plan_hash)
+                    and plan_hash == issue.get("plan_sha256")
+                ):
+                    errors.append(f"confirmation {confirmation} does not match its consumed plan binding")
                 try:
                     late = _instant(row.get("consumed_at")) > _instant(issue.get("expires_at"))
                 except (TypeError, ValueError):

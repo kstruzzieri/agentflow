@@ -20,7 +20,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   an allowed one records `confirmation_id`.
 - The proof gains a conditional `confirmations` block that `verify-proof`
   recomputes and checks against the ledger and receipts, a summary line, and
-  `verify-proof --require confirmation=bound`. This proves binding, not who
+  `verify-proof --require confirmation=bound`. Consumption records retain the
+  execution-time plan hash; verification rejects mismatched or missing plan
+  bindings and consumption without issuance. Expiry is checked under the ledger
+  lock. This proves binding, not who
   confirmed; host approval (`confirmation: "host"`) is phase 2, owned by
   Golem, and not built. No MCP tool creates confirmations.
 

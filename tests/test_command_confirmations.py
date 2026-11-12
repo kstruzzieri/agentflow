@@ -7,6 +7,7 @@ import io
 import json
 import multiprocessing
 import os
+import re
 import shlex
 import shutil
 import subprocess
@@ -51,6 +52,7 @@ from agentflow.execution import (
 )
 from agentflow.locks import file_lock
 from agentflow.receipts import command_receipts, record_command, replay_gates, run_command
+from agentflow.versioning import validate_schema_version
 
 
 def _contract(version: str, **policy: str) -> dict:
@@ -478,6 +480,22 @@ class BoundRunTests(unittest.TestCase):
             self._issue(root, now=datetime.now(timezone.utc) - timedelta(hours=1))
             self._blocked(root, "confirmation_expired")
 
+    def test_confirmation_expiring_while_waiting_for_lock_is_refused(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = _bound_run_root(tmp)
+            self._issue(root, now=NOW)
+            clock = [NOW]
+
+            @contextlib.contextmanager
+            def delayed_lock(path):
+                with file_lock(path):
+                    clock[0] = NOW + DEFAULT_EXPIRY
+                    yield
+
+            with mock.patch("agentflow.confirmations.file_lock", delayed_lock), \
+                    mock.patch("agentflow.confirmations._now", side_effect=lambda value: clock[0] if value is None else value):
+                self._blocked(root, "confirmation_expired")
+
     def test_block_used(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = _bound_run_root(tmp)
@@ -765,6 +783,19 @@ class BoundRunTests(unittest.TestCase):
 
 
 class ReceiptSchemaTests(unittest.TestCase):
+    def test_confirmation_schema_and_reader_accept_the_same_versions(self) -> None:
+        schema = json.loads((REPO / "schemas/command-confirmations.schema.json").read_text())
+        pattern = schema["properties"]["schema_version"]["pattern"]
+        for version, accepted in (
+            ("1.0.0", True), ("1.0.1", True), ("1.1.0", False),
+            ("1.9.0", False), ("2.0.0", False), ("1.01.0", False),
+        ):
+            with self.subTest(version=version):
+                self.assertEqual(bool(re.fullmatch(pattern, version)), accepted)
+                self.assertEqual(
+                    not validate_schema_version(version, "1.0.0", "command-confirmations"), accepted
+                )
+
     def test_receipt_schema_declares_bound_fields(self) -> None:
         schema = json.loads(
             (Path(__file__).resolve().parents[1] / "schemas/command-receipts.schema.json")
@@ -980,6 +1011,46 @@ class ProofConfirmationTests(unittest.TestCase):
 
         errors = self._tampered(lambda root: _edit_rows(root, CONFIRMATIONS, double))
         self.assertEqual(errors, ["error: confirmation CC1 was consumed 2 times"])
+
+    def test_confirmation_plan_binding_must_match_consumption(self) -> None:
+        for event in ("issued", "consumed"):
+            with self.subTest(event=event):
+                errors = self._tampered(lambda root: _edit_rows(
+                    root, CONFIRMATIONS,
+                    lambda rows: [dict(r, plan_sha256="0" * 64) if r["event"] == event else r for r in rows],
+                ))
+                self.assertEqual(errors, ["error: confirmation CC1 does not match its consumed plan binding"])
+
+    def test_missing_or_invalid_plan_bindings_fail(self) -> None:
+        for digest in (None, "", "bad", 7, ["0" * 64]):
+            with self.subTest(digest=digest):
+                errors = self._tampered(lambda root: _edit_rows(
+                    root, CONFIRMATIONS,
+                    lambda rows: [dict(r, plan_sha256=digest) for r in rows],
+                ))
+                self.assertEqual(errors, ["error: confirmation CC1 does not match its consumed plan binding"])
+
+    def test_plan_amendment_after_consumption_keeps_the_original_binding(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(shutil.copytree(self.roots["bound"], Path(tmp) / "bound"))
+            path = root / ".agent/plan.lock.json"
+            plan = json.loads(path.read_text())
+            plan["objective"] = "Amended after the confirmed command ran."
+            write_json(path, plan)
+            _ok(root, "lock-plan", ".agent/plan.lock.json")
+            _ok(root, "audit-drift")
+            _ok(root, "build-proof")
+            result = _agentflow(root, "verify-proof", "--require", "confirmation=bound")
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertIn(SUMMARY_LINE, result.stdout)
+
+    def test_orphan_consumption_fails(self) -> None:
+        errors = self._tampered(lambda root: _edit_rows(
+            root, CONFIRMATIONS,
+            lambda rows: rows + [{"schema_version": "1.0.0", "id": "CC999", "event": "consumed",
+                                  "attempt_id": "A1", "consumed_at": "not-a-timestamp"}],
+        ))
+        self.assertEqual(errors, ["error: confirmation CC999 was consumed but never issued"])
 
     def test_one_confirmation_named_by_two_receipts_fails(self) -> None:
         # R9: one consumed row cannot vouch for two runs.

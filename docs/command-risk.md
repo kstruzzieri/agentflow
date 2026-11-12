@@ -107,6 +107,11 @@ unused. One confirmation covers one run: it is consumed even if the command then
 fails or times out. Replay never consumes one. Under `bound`, `--confirm-risk`
 and `AGENTFLOW_CONFIRM_RISK=1` are not accepted.
 
+Expiry is checked after acquiring the confirmations lock. The consumed row
+records the execution-time `plan_sha256`, so verification can compare it with
+the issued confirmation even after the plan is amended. A missing or mismatched
+plan binding, or a consumed id that was never issued, fails verification.
+
 Without a usable confirmation `run` blocks, exits 2 and prints the
 `confirm-command` line to run first. The blocked receipt carries
 `confirmation_block_reason`: `confirmation_missing` (none issued),
