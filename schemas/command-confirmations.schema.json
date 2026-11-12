@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agentflow.dev/schemas/command-confirmations.schema.json",
+  "title": "Agentflow Command Confirmation",
+  "type": "object",
+  "required": ["schema_version", "id", "event"],
+  "properties": {
+    "schema_version": { "type": "string", "pattern": "^1\\.(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)$" },
+    "id": { "type": "string", "pattern": "^CC[0-9]+$" },
+    "event": { "enum": ["issued", "consumed"] },
+    "step_id": { "type": "string" },
+    "argv": { "type": "array", "items": { "type": "string" } },
+    "argv_sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "plan_sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "execution_contract_sha256": { "type": ["string", "null"], "pattern": "^[0-9a-f]{64}$" },
+    "issued_at": { "type": "string" },
+    "expires_at": { "type": "string" },
+    "source": { "enum": ["self"] },
+    "attempt_id": { "type": "string" },
+    "consumed_at": { "type": "string" }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "event": { "const": "issued" } } },
+      "then": { "required": ["step_id", "argv", "argv_sha256", "plan_sha256", "execution_contract_sha256", "issued_at", "expires_at", "source"] }
+    },
+    {
+      "if": { "properties": { "event": { "const": "consumed" } } },
+      "then": { "required": ["attempt_id", "consumed_at"] }
+    }
+  ],
+  "additionalProperties": true
+}

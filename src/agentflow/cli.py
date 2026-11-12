@@ -47,6 +47,7 @@ from .execution import (
     renew_lease,
     require_lifecycle_owner,
 )
+from .confirmations import issue_confirmation, parse_expiry
 from .execution_coverage import verify_run, verify_step
 from .events import filter_events_since, project_events, valid_since
 from .capabilities import append_capability_receipt, build_capability_receipt
@@ -887,6 +888,28 @@ def command_run(args: argparse.Namespace) -> int:
     else:
         print(_terminal_safe(f"recorded {receipt['id']} exit {receipt['exit_code']}"))
     return int(receipt["exit_code"])
+
+
+def command_confirm_command(args: argparse.Namespace) -> int:
+    root = Path(args.root).resolve()
+    command = _normalize_remainder(args.command)
+    if not command:
+        print("confirm-command requires a command after --", file=sys.stderr)
+        return 2
+    try:
+        plan = _load_root_plan(root)
+        row = issue_confirmation(root, plan, args.step, command, parse_expiry(args.expires))
+    except (ValueError, OSError) as exc:
+        print(_terminal_safe(str(exc)), file=sys.stderr)
+        return 2
+    if args.json:
+        print(json.dumps(row, indent=2, sort_keys=True))
+    else:
+        print(_terminal_safe(
+            f"confirmed {row['id']} for step {row['step_id']}: {shlex.join(row['argv'])} "
+            f"(expires {row['expires_at']})"
+        ))
+    return 0
 
 
 def command_record_command(args: argparse.Namespace) -> int:
@@ -2104,6 +2127,16 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument("--json", action="store_true")
     run.add_argument("command", nargs=argparse.REMAINDER)
     run.set_defaults(func=command_run)
+
+    confirm_cmd = subparsers.add_parser(
+        "confirm-command", help="confirm one high-risk command for a step (bound confirmation)"
+    )
+    confirm_cmd.add_argument("--root", default=".")
+    confirm_cmd.add_argument("--step", required=True)
+    confirm_cmd.add_argument("--expires", default="15m")
+    confirm_cmd.add_argument("--json", action="store_true")
+    confirm_cmd.add_argument("command", nargs=argparse.REMAINDER)
+    confirm_cmd.set_defaults(func=command_confirm_command)
 
     record_cmd = subparsers.add_parser("record-command", help="record an externally run command")
     record_cmd.add_argument("--root", default=".")

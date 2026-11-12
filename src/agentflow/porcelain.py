@@ -312,7 +312,7 @@ def _validate_file_receipt(
 def _projection_ledgers(root: Path) -> Dict[str, List[Dict[str, Any]]]:
     ledgers: Dict[str, List[Dict[str, Any]]] = {}
     for name, relative in EXECUTION_ARTIFACT_PATHS.items():
-        if name == "execution-contract":
+        if name in ("execution-contract", "command-confirmations"):
             continue
         path = root / relative
         if not path.is_file():

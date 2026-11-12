@@ -62,6 +62,7 @@ SCHEMA_FILES = {
     "command-receipts": "command-receipts.schema.json",
     "file-receipts": "file-receipts.schema.json",
     "verification-runs": "verification-runs.schema.json",
+    "command-confirmations": "command-confirmations.schema.json",
     "review-runs": "review-runs.schema.json",
 }
 

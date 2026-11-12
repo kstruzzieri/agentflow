@@ -37,6 +37,17 @@ def utc_now() -> str:
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat()
 
 
+def ledger_lock_path(ledger_path: Path) -> Path:
+    """Sidecar lock file guarding atomic id allocation for one ledger.
+
+    The ``.lockfile`` suffix (not ``.lock``) is deliberate: ``audit_drift``
+    classifies any changed path ending in ``.lock`` as a dependency lockfile,
+    so a ``.lock`` sidecar would emit a false dependency-drift note on every
+    record-command/run in projects that track ``.agent/``.
+    """
+    return ledger_path.parent / f"{ledger_path.name}.lockfile"
+
+
 def dumps_json(data: Dict[str, Any]) -> str:
     return json.dumps(data, indent=2, sort_keys=True) + "\n"
 

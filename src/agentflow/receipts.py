@@ -8,7 +8,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
-from .artifacts import append_jsonl, read_jsonl, utc_now
+from .artifacts import append_jsonl, ledger_lock_path, read_jsonl, utc_now
 from .contracts import (
     COMMAND_RECEIPTS_SCHEMA_VERSION,
     DEFAULT_COMMAND_TIMEOUT_SECONDS,
@@ -76,15 +76,7 @@ def _next_file_receipt_id(root: Path) -> str:
     return f"FR{len(file_receipts(root)) + 1}"
 
 
-def _ledger_lock_path(ledger_path: Path) -> Path:
-    """Sidecar lock file guarding atomic id allocation for one ledger.
-
-    The ``.lockfile`` suffix (not ``.lock``) is deliberate: ``audit_drift``
-    classifies any changed path ending in ``.lock`` as a dependency lockfile,
-    so a ``.lock`` sidecar would emit a false dependency-drift note on every
-    record-command/run in projects that track ``.agent/``.
-    """
-    return ledger_path.parent / f"{ledger_path.name}.lockfile"
+_ledger_lock_path = ledger_lock_path
 
 
 def _contract_policy(root: Path) -> Dict[str, Any]:
