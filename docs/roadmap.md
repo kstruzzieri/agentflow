@@ -1,6 +1,6 @@
 # Agentflow Roadmap
 
-Last updated: 2026-11-11
+Last updated: 2026-11-12
 
 Agentflow `1.4.0` is a standard-library-only Python CLI for plan-locked,
 auditable agent work. It supports Python 3.11–3.13 and ships as the
@@ -103,6 +103,15 @@ the [tracking issue #11](https://github.com/kstruzzieri/agentflow/issues/11).
   nothing and exits 0 whatever it finds, so it is a report, not a gate
   ([#113](https://github.com/kstruzzieri/agentflow/issues/113)). No schema
   changes.
+- `verify-proof` judges every hashed source by the bytes it hashed. The checks
+  after the hash check (criterion, design-decision and validation-gate
+  coverage, receipt outputs, review integrity and `--replay`) no longer read
+  those files from disk again, so a file swapped while a proof is being
+  verified cannot change the verdict, and a source that failed its hash is
+  reported instead of read again
+  ([#126](https://github.com/kstruzzieri/agentflow/issues/126)). No schema
+  changes; output is unchanged for a bundle whose files do not change during
+  verification.
 
 ## After 1.0
 
