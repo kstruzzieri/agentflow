@@ -2,7 +2,7 @@
 
 Last updated: 2026-11-12
 
-Agentflow `1.4.0` is a standard-library-only Python CLI for plan-locked,
+Agentflow `1.5.0` is a standard-library-only Python CLI for plan-locked,
 auditable agent work. It supports Python 3.11–3.13 and ships as the
 `agentflow-proof` distribution on PyPI, as source, and as single-file CLI and
 MCP zipapps through GitHub Releases.
@@ -91,7 +91,7 @@ the [tracking issue #11](https://github.com/kstruzzieri/agentflow/issues/11).
   changes; `verify-proof --replay` now fails on a proof whose contract blocks
   one of its high-risk attested gates.
 
-## On main, not yet released
+## v1.5.0 (shipped 2026-11-12)
 
 - `agentflow simulate-risk` re-checks every recorded command against a
   proposed `risk_policy` (`--risk-policy`) and, optionally, a proposed plan

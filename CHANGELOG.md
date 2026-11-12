@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.5.0] - 2026-11-12
+
+Agentflow 1.5.0 lets a team see which recorded commands a stricter risk
+policy would have stopped before adopting it, and makes `verify-proof` judge
+every file by the bytes it hashed, so a file swapped during verification
+cannot change the verdict. No schema changes: Agentflow 1.4 reads everything
+this release writes.
+
 ### Added
 
 - `agentflow simulate-risk` shows which recorded commands a stricter
@@ -637,7 +645,8 @@ repository, so this heading is intentionally unlinked._
 
 - Existing v0.2 proof artifacts remain valid when no execution contract exists.
 
-[Unreleased]: https://github.com/kstruzzieri/agentflow/compare/v1.4.0...HEAD
+[Unreleased]: https://github.com/kstruzzieri/agentflow/compare/v1.5.0...HEAD
+[1.5.0]: https://github.com/kstruzzieri/agentflow/compare/v1.4.0...v1.5.0
 [1.4.0]: https://github.com/kstruzzieri/agentflow/compare/v1.3.0...v1.4.0
 [1.3.0]: https://github.com/kstruzzieri/agentflow/compare/v1.2.2...v1.3.0
 [1.2.2]: https://github.com/kstruzzieri/agentflow/compare/v1.2.1...v1.2.2
