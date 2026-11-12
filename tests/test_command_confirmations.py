@@ -8,7 +8,9 @@ import json
 import multiprocessing
 import os
 import shlex
+import shutil
 import subprocess
+import sys
 import tempfile
 import unittest
 from concurrent.futures import ProcessPoolExecutor
@@ -18,6 +20,7 @@ from pathlib import Path
 from unittest import mock
 
 from agentflow import cli
+from agentflow import proof as proof_module
 from agentflow.artifacts import (
     append_jsonl,
     create_initial_artifacts,
@@ -25,7 +28,7 @@ from agentflow.artifacts import (
     plan_binding_sha256,
     write_json,
 )
-from agentflow.contracts import PLAN_SCHEMA_VERSION
+from agentflow.contracts import CONFIRMATION_MODES, PLAN_SCHEMA_VERSION
 from agentflow.confirmations import (
     DEFAULT_EXPIRY,
     argv_sha256,
@@ -694,6 +697,291 @@ class ReceiptSchemaTests(unittest.TestCase):
         for version in ("1.0.0", "1.1.0", "1.2.0"):
             self.assertRegex(version, props["schema_version"]["pattern"])
         self.assertNotRegex("1.3.0", props["schema_version"]["pattern"])
+
+    def test_proof_schema_declares_the_confirmations_block(self) -> None:
+        schema = json.loads(
+            (REPO / "schemas/proof-pack.schema.json").read_text(encoding="utf-8")
+        )
+        block = schema["properties"]["confirmations"]
+        self.assertEqual(
+            sorted(block["required"]), ["bound", "high_risk_executed", "mode", "self", "unbound"]
+        )
+        self.assertEqual(block["properties"]["mode"], {"enum": list(CONFIRMATION_MODES)})
+        self.assertNotIn("confirmations", schema["required"])
+
+
+REPO = Path(__file__).resolve().parents[1]
+GATE = [sys.executable, "-c", "print('gate')"]
+RISKY = ["rm", "-rf", "nothing-here"]
+CONFIRMATIONS = ".agent/command-confirmations.jsonl"
+RECEIPTS = ".agent/command-receipts.jsonl"
+SUMMARY_LINE = (
+    "command confirmations: bound, 1 high-risk run(s), 1 bound, 0 self; "
+    "self-confirmation proves binding, not who confirmed"
+)
+# canonical_core before #112; a run that never used confirmations keeps it.
+CORE_KEYS = {"generated_from", "files", "checks", "coverage", "review", "capabilities", "stuck"}
+
+
+def _agentflow(root: Path, *args: str) -> subprocess.CompletedProcess:
+    env = {k: v for k, v in os.environ.items() if k != "AGENTFLOW_CONFIRM_RISK"}
+    env["PYTHONPATH"] = str(REPO / "src")
+    return subprocess.run(
+        [sys.executable, "-m", "agentflow", *args],
+        cwd=str(root), env=env, text=True, capture_output=True, check=False,
+    )
+
+
+def _ok(root: Path, *args: str) -> None:
+    result = _agentflow(root, *args)
+    if result.returncode != 0:
+        raise AssertionError(f"{args}: {result.stdout}{result.stderr}")
+
+
+def _proof_plan() -> dict:
+    plan = _run_plan()
+    step = plan["steps"][0]
+    step.update(validation=["gate"], gates=[{"kind": "command", "run": GATE}])
+    plan.update(steps=[step], validation_gates=["gate"], locked=False, locked_at=None)
+    return plan
+
+
+def _build_proof_root(root: Path, mode: str) -> None:
+    """One finished step with one high-risk run, sealed by build-proof."""
+    _ok(root, "init")
+    write_json(root / ".agent/plan.lock.json", _proof_plan())
+    _ok(root, "lock-plan", ".agent/plan.lock.json")
+    _ok(root, "init-execution")
+    confirm = ["--confirm-risk"]
+    if mode == "bound":
+        _set_version(root, "1.1.0")
+        _set_policy(root, confirmation="bound")
+        confirm = []
+    _ok(root, "claim-step", "P1", "--agent", "agent-a")
+    if mode == "bound":
+        _ok(root, "confirm-command", "--step", "P1", "--", *RISKY)
+    _ok(root, "run", "--step", "P1", *confirm, "--", *RISKY)
+    _ok(root, "run", "--step", "P1", "--", *GATE)
+    _ok(root, "verify-step", "P1")
+    _ok(root, "complete-step", "P1")
+    _ok(root, "audit-drift")
+    _ok(root, "build-proof")
+
+
+def _edit_rows(root: Path, ledger: str, edit) -> None:
+    path = root / ledger
+    rows = [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
+    path.write_text("".join(json.dumps(row) + "\n" for row in edit(rows)), encoding="utf-8")
+
+
+def _errors(result: subprocess.CompletedProcess) -> list:
+    return [line for line in result.stdout.splitlines() if line.startswith("error: ")]
+
+
+class ProofConfirmationTests(unittest.TestCase):
+    """#112: the proof records how each high-risk run was confirmed."""
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls._tmp = tempfile.TemporaryDirectory()
+        cls.roots = {}
+        for mode in ("bound", "self"):
+            root = Path(cls._tmp.name) / mode
+            root.mkdir()
+            _build_proof_root(root, mode)
+            cls.roots[mode] = root
+
+    @classmethod
+    def tearDownClass(cls) -> None:
+        cls._tmp.cleanup()
+
+    def _proof(self, root: Path) -> dict:
+        return json.loads((root / ".agent/proof-pack.json").read_text(encoding="utf-8"))
+
+    def _tampered(self, edit) -> list:
+        """Edit the bound run, reseal it with build-proof, return verify-proof's errors."""
+        tmp = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, tmp)
+        root = Path(shutil.copytree(self.roots["bound"], Path(tmp) / "bound"))
+        edit(root)
+        _ok(root, "build-proof")
+        result = _agentflow(root, "verify-proof")
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        return _errors(result)
+
+    def test_clean_bound_run_verifies(self) -> None:
+        root = self.roots["bound"]
+        proof = self._proof(root)
+        self.assertEqual(proof["schema_version"], "1.2.0")
+        self.assertEqual(
+            proof["confirmations"],
+            {"mode": "bound", "high_risk_executed": 1, "bound": 1, "self": 0, "unbound": []},
+        )
+        self.assertIn(CONFIRMATIONS, proof["generated_from"])
+        result = _agentflow(root, "verify-proof", "--require", "confirmation=bound")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        lines = result.stdout.splitlines()
+        self.assertEqual(lines[-2:], [SUMMARY_LINE, "proof verified"])
+        self.assertTrue(lines[-3].startswith("validation gates: "), lines)
+        markdown = (root / ".agent/proof-pack.md").read_text(encoding="utf-8")
+        self.assertIn("## Command Confirmations", markdown)
+        for text in ("mode: bound", "who confirmed", "timestamps", "left out of the bundle"):
+            self.assertIn(text, markdown)
+
+    def test_edited_or_dropped_block_is_stale(self) -> None:
+        edits = {
+            "edited": lambda proof: proof["confirmations"].update(bound=0, self=1),
+            "dropped": lambda proof: proof.pop("confirmations"),
+        }
+        for name, edit in edits.items():
+            with self.subTest(edit=name):
+                tmp = tempfile.mkdtemp()
+                self.addCleanup(shutil.rmtree, tmp)
+                root = Path(shutil.copytree(self.roots["bound"], Path(tmp) / "bound"))
+                path = root / ".agent/proof-pack.json"
+                proof = json.loads(path.read_text(encoding="utf-8"))
+                edit(proof)
+                proof["core_sha256"] = proof_module.core_sha256(proof)
+                path.write_text(json.dumps(proof, indent=2), encoding="utf-8")
+                result = _agentflow(root, "verify-proof")
+                self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+                self.assertEqual(
+                    _errors(result), ["error: proof confirmations block is stale or tampered"]
+                )
+
+    def test_hand_edited_confirmation_id_fails(self) -> None:
+        def unissued(rows):
+            return [dict(r, confirmation_id="CC2") if "confirmation_id" in r else r for r in rows]
+
+        def mismatched(rows):
+            return [dict(r, argv_sha256="0" * 64) if r["event"] == "issued" else r for r in rows]
+
+        def listed_id(rows):
+            return [dict(r, confirmation_id=["CC1"]) if "confirmation_id" in r else r for r in rows]
+
+        def listed_row_id(rows):
+            return [dict(r, id=["CC1"]) if r["event"] == "issued" else r for r in rows]
+
+        cases = {
+            "unissued id": (RECEIPTS, unissued, "CR1 names confirmation CC2, which was never issued"),
+            # A non-string id is an error finding, not a traceback.
+            "list id on the receipt": (
+                RECEIPTS, listed_id, "CR1 names confirmation ['CC1'], which was never issued"
+            ),
+            "list id on the issued row": (
+                CONFIRMATIONS, listed_row_id, "CR1 names confirmation CC1, which was never issued"
+            ),
+            "argv differs": (
+                CONFIRMATIONS, mismatched, "CR1 does not match confirmation CC1 (step, argv or contract)"
+            ),
+        }
+        for name, (ledger, edit, message) in cases.items():
+            with self.subTest(case=name):
+                errors = self._tampered(lambda root: _edit_rows(root, ledger, edit))
+                self.assertEqual(errors, [f"error: {message}"])
+
+    def test_doubled_consumed_row_fails(self) -> None:
+        def double(rows):
+            return rows + [r for r in rows if r["event"] == "consumed"]
+
+        errors = self._tampered(lambda root: _edit_rows(root, CONFIRMATIONS, double))
+        self.assertEqual(errors, ["error: confirmation CC1 was consumed 2 times"])
+
+    def test_consumed_after_expiry_fails(self) -> None:
+        def late(rows):
+            expires = next(r["expires_at"] for r in rows if r["event"] == "issued")
+            after = (datetime.fromisoformat(expires) + timedelta(seconds=1)).isoformat()
+            return [dict(r, consumed_at=after) if r["event"] == "consumed" else r for r in rows]
+
+        errors = self._tampered(lambda root: _edit_rows(root, CONFIRMATIONS, late))
+        self.assertEqual(errors, ["error: confirmation CC1 was consumed after it expired"])
+
+    def test_cli_confirmation_under_bound_fails(self) -> None:
+        def self_confirmed(rows):
+            for row in rows:
+                if row.pop("confirmation_id", None):
+                    row["confirmation_source"] = "cli"
+            return rows
+
+        errors = self._tampered(lambda root: _edit_rows(root, RECEIPTS, self_confirmed))
+        self.assertEqual(errors, ["error: CR1 was confirmed by cli under confirmation bound"])
+
+    def test_expiry_after_the_run_never_fails(self) -> None:
+        def long_ago(rows):
+            return [
+                dict(r, issued_at="2020-01-01T00:00:00+00:00", expires_at="2020-01-01T00:15:00+00:00")
+                if r["event"] == "issued"
+                else dict(r, consumed_at="2020-01-01T00:05:00+00:00")
+                for r in rows
+            ]
+
+        tmp = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, tmp)
+        root = Path(shutil.copytree(self.roots["bound"], Path(tmp) / "bound"))
+        _edit_rows(root, CONFIRMATIONS, long_ago)
+        _ok(root, "build-proof")
+        result = _agentflow(root, "verify-proof")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    def test_floor_bound_fails_on_self_contract(self) -> None:
+        result = _agentflow(self.roots["self"], "verify-proof", "--require", "confirmation=bound")
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertEqual(
+            _errors(result),
+            ["error: policy_below_floor: confirmation is self; "
+             "the floor requires confirmation=bound"],
+        )
+
+    def test_no_ledger_self_mode_keeps_core_hash(self) -> None:
+        root = self.roots["self"]
+        proof = self._proof(root)
+        self.assertFalse((root / CONFIRMATIONS).exists())
+        self.assertNotIn("confirmations", proof)
+        self.assertIsNone(proof_module.confirmation_summary(root))
+        core = proof_module.canonical_core(proof)
+        self.assertEqual(set(core), CORE_KEYS)
+        payload = json.dumps(core, sort_keys=True, separators=(",", ":")).encode("utf-8")
+        self.assertEqual(proof["core_sha256"], hashlib.sha256(payload).hexdigest())
+        result = _agentflow(root, "verify-proof")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertNotIn("command confirmations", result.stdout)
+
+    def test_summary_partitions_executed_high_risk_receipts(self) -> None:
+        high = {"level": "high", "findings": []}
+        receipts = [
+            {"id": "CR1", "provenance": "observed", "decision": "allowed", "risk": high,
+             "confirmation_id": "CC1"},
+            {"id": "CR2", "provenance": "reconstructed", "decision": "timeout", "risk": high,
+             "confirmation_source": "env"},
+            {"id": "CR3", "provenance": "observed", "decision": "allowed", "risk": high},
+            {"id": "CR4", "provenance": "observed", "decision": "blocked", "risk": high},
+            {"id": "CR5", "provenance": "attested", "decision": "allowed", "risk": high},
+            {"id": "CR6", "provenance": "managed", "decision": "allowed", "risk": high},
+            {"id": "CR7", "provenance": "observed", "decision": "allowed", "risk": {"level": "low"}},
+            {"id": "CR8", "provenance": "observed", "decision": "timeout", "risk": high},
+        ]
+        with tempfile.TemporaryDirectory() as tmp:
+            root = _bound_root(tmp)
+            for receipt in receipts:
+                append_jsonl(root / RECEIPTS, receipt)
+            self.assertEqual(
+                proof_module.confirmation_summary(root),
+                {"mode": "bound", "high_risk_executed": 4, "bound": 1, "self": 1,
+                 "unbound": ["CR3", "CR8"]},
+            )
+
+    def test_summary_is_absent_only_under_self_without_a_ledger(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = _bound_root(tmp, "self")
+            self.assertIsNone(proof_module.confirmation_summary(root))
+            confirmations_path(root).write_text("", encoding="utf-8")
+            self.assertEqual(
+                proof_module.confirmation_summary(root),
+                {"mode": "self", "high_risk_executed": 0, "bound": 0, "self": 0, "unbound": []},
+            )
+            _set_policy(root, confirmation="bound", risk_policy="warn")
+            with self.assertRaisesRegex(ValueError, "requires risk_policy require-confirmation"):
+                proof_module.confirmation_summary(root)
 
 
 def _set_policy(root: Path, **policy) -> None:

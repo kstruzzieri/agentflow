@@ -10,6 +10,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from agentflow import proof as proof_module
+from agentflow.artifacts import historical_proof_reads
 from agentflow.contracts import PROOF_PACK_SCHEMA_VERSION
 from agentflow.proof import core_sha256
 
@@ -74,6 +76,16 @@ class ProofCompatibilityMatrixTests(unittest.TestCase):
                 result = verify_fixture(root)
                 self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
                 self.assertIn("proof verified", result.stdout)
+
+    def test_no_fixture_grows_a_confirmations_block(self) -> None:
+        # #112: none used confirmations, so a rebuild adds no core key and
+        # verify-proof recomputes "no block" for each of them.
+        roots = [r for r in sorted(FIXTURES.iterdir()) if (r / ".agent/proof-pack.json").exists()]
+        for root in roots:
+            with self.subTest(name=root.name), historical_proof_reads():
+                proof = json.loads((root / ".agent/proof-pack.json").read_text(encoding="utf-8"))
+                self.assertNotIn("confirmations", proof)
+                self.assertIsNone(proof_module.confirmation_summary(root))
 
     def test_released_fixture_is_checksum_pinned_and_genuine(self) -> None:
         root = FIXTURES / "released-v0.4.0"

@@ -16,7 +16,11 @@ from unittest import mock
 from agentflow import proof as proof_module
 from agentflow.artifacts import default_drift_report, read_jsonl, write_json
 from agentflow.contracts import PLAN_SCHEMA_VERSION
-from agentflow.execution import execution_contract_sha256, execution_contract_snapshot
+from agentflow.execution import (
+    default_execution_contract,
+    execution_contract_sha256,
+    execution_contract_snapshot,
+)
 from agentflow.proof import core_sha256
 
 
@@ -603,6 +607,14 @@ class ContractPinFloorTests(unittest.TestCase):
             self.assertIn(source, errors)
         self.assertNotIn("proof verified", result.stdout)
 
+    def test_a_confirmation_floor_needs_the_pin(self) -> None:
+        # #112: confirmation acts while the work runs, like risk_policy.
+        result = self.verify(self.raised, "confirmation=self")
+
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertNotIn("confirmation is", result.stdout)
+        self.assertIn(".agent/command-receipts.jsonl", "\n".join(_pin_errors(result)))
+
     def test_a_build_time_floor_does_not_need_the_pin(self) -> None:
         # review_gate is judged again under the hashed contract at verify time.
         result = self.verify(self.raised, "review_gate=ignore")
@@ -800,6 +812,52 @@ class ContractPinFloorTests(unittest.TestCase):
 
         self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
         self.assertIn(".agent/command-receipts.jsonl has 1 record(s) not pinned", result.stdout)
+
+
+class ConfirmationFloorTests(unittest.TestCase):
+    """#112: confirmation=bound needs bound under require-confirmation; anything
+    the contract cannot mean fails closed at every floor."""
+
+    def findings(self, minimum: str = "bound", version: str = "1.1.0", **policy: str) -> list:
+        contract = default_execution_contract(".")
+        contract["schema_version"] = version
+        contract["command_policy"].update(policy)
+        floor = [("confirmation", minimum)]
+        return [f["message"] for f in proof_module.policy_floor_findings(contract, floor)]
+
+    def test_bound_with_require_confirmation_meets_the_floor(self) -> None:
+        self.assertEqual(self.findings(confirmation="bound"), [])
+
+    def test_self_or_absent_misses_the_bound_floor(self) -> None:
+        message = "policy_below_floor: confirmation is self; the floor requires confirmation=bound"
+        self.assertEqual(self.findings(version="1.0.0"), [message])
+        self.assertEqual(self.findings(confirmation="self"), [message])
+        self.assertEqual(self.findings("self", version="1.0.0"), [])
+
+    def test_an_unusable_confirmation_fails_closed_at_any_floor(self) -> None:
+        cases = {
+            "bound with warn": (
+                "1.1.0", {"confirmation": "bound", "risk_policy": "warn"},
+                "confirmation bound requires risk_policy require-confirmation",
+            ),
+            "bound with block": (
+                "1.1.0", {"confirmation": "bound", "risk_policy": "block"},
+                "confirmation bound requires risk_policy require-confirmation",
+            ),
+            "typo": ("1.1.0", {"confirmation": "bnd"}, "confirmation bnd is invalid"),
+            "host": ("1.1.0", {"confirmation": "host"}, "confirmation host is invalid"),
+            "1.0.0 carrying it": (
+                "1.0.0", {"confirmation": "bound"},
+                "execution contract 1.0.0 cannot carry confirmation",
+            ),
+        }
+        for name, (version, policy, reason) in cases.items():
+            for minimum in ("self", "bound"):
+                with self.subTest(case=name, minimum=minimum):
+                    self.assertEqual(
+                        self.findings(minimum, version, **policy),
+                        [f"policy_below_floor: {reason}; the floor requires confirmation={minimum}"],
+                    )
 
 
 class EvidenceOnlyFloorTests(unittest.TestCase):

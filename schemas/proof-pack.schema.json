@@ -5,8 +5,8 @@
   "type": "object",
   "required": ["schema_version", "bundle_version", "meta", "generated_from", "files", "checks", "coverage", "core_sha256"],
   "properties": {
-    "schema_version": { "type": "string", "pattern": "^(?:0\\.(?:[4-9]|[1-9][0-9]+)\\.(?:0|[1-9][0-9]*)|1\\.[01]\\.(?:0|[1-9][0-9]*))$" },
-    "bundle_version": { "type": "string", "pattern": "^(?:0\\.(?:[4-9]|[1-9][0-9]+)\\.(?:0|[1-9][0-9]*)|1\\.[01]\\.(?:0|[1-9][0-9]*))$" },
+    "schema_version": { "type": "string", "pattern": "^(?:0\\.(?:[4-9]|[1-9][0-9]+)\\.(?:0|[1-9][0-9]*)|1\\.(?:0|1|2)\\.(?:0|[1-9][0-9]*))$" },
+    "bundle_version": { "type": "string", "pattern": "^(?:0\\.(?:[4-9]|[1-9][0-9]+)\\.(?:0|[1-9][0-9]*)|1\\.(?:0|1|2)\\.(?:0|[1-9][0-9]*))$" },
     "bundle_type": { "type": "string" },
     "meta": {
       "type": "object",
@@ -73,6 +73,18 @@
     "execution": { "$ref": "#/$defs/execution" },
     "review": { "$ref": "#/$defs/review" },
     "aggregation": { "$ref": "#/$defs/aggregation" },
+    "confirmations": {
+      "type": "object",
+      "required": ["mode", "high_risk_executed", "bound", "self", "unbound"],
+      "properties": {
+        "mode": { "enum": ["self", "bound"] },
+        "high_risk_executed": { "type": "integer", "minimum": 0 },
+        "bound": { "type": "integer", "minimum": 0 },
+        "self": { "type": "integer", "minimum": 0 },
+        "unbound": { "type": "array", "items": { "type": "string" } }
+      },
+      "additionalProperties": true
+    },
     "runtime": {
       "type": "object",
       "required": ["latest_snapshot_id", "runtime_counts", "mcp_server_counts", "mcp_servers"],

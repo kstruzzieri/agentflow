@@ -74,6 +74,7 @@ from .proof import (
     POLICY_FLOOR_KEYS,
     InvalidWorkingState,
     build_proof,
+    confirmation_summary_line,
     policy_value_text,
     proof_build_lock_path,
     publish_proof,
@@ -1356,9 +1357,10 @@ def command_verify_proof(args: argparse.Namespace) -> int:
         return 1
     # #110: only after verification passes, so the line never reports a
     # tampered proof's claims. verify_proof already parsed this file.
-    summary = validation_gate_summary(json.loads(proof_path.read_text(encoding="utf-8")))
-    if summary is not None:
-        print(_terminal_safe(summary))
+    proof = json.loads(proof_path.read_text(encoding="utf-8"))
+    for summary in (validation_gate_summary(proof), confirmation_summary_line(proof)):
+        if summary is not None:
+            print(_terminal_safe(summary))
     print("proof verified")
     return 0
 
