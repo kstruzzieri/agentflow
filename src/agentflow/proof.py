@@ -7,9 +7,10 @@ import hashlib
 import json
 import os
 import re
+import stat
 import tempfile
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Set, Tuple
+from typing import Any, Dict, Iterator, List, Optional, Set, Tuple
 
 from . import __version__
 from .artifacts import (
@@ -1316,9 +1317,34 @@ def contract_pin_findings(
     return [{"severity": "error", "message": f"policy_below_floor: {error}"} for error in errors]
 
 
+@contextlib.contextmanager
+def _proof_source_aliases(root: Path) -> Iterator[Dict[Any, Set[str]]]:
+    """Freeze reader names and identities before opening sources for hashing."""
+    aliases: Dict[Any, Set[str]] = {}
+    resolved_root = root.resolve()
+    with contextlib.ExitStack() as handles:
+        for source in ARTIFACT_PATHS.values():
+            path = root / source
+            try:
+                resolved = path.resolve()
+                if not resolved.is_relative_to(resolved_root):
+                    continue
+                fd = os.open(resolved, os.O_RDONLY | getattr(os, "O_NONBLOCK", 0))
+            except (OSError, RuntimeError):
+                continue  # Absent/unreadable inputs retain their existing handling.
+            handles.callback(os.close, fd)
+            source_stat = os.fstat(fd)
+            if stat.S_ISREG(source_stat.st_mode):
+                key = str(path.absolute())
+                aliases.setdefault(resolved, set()).add(key)
+                aliases.setdefault((source_stat.st_dev, source_stat.st_ino), set()).add(key)
+        yield aliases
+
+
 def _verify_proof(
     root: Path,
     proof_path: Path,
+    aliases: Dict[Any, Set[str]],
     replay: bool = False,
     strict: bool = False,
     floor: Optional[List[Tuple[str, Any]]] = None,
@@ -1382,6 +1408,23 @@ def _verify_proof(
     contract_source = EXECUTION_ARTIFACT_PATHS["execution-contract"]
     verified: Dict[str, bytes] = {}
     sources: Dict[str, Optional[bytes]] = {}
+    declared_aliases: Dict[str, Set[str]] = {}
+    # Keep the declared spelling bound even if its parent directory is replaced
+    # during hashing, changing both the resolved name and the inode.
+    for item in proof.get("files", []):
+        if not isinstance(item, dict) or not isinstance(item.get("path"), str):
+            continue
+        path = root / item["path"]
+        try:
+            resolved = path.resolve()
+            if not resolved.is_relative_to(resolved_root):
+                continue
+            source_stat = path.stat()
+        except (OSError, RuntimeError):
+            continue
+        keys = set(aliases.get(resolved, ()))
+        keys.update(aliases.get((source_stat.st_dev, source_stat.st_ino), ()))
+        declared_aliases[str(path.absolute())] = keys
     for item in proof.get("files", []):
         if not isinstance(item, dict):
             findings.append({"severity": "error", "message": "proof file entry is malformed"})
@@ -1403,14 +1446,24 @@ def _verify_proof(
             # appears now cannot lift this error.
             findings.append({"severity": "error", "message": f"missing source {relative_path}"})
             continue
-        key = str(path.absolute())
-        data = resolved_path.read_bytes()
+        keys = {str(path.absolute())}
+        keys.update(declared_aliases.get(str(path.absolute()), ()))
+        with resolved_path.open("rb") as handle:
+            source_stat = os.fstat(handle.fileno())
+            keys.update(aliases.get(resolved_path, ()))
+            keys.update(aliases.get((source_stat.st_dev, source_stat.st_ino), ()))
+            data = handle.read()
         if hashlib.sha256(data).hexdigest() != expected_hash:
             findings.append({"severity": "error", "message": f"hash mismatch for {relative_path}"})
-            sources[key] = None
+            snapshot = None
         else:
             verified[relative_path] = data
-            sources.setdefault(key, data)
+            snapshot = data
+        if any(key in sources and sources[key] != snapshot for key in keys):
+            findings.append({"severity": "error", "message": f"conflicting proof sources for {relative_path}"})
+            snapshot = None
+        for key in keys:
+            sources[key] = snapshot
     verified_contract = verified.get(contract_source)
     # ratchet-v1: honor the build-time policy floor baked into the proof (tamper-evident via core_sha256)
     recorded_review_policy = None
@@ -1487,5 +1540,5 @@ def verify_proof(
     strict: bool = False,
     floor: Optional[List[Tuple[str, Any]]] = None,
 ) -> List[Dict[str, Any]]:
-    with historical_proof_reads():
-        return _verify_proof(root, proof_path, replay=replay, strict=strict, floor=floor)
+    with historical_proof_reads(), _proof_source_aliases(root) as aliases:
+        return _verify_proof(root, proof_path, aliases, replay=replay, strict=strict, floor=floor)

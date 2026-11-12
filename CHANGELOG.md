@@ -32,7 +32,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   check was the one they judged, so a tampered bundle could pass. They now read
   the bytes that passed the hash check, a hashed file deleted after it counts
   as present, and a source that failed its hash is reported instead of read
-  again. The contract `verify-proof` reads when it starts no longer decides
+  again. Parent-path, symlink and hardlink aliases share the hashed snapshot;
+  conflicting snapshots of the same source fail verification. The contract
+  `verify-proof` reads when it starts no longer decides
   either. Output is unchanged for a bundle whose files do not change during
   verification. No schema, CLI, `docs/cli-contract.json` or exit-code change.
   (#126)

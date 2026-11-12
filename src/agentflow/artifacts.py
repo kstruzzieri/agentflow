@@ -253,8 +253,8 @@ class UnverifiedSourceError(ValueError):
 # #126: inside one verify-proof call, every source the proof hashes, by absolute
 # path: the bytes whose hash verified, or None for one that failed it. The
 # checks after the hash check read these, never the disk, so a file swapped
-# after it was hashed cannot change what they judge. Keyed like #117's contract
-# snapshot, so retargeting a symlink cannot dodge it either.
+# after it was hashed cannot change what they judge. Reader aliases are bound
+# by file identity before hashing; lookup never follows a retargeted symlink.
 _VERIFIED_SOURCES: ContextVar[Optional[Dict[str, Optional[bytes]]]] = ContextVar(
     "agentflow_verified_sources", default=None
 )
