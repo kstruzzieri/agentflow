@@ -10,9 +10,9 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from .contracts import RISK_POLICIES
+from .artifacts import read_jsonl
+from .contracts import EXECUTION_ARTIFACT_PATHS, RISK_POLICIES
 from .execution import load_execution_contract
-from .receipts import command_receipts
 from .risk import classify_command, evaluate_policy
 from .validation import validate_plan
 
@@ -69,7 +69,10 @@ def simulate_risk(
         if errors:
             raise ValueError(f"invalid {label} plan: {'; '.join(errors)}")
     outcome = "blocked" if proposed == "block" else "needs_confirmation"
-    receipts = command_receipts(root)
+    # A report, not a gate: a non-object row is skipped and counted below.
+    receipts = read_jsonl(
+        root / EXECUTION_ARTIFACT_PATHS["command-receipts"], objects_only=False
+    )
     stopped: List[Dict[str, Any]] = []
     drift: List[Dict[str, Any]] = []
     by_category: Dict[str, List[Any]] = {}
