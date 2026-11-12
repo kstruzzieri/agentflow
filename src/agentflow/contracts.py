@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import os
-from typing import Optional
+from typing import Dict, Optional, Tuple
 
 
 TOOL_VERSION = "0.3.0"
@@ -23,7 +23,12 @@ WORKFLOW_PACK_SCHEMA_VERSION = "0.1.0"
 CAPABILITY_RECEIPTS_SCHEMA_VERSION = "0.1.0"
 AGGREGATION_SCHEMA_VERSION = "0.1.0"
 
-EXECUTION_CONTRACT_SCHEMA_VERSION = "1.0.0"
+EXECUTION_CONTRACT_SCHEMA_VERSION = "1.1.0"
+# exact-policy artifacts that read more than the one current version.
+EXACT_READABLE_VERSIONS: Dict[str, Tuple[str, ...]] = {
+    "execution-contract": ("1.0.0", "1.1.0"),
+}
+CONFIRMATION_MODES = ("self", "bound")
 STEP_RUNS_SCHEMA_VERSION = "1.1.0"
 COMMAND_RECEIPTS_SCHEMA_VERSION = "1.1.0"
 FILE_RECEIPTS_SCHEMA_VERSION = "1.1.0"

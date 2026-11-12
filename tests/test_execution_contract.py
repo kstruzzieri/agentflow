@@ -125,7 +125,7 @@ class ExecutionContractTests(unittest.TestCase):
 
     def test_default_contract_is_single_writer_and_provider_neutral(self) -> None:
         contract = default_execution_contract(".")
-        self.assertEqual(contract["schema_version"], EXECUTION_CONTRACT_SCHEMA_VERSION)
+        self.assertEqual(contract["schema_version"], "1.0.0")
         self.assertEqual(contract["contract_type"], "agentflow_execution_contract")
         self.assertEqual(contract["concurrency"]["writer_model"], "single_writer")
         self.assertIn("codex_skills", contract["agent_interface"]["forbidden_assumptions"])
@@ -145,7 +145,7 @@ class ExecutionContractTests(unittest.TestCase):
             contract = json.loads(
                 (root / ".agent/execution.contract.json").read_text(encoding="utf-8")
             )
-            self.assertEqual(contract["schema_version"], EXECUTION_CONTRACT_SCHEMA_VERSION)
+            self.assertEqual(contract["schema_version"], "1.0.0")
 
     def test_doctor_points_an_older_major_root_at_the_upgrade_ritual(self) -> None:
         # docs/compatibility.md promises this from the 1.0 line on. It only has

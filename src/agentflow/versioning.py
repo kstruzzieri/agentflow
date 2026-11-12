@@ -76,8 +76,12 @@ def validate_schema_version_policy(
         raise ValueError(
             f"invalid supported schema_version for {artifact}: {supported!r}"
         ) from exc
+    if policy == POLICY_EXACT:
+        from .contracts import EXACT_READABLE_VERSIONS
+
+        readable = EXACT_READABLE_VERSIONS.get(artifact, (supported,))
     compatible = (
-        actual == supported
+        actual in readable
         if policy == POLICY_EXACT
         else is_schema_version_compatible(actual, supported)
     )
