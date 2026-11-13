@@ -2,7 +2,7 @@
 
 Last updated: 2026-11-12
 
-Agentflow `1.5.0` is a standard-library-only Python CLI for plan-locked,
+Agentflow `1.6.0` is a standard-library-only Python CLI for plan-locked,
 auditable agent work. It supports Python 3.11–3.13 and ships as the
 `agentflow-proof` distribution on PyPI, as source, and as single-file CLI and
 MCP zipapps through GitHub Releases.
@@ -113,7 +113,7 @@ the [tracking issue #11](https://github.com/kstruzzieri/agentflow/issues/11).
   changes; output is unchanged for a bundle whose files do not change during
   verification.
 
-## On main, not yet released
+## v1.6.0 (shipped 2026-11-12)
 
 - Bound self-confirmation for high-risk commands. With
   `command_policy.confirmation` set to `bound` (it requires
@@ -139,7 +139,8 @@ Open issue that tightens who approves risky commands:
 - Host approval: an approver outside the agent confirms each high-risk
   command (`confirmation: "host"`, phase 2 of
   [#112](https://github.com/kstruzzieri/agentflow/issues/112), owned by
-  Golem). Phase 1, binding the confirmation to the exact command, is on main.
+  Golem). Phase 1, binding the confirmation to the exact command, shipped in
+  1.6.0.
 
 No next milestone is committed. Other candidates, each starting as an issue
 with a concrete use case and compatibility impact:
