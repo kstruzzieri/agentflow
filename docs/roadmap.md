@@ -113,12 +113,33 @@ the [tracking issue #11](https://github.com/kstruzzieri/agentflow/issues/11).
   changes; output is unchanged for a bundle whose files do not change during
   verification.
 
+## On main, not yet released
+
+- Bound self-confirmation for high-risk commands. With
+  `command_policy.confirmation` set to `bound` (it requires
+  `risk_policy: "require-confirmation"`), `--confirm-risk` and
+  `AGENTFLOW_CONFIRM_RISK=1` no longer let a high-risk command run. A separate
+  `agentflow confirm-command --step STEP -- <argv>` records a confirmation tied
+  to the step, the exact argv, the plan and the contract; it expires (15
+  minutes by default, 24 hours at most) and `run` consumes it once. The proof
+  records each confirmation, `verify-proof` checks it against the ledger and
+  receipts, and `verify-proof --require confirmation=bound` makes it a floor.
+  This proves binding, not who confirmed
+  ([#112](https://github.com/kstruzzieri/agentflow/issues/112), phase 1).
+  New schema versions: execution contract 1.1.0, command receipts and proof
+  packs 1.2.0, and the new command-confirmations ledger 1.0.0. Agentflow 1.5
+  and older cannot read the receipts and proofs this version writes, and `run`
+  now refuses a contract that is present but unreadable instead of falling
+  back to defaults.
+
 ## After 1.0
 
 Open issue that tightens who approves risky commands:
 
-- High-risk confirmations bound to the exact command and an approver outside
-  the agent ([#112](https://github.com/kstruzzieri/agentflow/issues/112)).
+- Host approval: an approver outside the agent confirms each high-risk
+  command (`confirmation: "host"`, phase 2 of
+  [#112](https://github.com/kstruzzieri/agentflow/issues/112), owned by
+  Golem). Phase 1, binding the confirmation to the exact command, is on main.
 
 No next milestone is committed. Other candidates, each starting as an issue
 with a concrete use case and compatibility impact:
