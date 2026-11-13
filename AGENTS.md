@@ -2,6 +2,21 @@
 
 Use Agentflow for planned software work in this repository.
 
+## Commits and Merges
+
+- Use Conventional Commits for all new human- and agent-authored commits:
+  `type(scope): description`, with an optional scope. Follow the types and
+  examples in [CONTRIBUTING.md](CONTRIBUTING.md#commit-messages).
+- Use Conventional Commit titles for pull requests and their final squash
+  commits. Describe the complete change being merged.
+- Squash merge pull requests into `main`, using the PR title as the final
+  squash commit title.
+- Automatic merge messages (such as `Merge pull request ...`) are exempt.
+  Final squash commit titles are not exempt.
+- Do not rewrite existing history solely to apply this convention.
+
+## Agentflow Setup
+
 Agentflow is installed from this source checkout, not from a published package.
 See `README.md` for the supported install paths:
 
