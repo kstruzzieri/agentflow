@@ -51,7 +51,40 @@ uv tool install --editable /path/to/agentflow
    /tmp/agentflow-sdist/bin/agentflow --version
    ```
 
+## Commit Messages
+
+Use Conventional Commits for all new human- and agent-authored commits:
+
+```text
+type(scope): description
+```
+
+The scope is optional. Use `feat` for new functionality, `fix` for bug fixes,
+and `docs`, `refactor`, `test`, `chore`, `ci`, `build`, `perf`, or `revert` for
+the corresponding changes. Write a short, imperative description and include
+an issue reference when applicable. For example:
+
+```text
+feat(confirmations): bind approvals to a single run (#112)
+fix(proof): reject replaced source files (#126)
+docs: update the roadmap
+chore(release): prepare v1.5.0
+```
+
+Mark breaking changes with `!` before the colon, such as
+`feat(cli)!: remove a deprecated command`, and explain the incompatibility in
+the commit body.
+
+Automatic merge messages (such as `Merge pull request ...`) are exempt. Final
+squash commit titles are not exempt. Do not rewrite existing history solely
+to apply this convention.
+
 ## Pull Requests
+
+Use a Conventional Commit PR title that describes the complete change. Merge
+pull requests into `main` with **Squash and merge**, producing one commit per
+PR. Use the PR title as the final squash commit title and check it before
+merging, including any breaking-change marker.
 
 Describe the problem, the chosen approach, and the validation performed. Keep
 generated root `.agent/` state out of commits unless the contribution is a
