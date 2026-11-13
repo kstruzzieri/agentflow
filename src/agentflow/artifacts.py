@@ -356,7 +356,9 @@ def append_jsonl(path: Path, item: Dict[str, Any]) -> None:
         handle.write(json.dumps(item, sort_keys=True) + "\n")
 
 
-def read_jsonl(path: Path) -> List[Dict[str, Any]]:
+def read_jsonl(path: Path, *, objects_only: bool = True) -> List[Dict[str, Any]]:
+    """Ledger rows. A row that is JSON but not an object raises ValueError unless
+    ``objects_only`` is False, for a reader that skips such rows itself."""
     data = verified_bytes(path)
     if data is None and not path.exists():
         return []
@@ -375,6 +377,11 @@ def read_jsonl(path: Path) -> List[Dict[str, Any]]:
                 continue
             try:
                 item = json.loads(stripped)
+                # Most callers do row.get(...); a hand-edited [] must not reach them.
+                if objects_only and not isinstance(item, dict):
+                    raise ValueError(
+                        f"{path}:{line_number}: ledger entry must be a JSON object"
+                    )
                 _validate_artifact_version(path, item, line_number)
                 items.append(item)
             except json.JSONDecodeError as exc:

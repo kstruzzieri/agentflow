@@ -226,10 +226,13 @@ class IssueTests(unittest.TestCase):
                 confirmations_path(root).write_text(
                     json.dumps(_issued(1)) + "\n" + json.dumps(row) + "\n", encoding="utf-8"
                 )
-                with self.assertRaisesRegex(
-                    ValueError,
-                    "^.agent/command-confirmations.jsonl row 2 must be an object with a string id and event$",
-                ):
+                # read_jsonl rejects a non-object row before read_confirmations sees it.
+                expected = (
+                    r"/\.agent/command-confirmations\.jsonl:2: ledger entry must be a JSON object$"
+                    if not isinstance(row, dict)
+                    else "^.agent/command-confirmations.jsonl row 2 must be an object with a string id and event$"
+                )
+                with self.assertRaisesRegex(ValueError, expected):
                     read_confirmations(root)
 
     def test_parse_expiry_cap(self) -> None:
@@ -355,7 +358,9 @@ class ConfirmCommandCliTests(unittest.TestCase):
         cases = {
             "JSON array contract": (array_contract, "execution contract must be an object"),
             "bound with warn": (warn_policy, "confirmation bound requires risk_policy require-confirmation"),
-            "non-object row": (bad_row("[]"), "row 1 must be an object with a string id and event"),
+            "non-object row": (
+                bad_row("[]"), ".agent/command-confirmations.jsonl:1: ledger entry must be a JSON object"
+            ),
             "list event": (
                 bad_row('{"schema_version": "1.0.0", "id": "CC1", "event": []}'), "row 1 must be an object"
             ),
@@ -762,13 +767,17 @@ class BoundRunTests(unittest.TestCase):
                 self.assertFalse(confirmations_path(root).exists())
 
     def test_malformed_ledger_row_exits_2(self) -> None:
-        for row in ("[]", '{"schema_version": "1.0.0", "id": "CC1", "event": []}'):
+        for row, text in (
+            ("[]", ".agent/command-confirmations.jsonl:1: ledger entry must be a JSON object"),
+            ('{"schema_version": "1.0.0", "id": "CC1", "event": []}',
+             "row 1 must be an object with a string id and event"),
+        ):
             with self.subTest(row=row), tempfile.TemporaryDirectory() as tmp:
                 root = _bound_run_root(tmp)
                 confirmations_path(root).write_text(row + "\n", encoding="utf-8")
                 code, err = self._cli_run(root)
                 self.assertEqual(code, 2, err)
-                self.assertIn("row 1 must be an object with a string id and event", err)
+                self.assertIn(text, err)
                 self.assertEqual(command_receipts(root), [])
                 self.assertEqual(_runs(root), 0)
 
@@ -1185,10 +1194,13 @@ class ProofConfirmationTests(unittest.TestCase):
                 result = _agentflow(root, "verify-proof")
                 self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
                 self.assertNotIn("Traceback", result.stderr)
+                detail = (
+                    f"{root.resolve() / CONFIRMATIONS}:1: ledger entry must be a JSON object"
+                    if name == "non-object row"
+                    else f"{CONFIRMATIONS} row 1 must be an object with a string id and event"
+                )
                 self.assertEqual(
-                    _errors(result),
-                    ["error: command confirmations could not be checked: "
-                     f"{CONFIRMATIONS} row 1 must be an object with a string id and event"],
+                    _errors(result), [f"error: command confirmations could not be checked: {detail}"]
                 )
 
     def test_build_proof_refuses_a_malformed_ledger_row(self) -> None:
@@ -1201,7 +1213,7 @@ class ProofConfirmationTests(unittest.TestCase):
         self.assertNotIn("Traceback", result.stderr)
         self.assertEqual(
             result.stderr.strip(),
-            f"invalid ledger: {CONFIRMATIONS} row 1 must be an object with a string id and event",
+            f"invalid ledger: {root.resolve() / CONFIRMATIONS}:1: ledger entry must be a JSON object",
         )
 
     def test_expiry_after_the_run_never_fails(self) -> None:

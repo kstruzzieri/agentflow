@@ -4329,5 +4329,56 @@ class TestNextStepExplainCli(unittest.TestCase):
             self.assertIn("invalid event 'bogus'", result["structuredContent"]["stderr"])
 
 
+class TestNonObjectLedgerRows(unittest.TestCase):
+    """A hand-edited ledger row that is JSON but not an object (``[]``) is one clean
+    error naming the ledger and row. An uncaught exception from cli.main (the old
+    AttributeError traceback) errors the test instead of failing an assertion."""
+
+    COMMANDS = ("build-proof", "verify-proof", "verify-run", "status", "next-action", "doctor")
+
+    def _cli(self, root, command):
+        out, err = io.StringIO(), io.StringIO()
+        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+            rc = cli.main([command, "--root", str(root)])
+        return rc, out.getvalue() + err.getvalue()
+
+    def _assert_reported(self, ledger, row_readers):
+        with TemporaryDirectory() as d:
+            root = Path(d).resolve()
+            with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+                _completed_step(root)
+                self.assertEqual(cli.main(["verify-run", "--root", str(root)]), 0)
+                self.assertEqual(cli.main(["build-proof", "--root", str(root)]), 0)
+            path = root / ".agent" / ledger
+            line = len(path.read_text().splitlines()) + 1
+            with path.open("a") as handle:
+                handle.write("[]\n")
+            message = f".agent/{ledger}:{line}: ledger entry must be a JSON object"
+            for command in self.COMMANDS:
+                with self.subTest(command=command):
+                    rc, output = self._cli(root, command)
+                    if command in row_readers:
+                        self.assertNotEqual(rc, 0, output)
+                        self.assertIn(message, output)
+                    elif command == "verify-proof":  # the proof hash check sees the edit first
+                        self.assertNotEqual(rc, 0, output)
+                        self.assertIn(f".agent/{ledger}", output)
+                    elif command == "next-action":  # state_invalid action, exit 0 by contract
+                        self.assertIn(message, output)
+                    # doctor checks the environment, not ledger rows: no traceback is the bar
+
+    def test_step_runs(self):
+        self._assert_reported("step-runs.jsonl", {"build-proof", "verify-run", "status"})
+
+    def test_command_receipts(self):
+        self._assert_reported("command-receipts.jsonl", {"build-proof", "verify-run", "status"})
+
+    def test_file_receipts(self):
+        self._assert_reported("file-receipts.jsonl", {"build-proof", "verify-run", "status"})
+
+    def test_verification_runs(self):
+        self._assert_reported("verification-runs.jsonl", {"build-proof", "verify-run"})
+
+
 if __name__ == "__main__":
     unittest.main()
