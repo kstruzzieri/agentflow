@@ -319,10 +319,6 @@ def _projection_ledgers(root: Path) -> Dict[str, List[Dict[str, Any]]]:
             raise ValueError(f"{relative} is missing")
         rows = read_jsonl(path)
         for line_number, row in enumerate(rows, start=1):
-            if not isinstance(row, dict):
-                raise ValueError(
-                    f"{relative}:{line_number}: ledger entry must be a JSON object"
-                )
             if name == "command-receipts":
                 _validate_command_receipt(row, relative, line_number)
             elif name == "file-receipts":

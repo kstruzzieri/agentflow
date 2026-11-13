@@ -34,6 +34,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   fall back to advisory defaults. Only a missing contract still does. This
   applies to every user, not just `bound`. (#112)
 
+### Fixed
+
+- A hand-edited `.agent/` ledger row that is valid JSON but not an object
+  (for example `[]`) is now reported as `<ledger>:<line>: ledger entry must be
+  a JSON object` instead of a Python traceback. `build-proof` crashed on such a
+  row in the step-runs, command-receipts, file-receipts and verification-runs
+  ledgers, and `verify-run` on the first three; `status` counted the row as an
+  entry and exited 0. All three now exit 1 with that line, as `next-action`
+  already reported. `events` and `detect-stuck`, which skipped such a row
+  without a word, now exit 1 with the same line; `simulate-risk` still skips
+  and counts it. Valid ledgers read exactly as before. No schema, CLI or
+  `docs/cli-contract.json` change.
+
 ### Upgrade notes
 
 - Execution contract 1.1.0, command receipts 1.2.0 and proof packs 1.2.0 are
