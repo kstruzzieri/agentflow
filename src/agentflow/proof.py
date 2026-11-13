@@ -9,6 +9,8 @@ import os
 import re
 import stat
 import tempfile
+from collections import Counter
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, Iterator, List, Optional, Set, Tuple
 
@@ -26,6 +28,7 @@ from .artifacts import (
     verified_source_reads,
     write_json,
 )
+from .confirmations import argv_sha256, confirmations_path, read_confirmations
 from .contracts import (
     AGGREGATION_SCHEMA_VERSION,
     ARTIFACT_PATHS,
@@ -40,6 +43,10 @@ from .coverage import (
     evaluate_context_budget,
 )
 from .execution import (
+    _now,
+    confirmation_mode,
+    execution_contract_sha256,
+    load_execution_contract,
     read_step_events,
     read_step_state,
     validate_execution_contract,
@@ -175,9 +182,11 @@ def _normalized_execution_hash(root: Path) -> str:
         if not path.exists():
             continue
         if path.suffix == ".jsonl":
+            # #112: read_confirmations refuses a hand-broken row (ValueError).
+            rows = read_confirmations(root) if name == "command-confirmations" else read_jsonl(path)
             payload[name] = [
                 {key: value for key, value in row.items() if key not in volatile}
-                for row in read_jsonl(path)
+                for row in rows
             ]
         else:
             payload[name] = read_json(path)
@@ -403,6 +412,10 @@ def canonical_core(proof: Dict[str, Any]) -> Dict[str, Any]:
     # keep their core hash byte-identical (#82 growth path).
     if "aggregation" in proof:
         core["aggregation"] = proof.get("aggregation")
+    # #112 (confirmations): conditional like runtime -- a run with no
+    # confirmations ledger under self keeps its core hash byte-identical.
+    if "confirmations" in proof:
+        core["confirmations"] = proof.get("confirmations")
     return core
 
 
@@ -656,6 +669,197 @@ def validation_gate_summary(proof: Dict[str, Any]) -> Optional[str]:
     line = "validation gates: " + (", ".join(parts) or "none")
     failed = sum(1 for entry in entries if entry.get("status") == "failed")
     return f"{line}; {failed} failed" if failed else line
+
+
+def _confirmation_problem(contract: Any) -> Optional[str]:
+    try:
+        confirmation_mode(contract)
+    except ValueError as exc:
+        return str(exc)
+    return None
+
+
+def _ran_high_risk(receipt: Any) -> bool:
+    """A high-risk command Agentflow itself ran (allowed or timed out)."""
+    return (
+        isinstance(receipt, dict)
+        and isinstance(receipt.get("risk"), dict)
+        and receipt["risk"].get("level") == "high"
+        and receipt.get("decision") in ("allowed", "timeout")
+        and receipt.get("provenance") in ("observed", "reconstructed")
+    )
+
+
+def confirmation_summary(root: Path) -> Optional[Dict[str, Any]]:
+    """#112: how each executed high-risk command was confirmed.
+
+    ``None`` under ``self`` with no confirmations ledger, so a run that never
+    used confirmations keeps its proof core byte-identical (#82 growth path).
+    """
+    mode = confirmation_mode(load_execution_contract(root))
+    if mode == "self" and not source_exists(confirmations_path(root)):
+        return None
+    executed = [r for r in command_receipts(root) if _ran_high_risk(r)]
+    bound = [r for r in executed if r.get("confirmation_id") is not None]
+    self_confirmed = [
+        r for r in executed
+        if r.get("confirmation_id") is None and r.get("confirmation_source") is not None
+    ]
+    return {
+        "mode": mode,
+        "high_risk_executed": len(executed),
+        "bound": len(bound),
+        "self": len(self_confirmed),
+        "unbound": [
+            r.get("id") for r in executed
+            if r.get("confirmation_id") is None and r.get("confirmation_source") is None
+        ],
+    }
+
+
+def _instant(text: Any) -> datetime:
+    return _now(datetime.fromisoformat(text))
+
+
+def confirmation_findings(root: Path) -> List[Dict[str, str]]:
+    """#112: the confirmations ledger and the command receipts agree.
+
+    Expiry is judged at consumption only, so a proof never fails because a
+    confirmation expired after its run.
+    """
+    try:
+        mode = confirmation_mode(load_execution_contract(root))
+        contract_hash = execution_contract_sha256(root)
+        rows = read_confirmations(root)
+        receipts = [r for r in command_receipts(root) if isinstance(r, dict)]
+    except UnverifiedSourceError:
+        raise
+    except (OSError, ValueError) as exc:
+        return [{"severity": "error", "message": f"command confirmations could not be checked: {exc}"}]
+    issued: Dict[str, List[Dict[str, Any]]] = {}
+    consumed: Dict[str, List[Dict[str, Any]]] = {}
+    for row in rows:
+        events = {"issued": issued, "consumed": consumed}.get(row["event"])
+        if events is not None:
+            events.setdefault(row["id"], []).append(row)
+    errors: List[str] = []
+    for confirmation, rows_issued in issued.items():
+        for row in rows_issued:
+            # The readable argv is what a reviewer reads; it must be the hashed one.
+            argv = row.get("argv")
+            if not (
+                isinstance(argv, list)
+                and all(isinstance(arg, str) for arg in argv)
+                and argv_sha256(argv) == row.get("argv_sha256")
+            ):
+                errors.append(f"confirmation {confirmation} argv does not match its argv_sha256")
+    for receipt in receipts:
+        receipt_id, confirmation = receipt.get("id"), receipt.get("confirmation_id")
+        known = isinstance(confirmation, str) and confirmation in issued
+        if confirmation is not None and not known:
+            errors.append(f"{receipt_id} names confirmation {confirmation}, which was never issued")
+        elif confirmation is not None:
+            # The consumption record below pins the execution-time plan.
+            if any(
+                row.get("step_id") != receipt.get("step_id")
+                or row.get("argv_sha256") != argv_sha256(receipt.get("command"))
+                or row.get("execution_contract_sha256") != receipt.get("execution_contract_sha256")
+                for row in issued[confirmation]
+            ):
+                errors.append(
+                    f"{receipt_id} does not match confirmation {confirmation} (step, argv or contract)"
+                )
+            spent = consumed.get(confirmation, [])
+            if not spent:
+                errors.append(f"{receipt_id} names confirmation {confirmation}, which was never consumed")
+            elif len(spent) == 1 and spent[0].get("attempt_id") != receipt.get("attempt_id"):
+                errors.append(
+                    f"confirmation {confirmation} was consumed by attempt {spent[0].get('attempt_id')} "
+                    f"but {receipt_id} ran in attempt {receipt.get('attempt_id')}"
+                )
+        # Only receipts written under the verified bound contract: one written
+        # under an earlier contract stays a self/unbound count, and a
+        # confirmation=bound floor rejects it through the #117 pins.
+        if (
+            mode == "bound"
+            and _ran_high_risk(receipt)
+            and receipt.get("execution_contract_sha256") == contract_hash
+        ):
+            source = receipt.get("confirmation_source")
+            if source is not None:
+                errors.append(f"{receipt_id} was confirmed by {source} under confirmation bound")
+            elif confirmation is None:
+                errors.append(f"{receipt_id} ran with no bound confirmation under confirmation bound")
+    # R9: single use -- one confirmation vouches for one run.
+    named = Counter(
+        r.get("confirmation_id") for r in receipts if isinstance(r.get("confirmation_id"), str)
+    )
+    errors.extend(
+        f"confirmation {confirmation} is named by {count} receipts"
+        for confirmation, count in named.items()
+        if count > 1
+    )
+    for confirmation, spent in consumed.items():
+        if confirmation not in issued:
+            errors.append(f"confirmation {confirmation} was consumed but never issued")
+            continue
+        if len(spent) > 1:
+            errors.append(f"confirmation {confirmation} was consumed {len(spent)} times")
+        for row in spent:
+            for issue in issued[confirmation]:
+                plan_hash = row.get("plan_sha256")
+                if not (
+                    isinstance(plan_hash, str)
+                    and re.fullmatch(r"[0-9a-f]{64}", plan_hash)
+                    and plan_hash == issue.get("plan_sha256")
+                ):
+                    errors.append(f"confirmation {confirmation} does not match its consumed plan binding")
+                try:
+                    late = _instant(row.get("consumed_at")) > _instant(issue.get("expires_at"))
+                except (TypeError, ValueError):
+                    errors.append(f"confirmation {confirmation} has an unreadable timestamp")
+                    continue
+                if late:
+                    errors.append(f"confirmation {confirmation} was consumed after it expired")
+    return [{"severity": "error", "message": error} for error in errors]
+
+
+def _verify_confirmations(root: Path, proof: Dict[str, Any]) -> List[Dict[str, Any]]:
+    try:
+        expected = confirmation_summary(root)
+    except UnverifiedSourceError:
+        raise
+    except (OSError, ValueError) as exc:
+        return [
+            {
+                "severity": "error",
+                "message": f"proof confirmations block could not be recomputed: {exc}",
+            }
+        ]
+    if proof.get("confirmations") != expected:
+        return [
+            {
+                "severity": "error",
+                "message": "proof confirmations block is stale or tampered"
+                + _coverage_growth_hint(proof),
+            }
+        ]
+    return []
+
+
+def confirmation_summary_line(proof: Dict[str, Any]) -> Optional[str]:
+    """#112: one line on how the proof's high-risk runs were confirmed."""
+    block = proof.get("confirmations")
+    if not isinstance(block, dict):
+        return None
+    unbound = block.get("unbound")
+    return (
+        f"command confirmations: {block.get('mode')}, "
+        f"{block.get('high_risk_executed')} high-risk run(s), "
+        f"{block.get('bound')} bound, {block.get('self')} self, "
+        f"{len(unbound) if isinstance(unbound, list) else unbound} unbound; "
+        "self-confirmation proves binding, not who confirmed"
+    )
 
 
 class InvalidWorkingState(ValueError):
@@ -993,6 +1197,12 @@ def build_proof(root: Path, plan_path: Path, strict: bool = False) -> Dict[str, 
             else:
                 proof["aggregation"] = aggregation
 
+    # #112: the ledger is already a hashed source via artifact_files();
+    # verify-proof recomputes this block from the hashed bytes.
+    confirmations = confirmation_summary(root)
+    if confirmations is not None:
+        proof["confirmations"] = confirmations
+
     proof["stuck"] = stuck_block(root, plan)
     proof["core_sha256"] = core_sha256(proof)
     current_step_ledger_hash = sha256_file(step_ledger) if step_ledger.exists() else None
@@ -1115,6 +1325,29 @@ def render_markdown(
         if requirement_lines
         else []
     )
+    confirmations = proof.get("confirmations")
+    confirmation_section = (
+        [
+            "",
+            "## Command Confirmations",
+            "",
+            markdown_list(
+                [
+                    f"mode: {confirmations.get('mode')}",
+                    f"high-risk runs: {confirmations.get('high_risk_executed')}",
+                    f"bound: {confirmations.get('bound')}",
+                    f"self: {confirmations.get('self')}",
+                    "unbound: " + (", ".join(map(str, confirmations.get("unbound") or [])) or "none"),
+                ]
+            ),
+            "",
+            "Self-confirmation proves binding, not authority. This proof cannot show "
+            "who confirmed a command, trustworthy timestamps (expiry uses the local "
+            "clock), or history left out of the bundle.",
+        ]
+        if isinstance(confirmations, dict)
+        else []
+    )
 
     return "\n".join(
         [
@@ -1171,6 +1404,7 @@ def render_markdown(
             "## Validation",
             "",
             markdown_list(validation),
+            *confirmation_section,
             "",
             "## Drift Audit",
             "",
@@ -1199,6 +1433,7 @@ POLICY_FLOOR_KEYS: Dict[str, Tuple[str, Tuple[Any, ...], Any]] = {
     "hunk_attribution": ("proof_policy", ("off", "observe", "enforce"), "enforce"),
     "review_gate": ("proof_policy", ("ignore", "warn", "block"), "warn"),
     "risk_policy": ("command_policy", ("warn", "require-confirmation", "block"), "warn"),
+    "confirmation": ("command_policy", ("self", "bound", "host"), "self"),
     "lease_policy": ("concurrency", ("advisory", "enforce"), "advisory"),
     **{
         key: ("proof_policy", (False, True), key == "require_file_receipts_for_changed_files")
@@ -1229,12 +1464,15 @@ def policy_floor_findings(
         else:
             block = contract.get(section, {})
             value = block.get(key, default) if isinstance(block, dict) else None
+            # #112: bound counts only under require-confirmation; a mode the
+            # contract cannot mean fails closed at every floor.
+            reason = _confirmation_problem(contract) if key == "confirmation" else None
             # type() rather than isinstance: 1 must not pass for True.
-            if type(value) is type(minimum) and value in order:
+            if reason is None and type(value) is type(minimum) and value in order:
                 if order.index(value) >= order.index(minimum):
                     continue
                 reason = f"{key} is {policy_value_text(value)}"
-            else:
+            elif reason is None:
                 reason = f"{key} has unrecognized value {json.dumps(value)}"
         findings.append(
             {
@@ -1250,7 +1488,9 @@ def policy_floor_findings(
 
 # #117: these act while the work runs, so a floor on one also needs every record
 # written under them to name the contract the proof hash-verifies.
-RUNTIME_POLICY_KEYS = frozenset({"risk_policy", "lease_policy", "hunk_attribution"})
+RUNTIME_POLICY_KEYS = frozenset(
+    {"risk_policy", "confirmation", "lease_policy", "hunk_attribution"}
+)
 _PINNED_LEDGERS = tuple(
     EXECUTION_ARTIFACT_PATHS[name]
     for name in ("step-runs", "command-receipts", "file-receipts", "verification-runs")
@@ -1510,6 +1750,8 @@ def _verify_proof(
         findings.extend(_unless_unverified(_verify_requirement_coverage, root, proof))
         findings.extend(_unless_unverified(_verify_design_decision_coverage, root, proof))
         findings.extend(_unless_unverified(_verify_validation_gate_coverage, root, proof))
+        findings.extend(_unless_unverified(_verify_confirmations, root, proof))
+        findings.extend(_unless_unverified(confirmation_findings, root))
         findings.extend(verify_proof_checks(proof, effective_proof_strict))
         findings.extend(_unless_unverified(verify_receipt_outputs, root))
         findings.extend(

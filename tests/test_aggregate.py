@@ -480,6 +480,27 @@ class PreconditionTests(unittest.TestCase):
             self.assertTrue(any(c["kind"] == "precondition_deleted_present" for c in cols))
 
 
+class ConfirmationLedgerTests(unittest.TestCase):
+    def _kinds(self, ledger_text):
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp) / "out"; out.mkdir()
+            a = build_tree(Path(tmp) / "a", steps=["P1"])
+            b = build_tree(Path(tmp) / "b", steps=["P2"])
+            if ledger_text is not None:
+                (a / ".agent/command-confirmations.jsonl").write_text(ledger_text, encoding="utf-8")
+            report = aggregate.analyze([Source(a, "w1", "a"), Source(b, "w2", "b")], out, base_ref="HEAD")
+            return [c for c in report["collisions"] if c["kind"] == "unsupported_ledger"]
+
+    def test_non_empty_ledger_is_refused(self):
+        found = self._kinds('{"id": "CC1", "event": "issued"}\n')
+        self.assertEqual([c["source"] for c in found], ["w1"])
+
+    def test_absent_or_empty_ledger_changes_nothing(self):
+        self.assertEqual(self._kinds(None), [])
+        self.assertEqual(self._kinds(""), [])
+
+
 class AnalyzeTests(unittest.TestCase):
     def test_clean_two_tree_report(self):
         import tempfile
@@ -817,7 +838,7 @@ class SchemaBumpTests(unittest.TestCase):
     def test_execution_ledger_versions_bumped_for_namespacing(self):
         from agentflow import contracts
         self.assertEqual(contracts.STEP_RUNS_SCHEMA_VERSION, "1.1.0")
-        self.assertEqual(contracts.COMMAND_RECEIPTS_SCHEMA_VERSION, "1.1.0")
+        self.assertEqual(contracts.COMMAND_RECEIPTS_SCHEMA_VERSION, "1.2.0")  # #112 bound fields
         self.assertEqual(contracts.FILE_RECEIPTS_SCHEMA_VERSION, "1.1.0")
         self.assertEqual(contracts.VERIFICATION_RUNS_SCHEMA_VERSION, "1.1.0")
 

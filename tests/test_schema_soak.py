@@ -1445,5 +1445,34 @@ class FreezeSetContractTests(unittest.TestCase):
         self.assertIn("GITHUB_TOKEN: ${{ github.token }}", workflow)
 
 
+
+class ExactContractPatternTests(unittest.TestCase):
+    PATH = "schemas/execution-contract.schema.json"
+
+    def _additive(self, pattern: str) -> bool:
+        def blob(p: str) -> bytes:
+            return json.dumps(
+                {"properties": {"schema_version": {"type": "string", "pattern": p}}}
+            ).encode()
+
+        return guard._is_additive_schema(
+            self.PATH, blob(r"^1\.0\.0$"), blob(pattern), "1.0.0", "1.1.0"
+        )
+
+    def test_accepts_released_plus_current(self) -> None:
+        self.assertTrue(self._additive(r"^1\.[01]\.0$"))
+
+    def test_rejects_wider_or_dropping_patterns(self) -> None:
+        self.assertFalse(self._additive(r"^1\.[0-9]\.0$"))
+        self.assertFalse(self._additive(r"^1\.1\.0$"))
+
+    def test_mirror_matches_contracts(self) -> None:
+        from agentflow.contracts import EXACT_READABLE_VERSIONS
+
+        self.assertEqual(
+            guard.EXACT_READABLE_MIRROR, EXACT_READABLE_VERSIONS["execution-contract"]
+        )
+
+
 if __name__ == "__main__":
     unittest.main()

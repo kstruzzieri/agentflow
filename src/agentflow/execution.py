@@ -26,6 +26,7 @@ from .contracts import (
     DEFAULT_LEASE_GRACE_SECONDS,
     DEFAULT_LEASE_TTL_MINUTES,
     EXECUTION_ARTIFACT_PATHS,
+    CONFIRMATION_MODES,
     EXECUTION_CONTRACT_SCHEMA_VERSION,
     HUNK_ATTRIBUTION_POLICIES,
     LEASE_POLICIES,
@@ -110,7 +111,43 @@ def attempt_is_expired(attempt: Dict[str, Any], now: datetime, grace_seconds: in
     return now > deadline + timedelta(seconds=grace_seconds)
 
 
+def contract_schema_version_for(contract: Dict[str, Any]) -> str:
+    """Lowest contract version that can express this contract."""
+    policy = contract.get("command_policy")
+    if isinstance(policy, dict) and "confirmation" in policy:
+        return "1.1.0"
+    return "1.0.0"
+
+
+def confirmation_mode(contract: Any) -> str:
+    """Return the confirmation mode, raising ValueError on a bad contract.
+
+    The one rule (#112) the validator, ``run``, ``confirm-command`` and
+    ``verify-proof`` share: a mode the contract cannot mean, or ``bound``
+    without require-confirmation, never reads as ``bound`` or quietly as ``self``.
+    """
+    if contract is not None and not isinstance(contract, dict):
+        raise ValueError("execution contract must be an object")
+    policy = (contract or {}).get("command_policy")
+    if not isinstance(policy, dict) or "confirmation" not in policy:
+        return "self"
+    if contract.get("schema_version") == "1.0.0":
+        raise ValueError("execution contract 1.0.0 cannot carry confirmation")
+    mode = policy["confirmation"]
+    if mode not in CONFIRMATION_MODES:
+        raise ValueError(f"confirmation {mode} is invalid")
+    if mode == "bound" and policy.get("risk_policy") != "require-confirmation":
+        raise ValueError("confirmation bound requires risk_policy require-confirmation")
+    return mode
+
+
 def default_execution_contract(root: str = ".") -> Dict[str, Any]:
+    contract = _default_execution_contract(root)
+    contract["schema_version"] = contract_schema_version_for(contract)
+    return contract
+
+
+def _default_execution_contract(root: str) -> Dict[str, Any]:
     return {
         "schema_version": EXECUTION_CONTRACT_SCHEMA_VERSION,
         "contract_type": "agentflow_execution_contract",
@@ -397,6 +434,10 @@ def validate_execution_contract(contract: Any) -> List[Dict[str, str]]:
             and command_policy["risk_policy"] not in RISK_POLICIES
         ):
             error(f"risk_policy {command_policy['risk_policy']} is invalid")
+        try:
+            confirmation_mode(contract)
+        except ValueError as exc:
+            error(str(exc))
 
     proof_policy = contract.get("proof_policy")
     if "proof_policy" in contract and not isinstance(proof_policy, dict):

@@ -194,6 +194,7 @@ JSON_OUTPUTS = {
     "reclaim-step": [{"type": "object", "keys": STEP_EVENT}],
     "renew-lease": [{"type": "object", "keys": STEP_EVENT}],
     "run": [{"type": "object", "keys": COMMAND_RECEIPT}],
+    "confirm-command": [{"type": "object", "keys": {"schema_version": "string", "id": "string", "event": "string", "step_id": "string", "argv": "array", "argv_sha256": "string", "plan_sha256": "string", "execution_contract_sha256": "string|null", "issued_at": "string", "expires_at": "string", "source": "string"}}],
     "record-command": [{"type": "object", "keys": COMMAND_RECEIPT}],
     "record-file-change": [{"type": "array", "items": {"type": "object", "keys": FILE_RECEIPT}}],
     "verify-step": [{"type": "object", "keys": VERIFICATION}],

@@ -1845,7 +1845,7 @@ class AgentflowCliTests(unittest.TestCase):
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             payload = json.loads(result.stdout)
             self.assertEqual(payload["status"], "passed")
-            self.assertEqual(payload["contract"]["schema_version"], EXECUTION_CONTRACT_SCHEMA_VERSION)
+            self.assertEqual(payload["contract"]["schema_version"], "1.0.0")
 
     def test_next_step_and_claim_step_cli(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

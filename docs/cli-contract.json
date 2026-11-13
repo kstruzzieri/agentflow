@@ -516,6 +516,63 @@
         "takes_value": false
       }
     ],
+    "confirm-command": [
+      {
+        "choices": null,
+        "default": ".",
+        "multiple": false,
+        "names": [
+          "--root"
+        ],
+        "nargs": null,
+        "required": false,
+        "takes_value": true
+      },
+      {
+        "choices": null,
+        "default": null,
+        "multiple": false,
+        "names": [
+          "--step"
+        ],
+        "nargs": null,
+        "required": true,
+        "takes_value": true
+      },
+      {
+        "choices": null,
+        "default": "15m",
+        "multiple": false,
+        "names": [
+          "--expires"
+        ],
+        "nargs": null,
+        "required": false,
+        "takes_value": true
+      },
+      {
+        "choices": null,
+        "default": false,
+        "multiple": false,
+        "names": [
+          "--json"
+        ],
+        "nargs": 0,
+        "required": false,
+        "takes_value": false
+      },
+      {
+        "choices": null,
+        "default": null,
+        "multiple": true,
+        "names": [
+          "command"
+        ],
+        "nargs": "...",
+        "required": false,
+        "takes_value": true
+      }
+    ],
     "detect-stuck": [
       {
         "choices": null,
@@ -2852,6 +2909,24 @@
           "reason_code": "string|null",
           "recorded_at": "string",
           "schema_version": "string",
+          "step_id": "string"
+        },
+        "type": "object"
+      }
+    ],
+    "confirm-command": [
+      {
+        "keys": {
+          "argv": "array",
+          "argv_sha256": "string",
+          "event": "string",
+          "execution_contract_sha256": "string|null",
+          "expires_at": "string",
+          "id": "string",
+          "issued_at": "string",
+          "plan_sha256": "string",
+          "schema_version": "string",
+          "source": "string",
           "step_id": "string"
         },
         "type": "object"

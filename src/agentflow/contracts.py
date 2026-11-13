@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import os
-from typing import Optional
+from typing import Dict, Optional, Tuple
 
 
 TOOL_VERSION = "0.3.0"
@@ -15,7 +15,7 @@ AMENDMENTS_SCHEMA_VERSION = "0.2.0"
 CONTEXT_RECEIPTS_SCHEMA_VERSION = "0.2.0"
 FAILURES_SCHEMA_VERSION = "0.2.0"
 DRIFT_REPORT_SCHEMA_VERSION = "1.1.0"
-PROOF_PACK_SCHEMA_VERSION = "1.1.0"
+PROOF_PACK_SCHEMA_VERSION = "1.2.0"
 RUNTIME_CONFIG_SCHEMA_VERSION = "0.3.0"
 RUNTIME_SNAPSHOT_SCHEMA_VERSION = "0.3.0"
 WORKFLOW_CONTRACT_SCHEMA_VERSION = "0.1.0"
@@ -23,11 +23,17 @@ WORKFLOW_PACK_SCHEMA_VERSION = "0.1.0"
 CAPABILITY_RECEIPTS_SCHEMA_VERSION = "0.1.0"
 AGGREGATION_SCHEMA_VERSION = "0.1.0"
 
-EXECUTION_CONTRACT_SCHEMA_VERSION = "1.0.0"
+EXECUTION_CONTRACT_SCHEMA_VERSION = "1.1.0"
+# exact-policy artifacts that read more than the one current version.
+EXACT_READABLE_VERSIONS: Dict[str, Tuple[str, ...]] = {
+    "execution-contract": ("1.0.0", "1.1.0"),
+}
+CONFIRMATION_MODES = ("self", "bound")
 STEP_RUNS_SCHEMA_VERSION = "1.1.0"
-COMMAND_RECEIPTS_SCHEMA_VERSION = "1.1.0"
+COMMAND_RECEIPTS_SCHEMA_VERSION = "1.2.0"
 FILE_RECEIPTS_SCHEMA_VERSION = "1.1.0"
 VERIFICATION_RUNS_SCHEMA_VERSION = "1.1.0"
+COMMAND_CONFIRMATIONS_SCHEMA_VERSION = "1.0.0"
 
 REVIEW_RUNS_SCHEMA_VERSION = "0.6.0"
 REVIEW_MANIFEST_SCHEMA_VERSION = "1.0.0"  # keep in lockstep with review_runner.MANIFEST_SCHEMA_VERSION
@@ -55,6 +61,7 @@ EXECUTION_ARTIFACT_SCHEMA_VERSIONS = {
     "command-receipts": COMMAND_RECEIPTS_SCHEMA_VERSION,
     "file-receipts": FILE_RECEIPTS_SCHEMA_VERSION,
     "verification-runs": VERIFICATION_RUNS_SCHEMA_VERSION,
+    "command-confirmations": COMMAND_CONFIRMATIONS_SCHEMA_VERSION,
 }
 
 # Working-state ingestion policy. Historical cross-major proof compatibility is
@@ -90,6 +97,7 @@ ARTIFACT_COMPATIBILITY_POLICIES = {
     "command-receipts": POLICY_SAME_MAJOR,
     "file-receipts": POLICY_SAME_MAJOR,
     "verification-runs": POLICY_SAME_MAJOR,
+    "command-confirmations": POLICY_SAME_MAJOR,
 }
 
 # Derived summaries and transient intake files are intentionally excluded.
@@ -114,6 +122,7 @@ EXECUTION_ARTIFACT_PATHS = {
     "command-receipts": ".agent/command-receipts.jsonl",
     "file-receipts": ".agent/file-receipts.jsonl",
     "verification-runs": ".agent/verification-runs.jsonl",
+    "command-confirmations": ".agent/command-confirmations.jsonl",
 }
 
 ARTIFACT_PATHS = {

@@ -20,6 +20,25 @@ The operator can inspect the plan and command before execution, the host and its
 
 Run Agentflow in the isolation appropriate to the task (for example, a container, VM, restricted account, or dedicated worktree), review commands and their outputs, restrict credentials, and treat risk-policy confirmation as an explicit decision to run the command—not as a safety override.
 
+### Self-confirmation versus host approval
+
+By default a high-risk command is confirmed by the same agent that runs it
+(`--confirm-risk`, `AGENTFLOW_CONFIRM_RISK=1`). That is self-confirmation: it
+records that someone said yes, not that someone with authority did.
+
+`command_policy.confirmation: "bound"` (phase 1 of #112) adds a separate
+`confirm-command` step and ties each confirmation to the step, the exact
+command, the plan and the contract, usable once. It proves binding, not
+authority. It cannot show who confirmed: anything the agent can reach, the
+agent can also use to confirm. Timestamps come from the local clock, which the
+agent can set. History left out of the proof bundle cannot be seen.
+The `verify-proof` summary line states the first limit ("self-confirmation
+proves binding, not who confirmed"); the markdown proof states all three.
+
+Authority needs an issuer the agent cannot impersonate. That is phase 2,
+`confirmation: "host"`: approvals issued by the host (Golem). It is not built.
+See [Command risk](command-risk.md#confirmation-modes).
+
 ## Agent artifact publication
 
 ### Guarantee

@@ -68,6 +68,83 @@ When a confirmation lets a high-risk command through, the receipt records
 `risk_policy`, `confirmed: true`, and `confirmation_source` (`cli` or `env`).
 `block` is absolute and ignores confirmation.
 
+## Confirmation modes
+
+`command_policy.confirmation` in the execution contract chooses who a
+confirmation counts as coming from. It applies only under
+`risk_policy: "require-confirmation"`.
+
+| Value | Behavior |
+|---|---|
+| `self` (default) | `--confirm-risk` or `AGENTFLOW_CONFIRM_RISK=1`, as above |
+| `bound` | a separate `confirm-command` step must name the exact command first |
+
+To enable `bound`, set three things in the execution contract together:
+`schema_version` to `1.1.0`, `command_policy.confirmation` to `"bound"`, and
+`command_policy.risk_policy` to `"require-confirmation"`. The contract
+validator, `run` and `confirm-command` all refuse `bound` with any other risk
+policy (`confirmation bound requires risk_policy require-confirmation`; the
+commands exit 2), and a 1.0.0 contract cannot carry `confirmation` at all. A
+contract that does not set `confirmation` stays 1.0.0.
+
+Under `bound`, confirm one command for one step, then run it:
+
+```bash
+agentflow confirm-command --step P1 [--expires 15m] -- <command>
+agentflow run --step P1 -- <command>
+```
+
+`confirm-command` appends an `issued` row to `.agent/command-confirmations.jsonl`
+(a new ledger, schema 1.0.0; `init-execution` does not create it). The default
+expiry is 15 minutes and the cap is 24 hours (`--expires 15m`, `2h`). It
+refuses an unknown step, a command that is not high-risk, and a contract that
+is not in `bound` mode. `--json` prints the row.
+
+`run` consumes one matching confirmation before it starts a high-risk command.
+A confirmation matches only the step, the exact argv hash, the current plan
+hash and the current execution-contract hash, and only while unexpired and
+unused. One confirmation covers one run: it is consumed even if the command then
+fails or times out. Replay never consumes one. Under `bound`, `--confirm-risk`
+and `AGENTFLOW_CONFIRM_RISK=1` are not accepted.
+
+Expiry is checked after acquiring the confirmations lock. The consumed row
+records the execution-time `plan_sha256`, so verification can compare it with
+the issued confirmation even after the plan is amended. A missing or mismatched
+plan binding, or a consumed id that was never issued, fails verification.
+
+Without a usable confirmation `run` blocks, exits 2 and prints the
+`confirm-command` line to run first. The blocked receipt carries
+`confirmation_block_reason`: `confirmation_missing` (none issued),
+`confirmation_expired`, `confirmation_used` (already consumed), or
+`confirmation_stale` (issued, but the plan or contract changed since). An
+allowed receipt carries `confirmation_id`. Command receipts are schema 1.2.0.
+
+The proof gains a `confirmations` block (mode, high-risk runs executed, how
+many were bound or self-confirmed, and the ids of unbound ones) whenever the
+ledger exists or the mode is not `self`. `verify-proof` recomputes it, checks
+the ledger against the receipts, requires every high-risk run written under the
+bound contract to carry a bound confirmation, and prints:
+
+```text
+command confirmations: bound, 1 high-risk run(s), 1 bound, 0 self, 0 unbound; self-confirmation proves binding, not who confirmed
+```
+
+A run written under an earlier contract, such as one confirmed with
+`--confirm-risk` before the contract switched to `bound`, stays a `self` or
+`unbound` count; `--require confirmation=bound` rejects it because it is not
+pinned to the verified contract.
+
+`aggregate-ledgers` refuses any source whose confirmations ledger is not empty
+(`unsupported_ledger`), even one holding only unused confirmations.
+
+`verify-proof --require confirmation=bound` fails a proof whose recorded mode
+is below `bound` (order: `self` < `bound` < `host`). An older proof, or a
+`self` run with no ledger, keeps its core hash.
+
+`bound` proves a run used a confirmation tied to that exact command, plan and
+contract. It does not prove who confirmed; see
+[Security model](security-model.md).
+
 ## Trying a stricter policy first
 
 `agentflow simulate-risk` shows what a stricter setting would have stopped,

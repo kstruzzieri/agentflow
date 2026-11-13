@@ -528,6 +528,16 @@ def _malformed_contract_collisions(sources: List[Source]) -> List[Dict[str, Any]
     return collisions
 
 
+def _confirmation_ledger_collisions(sources: List[Source]) -> List[Dict[str, Any]]:
+    """Confirmations bind to one worktree's plan and contract; never merge them."""
+    rel = EXECUTION_ARTIFACT_PATHS["command-confirmations"]
+    return [
+        _collision("unsupported_ledger", source=source.source_id, ledger="command-confirmations", path=rel)
+        for source in sources
+        if (source.root / rel).is_file() and (source.root / rel).stat().st_size > 0
+    ]
+
+
 def _source_summaries(sources: List[Source], bases: Dict[str, Optional[str]]) -> List[Dict[str, Any]]:
     return [
         {
@@ -560,6 +570,7 @@ def analyze(sources: List[Source], output_root: Path, base_ref: Optional[str] = 
     collisions: List[Dict[str, Any]] = []
     collisions += _must_match_collisions(sources)
     collisions += _malformed_contract_collisions(sources)
+    collisions += _confirmation_ledger_collisions(sources)
     collisions += _malformed_id_collisions(sources)
     collisions += _intra_source_dup_id_collisions(sources)
     collisions += _base_commit_collisions(bases)

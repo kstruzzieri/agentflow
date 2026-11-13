@@ -75,6 +75,27 @@ change to a released schema fails CI. `PROOF_PACK` 1.1.0, which adds
 so a ledger can mix both; Agentflow 1.3 and older reject the 1.1 records in
 working state.
 
+### Command confirmations (#112)
+
+Execution contract 1.1.0 adds optional `command_policy.confirmation`; the
+reader accepts exactly 1.0.0 and 1.1.0, and a contract that does not use
+`confirmation` stays 1.0.0. Command receipts 1.2.0 add `confirmation_id` and
+`confirmation_block_reason`; proof packs 1.2.0 add the conditional
+`confirmations` block; and `.agent/command-confirmations.jsonl` is a new ledger
+at 1.0.0. A proof without a `confirmations` block keeps its core hash.
+
+Agentflow 1.5 and older reject 1.2.0 receipts and 1.2.0 proofs. Every receipt
+and proof this version writes is 1.2.0, under `self` too, so a worktree it has
+worked in cannot go back to Agentflow 1.4 or 1.5; a 1.0.0 contract file is the
+only part they can still read.
+
+Agentflow 1.5 and older also reject a 1.1.0 contract in `doctor` and
+`build-proof`, but their `run` falls back to advisory defaults and runs
+high-risk commands with no confirmation. Do not run an older Agentflow in a
+worktree whose contract sets `confirmation: "bound"`; `verify-proof` reports
+each such run written under the bound contract (`CRn ran with no bound
+confirmation under confirmation bound`).
+
 ## Compatibility fixtures
 
 The compatibility matrix contains:

@@ -32,7 +32,7 @@ The supported command names are:
 `audit-drift`, `next-step`, `claim-step`, `amend-step`, `complete-step`,
 `block-step`, `fail-step`, `reclaim-step`, `renew-lease`, `run`,
 `record-command`, `record-file-change`, `verify-step`, `verify-run`,
-`aggregate-ledgers`, `detect-stuck`, `simulate-risk`, `export-handoff`,
+`aggregate-ledgers`, `confirm-command`, `detect-stuck`, `simulate-risk`, `export-handoff`,
 `lint-handoff`, `replay-gates`, `runtime-status`, `build-proof`, `verify-proof`, `view-proof`,
 `events`, `next-action`, `finish-step`, `finish-run`, and `status`.
 
@@ -63,6 +63,15 @@ in `state` and in `resumability.recovery_actions[].action`, and, as
 report.
 A minor release may add values to these sets. A consumer that acts on these
 values must treat an unknown value as not actionable and fail closed.
+
+## Command confirmations
+
+`command_policy.confirmation` (`self` or `bound`) is an optional
+execution-contract field (#112). The reader accepts execution contract schema
+1.0.0 and 1.1.0 exactly; a writer emits 1.0.0 unless `confirmation` is present,
+and a 1.0.0 contract that carries it is rejected. `.agent/command-confirmations.jsonl`
+is a new ledger (schema 1.0.0, same major). Command receipts are 1.2.0 and
+proof packs 1.2.0. `confirm-command` is CLI-only and has no MCP tool.
 
 ## MCP contract
 

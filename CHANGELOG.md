@@ -7,6 +7,48 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Bound self-confirmation for high-risk commands (#112, phase 1). Setting
+  `command_policy.confirmation` to `bound` (it requires
+  `risk_policy: "require-confirmation"`) replaces `--confirm-risk` with a
+  separate `agentflow confirm-command --step STEP [--expires 15m] -- <argv>`
+  step. The confirmation is recorded in the new
+  `.agent/command-confirmations.jsonl` ledger, is tied to the step, exact
+  argv, plan and contract, expires (default 15 minutes, cap 24 hours), and
+  `run` consumes it once. A blocked run records `confirmation_block_reason`;
+  an allowed one records `confirmation_id`.
+- The proof gains a conditional `confirmations` block that `verify-proof`
+  recomputes and checks against the ledger and receipts, a summary line, and
+  `verify-proof --require confirmation=bound`. Consumption records retain the
+  execution-time plan hash; verification rejects mismatched or missing plan
+  bindings and consumption without issuance. Expiry is checked under the ledger
+  lock. This proves binding, not who
+  confirmed; host approval (`confirmation: "host"`) is phase 2, owned by
+  Golem, and not built. No MCP tool creates confirmations.
+
+### Changed
+
+- `run` now exits 2 and starts nothing when an execution contract is present
+  but unreadable or incompatible, or sets an invalid `confirmation`. It used to
+  fall back to advisory defaults. Only a missing contract still does. This
+  applies to every user, not just `bound`. (#112)
+
+### Upgrade notes
+
+- Execution contract 1.1.0, command receipts 1.2.0 and proof packs 1.2.0 are
+  new schema versions. Every command receipt and proof this version writes is
+  1.2.0, under `self` too, and Agentflow 1.5 and older reject 1.2.0 command
+  receipts and proofs. So a worktree this version has worked in cannot go back
+  to Agentflow 1.4 or 1.5. A contract that does not use `confirmation` stays
+  1.0.0, but only that file stays readable by them.
+- Agentflow 1.5 and older reject a 1.1.0 execution contract in `doctor` and
+  `build-proof`, but their `run` falls back to advisory defaults and runs
+  high-risk commands with no confirmation. Do not run an older Agentflow in a
+  worktree whose contract sets `confirmation: "bound"`. `verify-proof` reports
+  each such run written under the bound contract: `CRn ran with no bound
+  confirmation under confirmation bound`.
+
 ## [1.5.0] - 2026-11-12
 
 Agentflow 1.5.0 lets a team see which recorded commands a stricter risk

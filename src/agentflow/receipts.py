@@ -8,7 +8,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
-from .artifacts import append_jsonl, read_jsonl, utc_now
+from .artifacts import append_jsonl, ledger_lock_path, read_jsonl, utc_now
 from .contracts import (
     COMMAND_RECEIPTS_SCHEMA_VERSION,
     DEFAULT_COMMAND_TIMEOUT_SECONDS,
@@ -17,10 +17,12 @@ from .contracts import (
     FILE_RECEIPTS_SCHEMA_VERSION,
     RISK_POLICIES,
 )
+from .confirmations import consume_confirmation
 from .hunks import compute_hunks, effective_hunk_policy
 from .execution import (
     attempt_command_lock_path,
     attempt_deadline,
+    confirmation_mode,
     lease_grace_seconds,
     lease_policy,
     execution_contract_sha256,
@@ -76,15 +78,7 @@ def _next_file_receipt_id(root: Path) -> str:
     return f"FR{len(file_receipts(root)) + 1}"
 
 
-def _ledger_lock_path(ledger_path: Path) -> Path:
-    """Sidecar lock file guarding atomic id allocation for one ledger.
-
-    The ``.lockfile`` suffix (not ``.lock``) is deliberate: ``audit_drift``
-    classifies any changed path ending in ``.lock`` as a dependency lockfile,
-    so a ``.lock`` sidecar would emit a false dependency-drift note on every
-    record-command/run in projects that track ``.agent/``.
-    """
-    return ledger_path.parent / f"{ledger_path.name}.lockfile"
+_ledger_lock_path = ledger_lock_path
 
 
 def _contract_policy(root: Path) -> Dict[str, Any]:
@@ -93,6 +87,24 @@ def _contract_policy(root: Path) -> Dict[str, Any]:
     contract = try_load_execution_contract(root) or {}
     policy = contract.get("command_policy", {})
     return policy if isinstance(policy, dict) else {}
+
+
+def _run_policy(root: Path) -> Tuple[str, Dict[str, Any]]:
+    """Confirmation mode and command_policy for ``run``, failing closed (#112).
+
+    Unlike ``_contract_policy``, only a missing contract degrades (to ``self``
+    and advisory defaults): a present contract that cannot be read, or whose
+    confirmation is invalid, must never turn ``bound`` into ``self``.
+    ``confirmation_mode`` also refuses ``bound`` with any other risk_policy, so
+    it cannot look like protection while running high-risk commands unconfirmed.
+    """
+    try:
+        contract = load_execution_contract(root)
+        mode = confirmation_mode(contract)
+    except (OSError, ValueError) as exc:
+        raise ValueError(f"run refused: invalid execution contract: {exc}") from exc
+    policy = (contract or {}).get("command_policy", {})
+    return mode, policy if isinstance(policy, dict) else {}
 
 
 def _receipt_output_paths(root: Path, attempt_id: str, receipt_id: str) -> Tuple[Path, Path]:
@@ -263,6 +275,7 @@ def _apply_confirmation_fields(
     classification: Dict[str, Any],
     confirmed: bool,
     confirmation_source: Optional[str],
+    confirmation_id: Optional[str] = None,
 ) -> None:
     if (
         risk_policy == "require-confirmation"
@@ -271,7 +284,11 @@ def _apply_confirmation_fields(
     ):
         receipt["risk_policy"] = "require-confirmation"
         receipt["confirmed"] = True
-        receipt["confirmation_source"] = confirmation_source or "cli"
+        # #112: a bound run names its confirmation; the source enum stays cli/env.
+        if confirmation_id is not None:
+            receipt["confirmation_id"] = confirmation_id
+        else:
+            receipt["confirmation_source"] = confirmation_source or "cli"
 
 
 def run_command(
@@ -308,10 +325,21 @@ def _run_command(
     require_writable_attempt(
         root, step_id, resolved_attempt, new_work=True, agent_id=agent_id
     )
-    policy = _contract_policy(root)
+    mode, policy = _run_policy(root)
     contract_digest = execution_contract_sha256(root)
     risk_policy = policy.get("risk_policy")
     classification = classify_command(command, plan, step_id, root=root)
+    confirmation_id = block_reason = None
+    if mode == "bound" and classification["level"] == "high":
+        # #112: only a bound confirmation counts (_run_policy guarantees
+        # require-confirmation here); --confirm-risk and the env switch are
+        # ignored. The confirmation is burned (under its own lock, released on
+        # return) before launch, so it authorizes at most one run even if this
+        # crashes.
+        confirmation_id, block_reason = consume_confirmation(
+            root, plan, step_id, resolved_attempt, command, contract_digest
+        )
+        confirmed, confirmation_source = confirmation_id is not None, None
     decision = evaluate_policy(classification["level"], risk_policy, confirmed)
     receipts_path = _command_receipts_path(root)
 
@@ -343,6 +371,8 @@ def _run_command(
                 "risk_policy": risk_policy,
                 "execution_contract_sha256": contract_digest,
             }
+            if block_reason is not None:
+                receipt["confirmation_block_reason"] = block_reason
             append_jsonl(receipts_path, receipt)
         return receipt
 
@@ -420,6 +450,7 @@ def _run_command(
             classification,
             confirmed,
             confirmation_source,
+            confirmation_id,
         )
         if gate:
             receipt["gate"] = gate

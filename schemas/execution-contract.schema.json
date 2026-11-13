@@ -5,7 +5,7 @@
   "type": "object",
   "required": ["schema_version", "contract_type", "root", "shell", "agent_interface", "concurrency", "command_policy", "proof_policy"],
   "properties": {
-    "schema_version": { "type": "string", "pattern": "^1\\.0\\.0$" },
+    "schema_version": { "type": "string", "pattern": "^1\\.[01]\\.0$" },
     "contract_type": { "const": "agentflow_execution_contract" },
     "root": { "type": "string" },
     "shell": {
@@ -47,6 +47,7 @@
         "capture_stderr": { "type": "boolean" },
         "receipt_store": { "enum": ["by_attempt", "content_addressed"] },
         "risk_policy": { "enum": ["block", "require-confirmation", "warn"] },
+        "confirmation": { "enum": ["self", "bound"] },
         "command_timeout_seconds": { "type": "integer", "minimum": 1 }
       },
       "additionalProperties": true
