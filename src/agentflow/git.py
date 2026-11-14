@@ -226,22 +226,24 @@ def _records_since(root: Path, tree: str) -> List[Dict[str, str]]:
     the same whether or not it is committed, and both paths face scope checks.
     Options that configuration could use to hide a change are pinned.
     """
-    code, stdout, stderr = run_git(
-        root,
-        [
-            "diff", "--no-ext-diff", "--no-relative", "--no-renames",
-            "--ignore-submodules=none", "--name-status", "-z", tree, "--",
-        ],
-    )
-    if code != 0:
-        raise RuntimeError(stderr or "git diff failed")
     records: Dict[str, Dict[str, str]] = {}
-    fields = stdout.split("\0")
-    for status, path in zip(fields[0::2], fields[1::2]):
-        if not status:
-            continue
-        kind = {"A": "added", "D": "deleted"}.get(status[0], "modified")
-        records[path] = {"path": path, "previous_path": "", "status": status, "change_kind": kind}
+    # Include index-only edits; prefer the working-tree kind for receipts and hunks.
+    for index_flags in (["--cached"], []):
+        code, stdout, stderr = run_git(
+            root,
+            [
+                "diff", "--no-ext-diff", "--no-relative", "--no-renames",
+                "--ignore-submodules=none", "--name-status", "-z", *index_flags, tree, "--",
+            ],
+        )
+        if code != 0:
+            raise RuntimeError(stderr or "git diff failed")
+        fields = stdout.split("\0")
+        for status, path in zip(fields[0::2], fields[1::2]):
+            if not status:
+                continue
+            kind = {"A": "added", "D": "deleted"}.get(status[0], "modified")
+            records[path] = {"path": path, "previous_path": "", "status": status, "change_kind": kind}
     code, stdout, stderr = run_git(
         root, ["ls-files", "--others", "--exclude-standard", "--full-name", "-z", "--", ":/"]
     )

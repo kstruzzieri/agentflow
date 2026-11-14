@@ -223,6 +223,39 @@ class CommittedDriftTests(unittest.TestCase):
             self.assertEqual([hunk["path"] for hunk in drift["unmapped_hunks"]], ["src/app.txt"])
             self.assertEqual(verify_run(root, task_plan, record=False)["status"], "failed")
 
+    def test_index_only_changes_fail_drift_checks(self) -> None:
+        for base_ref in (None, "HEAD"):
+            for kind in ("added", "modified", "deleted"):
+                with self.subTest(base_ref=base_ref, kind=kind), tempfile.TemporaryDirectory() as tmp:
+                    root = seeded_repo(tmp)
+                    path = root / "stray.txt"
+                    if kind != "added":
+                        path.write_text("seed\n", encoding="utf-8")
+                        commit_all(root, "seed stray")
+                    task_plan = start_run(root)
+                    claim_step(root, task_plan, "P1", "agent-a")
+                    edit_line(root, "src/app.txt", 1, "RECORDED")
+                    finish_step(root, "P1", "A1", ["src/app.txt"])
+                    commit_all(root, "recorded work")
+
+                    if kind == "deleted":
+                        git(root, "rm", "stray.txt")
+                    else:
+                        path.write_text("staged only\n", encoding="utf-8")
+                        git(root, "add", "stray.txt")
+                    if kind == "added":
+                        path.unlink()
+                    else:
+                        path.write_text("seed\n", encoding="utf-8")
+
+                    with comparison_snapshot(base_ref=base_ref):
+                        drift = audit_drift(root, task_plan)
+                        result = verify_run(root, task_plan, record=False)
+                    self.assertEqual(drift["status"], "fail", drift)
+                    self.assertIn("stray.txt", drift["out_of_scope_files"])
+                    self.assertEqual(result["status"], "failed", result)
+                    self.assertIn("changed file is not mapped to a step receipt: stray.txt", messages(result))
+
     def test_two_step_adjacent_committed_edits_pass(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = seeded_repo(tmp)
