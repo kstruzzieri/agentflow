@@ -39,8 +39,10 @@ on the moment a plan is locked.
 `build-proof` is part of the chain on purpose: the common "proof not generated
 yet" state is fixed *inside the hook run*, and `verify-proof` then passes. The
 hook only blocks on genuine "work not done" states — incomplete step coverage
-(`verify-run`) or source that changed since the receipts were recorded
-(`verify-proof`). Re-running the hook with a satisfied contract is idempotent and
+or an uncommitted change with no receipt (`verify-run`), or proof files that no
+longer match their recorded checksums (`verify-proof`). `verify-run` reads
+changed files from `git status`, so edits committed before the hook runs are
+not compared with receipts (#139). Re-running the hook with a satisfied contract is idempotent and
 stays green: it calls `verify-run --no-record`, so repeated stop attempts do not
 append to `.agent/verification-runs.jsonl` (the agent's own loop run is the one
 that records).

@@ -38,8 +38,8 @@ workflow records the contract, evidence, drift checks, and proof.
 
 ## Execution Artifacts
 
-Agentflow v0.3 adds optional execution artifacts. They are present when a task
-uses `agentflow init-execution`.
+Execution artifacts are optional. They are present when a task uses
+`agentflow init-execution`.
 
 - `.agent/execution.contract.json`: shell-runtime policy for the task.
 - `.agent/step-runs.jsonl`: step claim, progress, verification, completion,
@@ -575,6 +575,18 @@ summary, `verify-proof` rehashes its source ledger and artifacts, and
 resolves, and `build-proof`/`verify-proof` surface and re-hash the review
 evidence.
 
+## Inspecting a run
+
+These commands read state and write nothing:
+
+- `agentflow status`: where the run stands.
+- `agentflow validate-plan .agent/plan.lock.json`: check a plan before locking
+  it. A freshly initialized plan is a blank template and fails until it is
+  filled in.
+- `agentflow runtime-status --json`: the runtime configuration and its
+  findings. It is safe by default: configured commands are not spawned unless
+  `--probe` is passed.
+
 ## Plan Lock Rules
 
 - Scope must be concrete enough to validate.
@@ -582,6 +594,21 @@ evidence.
 - Every plan step must list files, expected diff, validation, and evidence.
 - New facts that invalidate the plan require an amendment.
 - Dependency churn, test weakening, and architecture drift must be declared.
+
+`lock-plan` validates the plan and stamps it as locked. To change a locked
+plan, record the reason, edit the plan, and lock it again:
+
+```bash
+agentflow amend-plan --id AM1 --reason "Scope grew: also update the changelog" \
+  --changed-scope "add CHANGELOG.md to allowed_files"
+# edit .agent/plan.lock.json
+agentflow lock-plan .agent/plan.lock.json
+```
+
+`amend-plan` appends the amendment to `.agent/amendments.jsonl`; it does not
+edit the plan for you. Agentflow does not yet detect a plan edit made without
+an amendment while the run is in progress (#138). Once `build-proof` has run,
+any plan edit fails `verify-proof`.
 
 ## Evidence Rules
 
@@ -610,7 +637,13 @@ knob in the execution contract governs severity: `enforce` (default when a
 contract exists) fails drift, `observe` produces a warning without blocking,
 and `off` disables hunk checks entirely. Legacy receipts without a `hunks` key
 fall back to whole-file coverage and are never flagged. Binary and unparseable
-files also fall back to whole-file coverage at verify-run time.
+files also fall back to whole-file coverage at verify-run time. File receipts store
+only hashes, spans, and counts, never raw changed-line text. Command receipts
+keep captured output under `.agent/receipts/`.
+
+Drift checks read changed files from `git status`, so they cover uncommitted
+changes only. Run `audit-drift` and `verify-run` before committing the work
+(#139).
 
 ## Completion Rule
 

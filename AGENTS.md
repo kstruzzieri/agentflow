@@ -18,7 +18,7 @@ Use Agentflow for planned software work in this repository.
 ## Agentflow Setup
 
 Agentflow is installed from this source checkout, not from a published package.
-See `README.md` for the supported install paths:
+See `CONTRIBUTING.md` for the supported install paths:
 
 - `uv tool install --editable /path/to/agentflow`
 - `pipx install --editable /path/to/agentflow`

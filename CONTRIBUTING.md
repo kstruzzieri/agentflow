@@ -11,11 +11,46 @@ the repository, then either run directly from the source tree:
 PYTHONPATH=src python3 -m agentflow --version
 ```
 
-or install the checkout into an isolated tool environment:
+or install the checkout so the `agentflow` command runs your local code.
+Replace `/path/to/agentflow` with the repository's absolute path. The `uv tool`
+and `pipx` options make `agentflow` available outside the repository when their
+bin directory is on `PATH`:
 
 ```bash
 uv tool install --editable /path/to/agentflow
 ```
+
+```bash
+pipx install --editable /path/to/agentflow
+```
+
+The `pip` option makes it available while that Python environment is active:
+
+```bash
+python3 -m pip install -e .
+```
+
+To test a locally built wheel without publishing it:
+
+```bash
+python3 -m pip install dist/agentflow_proof-*.whl
+```
+
+After any install that exposes the console script, check it:
+
+```bash
+agentflow --version
+agentflow --help
+```
+
+To run from the source tree while working in another directory:
+
+```bash
+PYTHONPATH=/path/to/agentflow/src python3 -m agentflow --version
+```
+
+Supported platforms are listed in
+[docs/stability.md](docs/stability.md#platform-support).
 
 ## Making a Change
 

@@ -18,7 +18,8 @@ a proof pack that a third party can verify later without trusting the agent.
 The product promise is that **a proof verifies later**. Most invariants below
 exist to protect that one sentence.
 
-- [`README.md`](../../README.md) — install paths and quick start.
+- [`README.md`](../../README.md) — what Agentflow is and how to install it.
+- [`docs/quickstart.md`](../quickstart.md) — a first run, start to verified proof.
 - [`docs/agent-workflow.md`](../agent-workflow.md) — the workflow contract.
 - [`docs/roadmap.md`](../roadmap.md) — what exists today.
 

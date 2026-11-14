@@ -146,6 +146,8 @@ Single-writer lease enforcement deliberately does **not**:
   still rejects any other writer model.
 - Provide remote or cloud agent orchestration or routing.
 - Do cross-worktree / cross-tree attempt-id aggregation or ledger merge — that is
-  [#30](https://github.com/kstruzzieri/agentflow/issues/30) and stays a separate,
-  deferred item. Leases coordinate agents inside **one** shared worktree only.
+  a separate feature, `aggregate-ledgers`
+  ([#30](https://github.com/kstruzzieri/agentflow/issues/30); see
+  [`examples/aggregation/`](../examples/aggregation/)). Leases coordinate agents
+  inside **one** shared worktree only.
 - Run any distributed lock service, daemon, or network coordinator.

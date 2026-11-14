@@ -320,6 +320,9 @@ class PublicProjectContractTests(unittest.TestCase):
             "CONTRIBUTING.md",
             "CODE_OF_CONDUCT.md",
             "docs/security-model.md",
+            "docs/README.md",
+            "docs/quickstart.md",
+            "docs/ci-proof-gate.md",
             ".github/pull_request_template.md",
         )
         for relative_path in documents:
@@ -337,6 +340,127 @@ class PublicProjectContractTests(unittest.TestCase):
                     resolved.exists(),
                     f"{relative_path} links to missing local target {target}",
                 )
+
+    def test_readme_repository_links_resolve(self) -> None:
+        readme = (ROOT / "README.md").read_text(encoding="utf-8")
+        targets = re.findall(
+            r"https://github\.com/kstruzzieri/agentflow/(?:blob|tree)/main/([^\s)\"#]+)",
+            readme,
+        ) + re.findall(
+            r"https://raw\.githubusercontent\.com/kstruzzieri/agentflow/main/([^\s)\"#]+)",
+            readme,
+        )
+        self.assertGreaterEqual(len(targets), 20)
+        for target in targets:
+            self.assertTrue(
+                (ROOT / target).exists(), f"README links to missing {target}"
+            )
+
+    def test_readme_uses_absolute_links_only(self) -> None:
+        # PyPI renders this README too, and it cannot resolve relative paths.
+        readme = (ROOT / "README.md").read_text(encoding="utf-8")
+        self.assertEqual(re.findall(r"\]\((?!https://)[^)]*\)", readme), [])
+        self.assertEqual(
+            re.findall(r"(?m)^ {0,3}\[[^\]]+\]:\s*(?!https://)\S+", readme), []
+        )
+        self.assertEqual(
+            re.findall(r"""(?:src|srcset|href)=["'](?!https://)[^"']*["']""", readme),
+            [],
+        )
+
+    def test_readme_reference_links_are_defined_and_track_main(self) -> None:
+        readme = (ROOT / "README.md").read_text(encoding="utf-8")
+        # A mistyped label renders as literal brackets on GitHub and PyPI.
+        self.assertEqual(
+            set(re.findall(r"\]\[([^\]]+)\]", readme)),
+            set(re.findall(r"(?m)^\[([^\]]+)\]:", readme)),
+        )
+        self.assertEqual(
+            set(
+                re.findall(
+                    r"github\.com/kstruzzieri/agentflow/(?:blob|tree)/([^/\s]+)/", readme
+                )
+            ),
+            {"main"},
+        )
+
+    def test_readme_stays_a_landing_page_with_the_brand_badge(self) -> None:
+        readme = (ROOT / "README.md").read_text(encoding="utf-8")
+        self.assertLessEqual(len(readme.splitlines()), 165)
+        # The header keeps the brand badge; it is part of the settled identity.
+        self.assertIn(
+            "https://raw.githubusercontent.com/kstruzzieri/agentflow/main/"
+            "docs/branding/agentflow-badge.svg",
+            readme,
+        )
+
+    def test_docs_index_links_every_guide(self) -> None:
+        index = (ROOT / "docs/README.md").read_text(encoding="utf-8")
+        linked = set(re.findall(r"\]\(([a-z0-9-]+\.md)\)", index))
+        guides = {path.name for path in (ROOT / "docs").glob("*.md")} - {"README.md"}
+        self.assertEqual(
+            guides - linked, set(), "guides missing from docs/README.md"
+        )
+
+    def test_reference_content_moved_out_of_the_readme_has_a_home(self) -> None:
+        stability = (ROOT / "docs/stability.md").read_text(encoding="utf-8")
+        self.assertIn("\n## Platform support\n", stability)
+        for required in ("3.11", "3.12", "3.13", "best effort", "hooks/stop-gate.sh"):
+            self.assertIn(required, stability)
+        contributing = (ROOT / "CONTRIBUTING.md").read_text(encoding="utf-8")
+        for required in (
+            "pipx install --editable",
+            "python3 -m pip install -e .",
+            "PYTHONPATH=/path/to/agentflow/src",
+            "python3 -m pip install dist/agentflow_proof-*.whl",
+        ):
+            self.assertIn(required, contributing)
+        # Guides describe what exists now; release history lives in the changelog.
+        for relative in ("README.md", "CLAUDE.md", "AGENTS.md", "docs/agent-workflow.md"):
+            text = (ROOT / relative).read_text(encoding="utf-8")
+            self.assertIsNone(
+                re.search(r"Agentflow v0\.\d|from `v0\.\d", text), relative
+            )
+        for relative in ("CLAUDE.md", "AGENTS.md"):
+            flat = " ".join((ROOT / relative).read_text(encoding="utf-8").split())
+            self.assertIn(
+                "See `CONTRIBUTING.md` for the supported install paths", flat
+            )
+
+    def test_known_enforcement_limits_are_documented(self) -> None:
+        # Issues 138 and 139. Drop an assertion here only together with its fix.
+        def flat(relative: str) -> str:
+            return " ".join((ROOT / relative).read_text(encoding="utf-8").split())
+
+        model = flat("docs/security-model.md")
+        self.assertIn("uncommitted changes", model)
+        self.assertIn("without an amendment", model)
+        self.assertIn("uncommitted changes", flat("README.md"))
+        self.assertIn("local by default", flat("README.md"))
+        quickstart = flat("docs/quickstart.md")
+        self.assertIn(".gitignore", quickstart)
+        self.assertIn("verify-proof --strict", quickstart)
+        self.assertIn("plain checkout", flat("docs/ci-proof-gate.md"))
+        workflow = flat("docs/agent-workflow.md")
+        self.assertIn("amend-plan", workflow)
+        self.assertIn("File receipts store only", workflow)
+
+    def test_guides_do_not_repeat_retired_claims(self) -> None:
+        def flat(relative: str) -> str:
+            return " ".join((ROOT / relative).read_text(encoding="utf-8").split())
+
+        # verify-proof checks proof files, not working files (see issue 139).
+        self.assertNotIn(
+            "since the receipts were recorded (`verify-proof`)", flat("docs/stop-hook.md")
+        )
+        # Cross-worktree aggregation shipped as `aggregate-ledgers`.
+        leases = flat("docs/single-writer-leases.md")
+        self.assertNotIn("deferred item", leases)
+        self.assertIn("aggregate-ledgers", leases)
+        # The README no longer carries source-install paths or a quick start.
+        context = flat("docs/ai/PROJECT-CONTEXT.md")
+        self.assertNotIn("install paths and quick start", context)
+        self.assertIn("quickstart.md", context)
 
 
 if __name__ == "__main__":
