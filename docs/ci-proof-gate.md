@@ -57,7 +57,11 @@ agentflow verify-proof --root "$PROOF_ROOT" \
 ```
 
 A setting below its floor fails with `policy_below_floor`, and so does a proof
-with no execution contract. Keep the floor in CI configuration the agent cannot
+with no execution contract. New contracts default to `review_gate: warn`, so a
+proof built with the defaults, such as the [Quickstart](quickstart.md)'s, fails
+`review_gate=block`. To meet that floor, set `proof_policy.review_gate` to
+`block` in `.agent/execution.contract.json` right after `init-execution`,
+before the run starts. Keep the floor in CI configuration the agent cannot
 change. The [Changelog](../CHANGELOG.md) lists the keys, and passing an unknown
 key prints the valid ones.
 

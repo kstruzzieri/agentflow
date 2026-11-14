@@ -47,7 +47,7 @@ agentflow --help                  # is the CLI runnable?
 
 When the console script is not installed, the supported fallback is
 `PYTHONPATH=src python3 -m agentflow` from an Agentflow checkout (see
-[README.md](../README.md) for install paths). Treat a failing version probe
+[CONTRIBUTING.md](../CONTRIBUTING.md) for install paths). Treat a failing version probe
 as "Agentflow unavailable", not as a reason to reimplement any part of the
 loop.
 

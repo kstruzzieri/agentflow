@@ -32,7 +32,8 @@ It is for developers and teams who want reviewable evidence of what an agent
 changed, not its word for it.
 
 - **Runs locally.** Python 3.11+ standard library only; no service, no account.
-- **Any agent that can run shell commands.** It is a CLI and an MCP server, not a framework.
+- **Any agent that can run shell commands.** It is a CLI and an MCP server (Model
+  Context Protocol, a standard way for agents to call tools), not a framework.
 - **Plain local files.** Plans, receipts, and proofs are JSON and Markdown you can read and diff.
 
 ## Install
@@ -43,10 +44,9 @@ python3 -m pip install agentflow-proof
 
 The package is `agentflow-proof` on PyPI (plain `agentflow` there is an
 unrelated project). It installs two commands, `agentflow` and `agentflow-mcp`.
-If pip reports an externally managed environment, use
-`pipx install agentflow-proof` or a virtual environment.
-Linux and macOS are supported; Windows is best effort
-([platform support][platform]).
+If pip reports an externally managed environment, use `pipx install agentflow-proof`
+or a virtual environment. Linux and macOS are supported; Windows is best
+effort ([platform support][platform]).
 
 **Next: run the [Quickstart][quickstart]**, a first proof in an empty
 repository in about two minutes.
@@ -64,7 +64,7 @@ plan, with placeholders; the Quickstart has the runnable version.
 agentflow init                            # create .agent/ with a blank plan
 # fill in the plan: objective, scope, allowed files, steps, checks
 agentflow lock-plan .agent/plan.lock.json # validate and lock it
-agentflow init-execution                  # open the run's ledgers
+agentflow init-execution                  # open the ledgers, the run's JSONL logs
 agentflow claim-step P1 --agent "$USER"   # take a step
 # ...the agent edits files here...
 agentflow run --step P1 --gate "<check>" -- <command>   # run a check, keep the receipt
@@ -104,29 +104,29 @@ checksums the proof recorded. The proof stays local by default;
 - **Stop hook.** Once wired into your agent runtime, it blocks a session from
   finishing until the proof passes. See [Stop hook][stop-hook].
 - **CI gate.** Verify the proof in GitHub Actions and let CI, not the agent,
-  set the minimum policy. See [CI proof gate][ci-gate].
+  set the minimum policy, how strict a run must be. See [CI proof gate][ci-gate].
 
 ## What it covers
 
 - [Locked plans and amendments][workflow]: scope, allowed files, and steps are
   set up front, and `amend-plan` records a change to them.
-- [Receipts down to the diff hunk][workflow]: each edit in an allowed file must
-  trace to a step.
+- [Receipts down to the diff hunk][workflow]: each changed block of lines (a
+  diff hunk) in an allowed file must trace to a step.
 - [Command risk screening][command-risk]: commands like `rm -rf` or `curl | sh`
   are flagged, held for confirmation, or blocked before they run.
-- [Proof packs][artifacts] with a static HTML report (`agentflow view-proof --html`).
-- [Single-writer leases][leases] and [proof aggregation][aggregation] across worktrees.
+- [Proof packs][artifacts] with a [static HTML report][workflow] (`agentflow view-proof --html`).
+- [Single-writer leases][leases] (one agent writes to a step at a time) and
+  [proof aggregation][aggregation] across Git worktrees (checkouts of one repository).
 - [Workflow packs][packs]: reusable policy, workflow recommendations, and draft plans.
 
-Agentflow records and checks; it is not a sandbox, and its proofs are checksum
-based tamper evidence, not signatures. The [Security model][security] says
+Agentflow records and checks; it is not a sandbox, and its proofs are
+checksum-based tamper evidence, not signatures. The [Security model][security] says
 what is guaranteed and what is left to you.
 
 ## Documentation
 
-[Quickstart][quickstart] · [Agent workflow][workflow] ·
-[Security model][security] · [Stability and compatibility][stability] ·
-[Examples][examples] · [All docs][docs]
+[Quickstart][quickstart] · [Agent workflow][workflow] · [Security model][security] ·
+[Stability and compatibility][stability] · [Examples][examples] · [All docs][docs]
 
 ## Project status
 

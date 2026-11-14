@@ -77,8 +77,26 @@ class QuickstartGuideTests(unittest.TestCase):
     def test_quickstart_runs_verbatim_to_a_verified_proof(self) -> None:
         text = (REPO_ROOT / "docs/quickstart.md").read_text(encoding="utf-8")
         self.assertIn("POSIX", text)
-        # Every bash block, in page order, is the script a reader pastes.
-        script = "\n".join(re.findall(r"```bash\n(.*?)```", text, flags=re.S))
+        # The fence info string says what each block is (the comment at the
+        # top of the page says the same): `bash` runs in page order,
+        # `bash expect-fail` runs and must exit non-zero, `sh` is shown but
+        # never run, and `text` is output the run must print.
+        blocks = re.findall(r"```([^\n`]*)\n(.*?)```", text, flags=re.S)
+        self.assertLessEqual(
+            {info for info, _ in blocks}, {"bash", "bash expect-fail", "sh", "text"}
+        )
+        parts = []
+        for info, body in blocks:
+            if info == "bash":
+                parts.append(body)
+            elif info == "bash expect-fail":
+                # One command, so its own exit status is the one tested.
+                self.assertEqual(len(body.strip().splitlines()), 1, body)
+                parts.append(
+                    f"if {body.strip()}; then\n  echo 'unexpected success'; exit 1\nfi\n"
+                )
+        self.assertIn("bash expect-fail", {info for info, _ in blocks})
+        script = "\n".join(parts)
         # The page is executed below: it must never install from the network.
         self.assertNotIn("pip", script)
         with tempfile.TemporaryDirectory() as tmp:
@@ -121,6 +139,7 @@ class QuickstartGuideTests(unittest.TestCase):
         samples = "\n".join(re.findall(r"```text\n(.*?)```", text, flags=re.S))
         self.assertIn("verify-proof ok", samples)
         self.assertIn("proof verified", samples)
+        self.assertIn("error: out-of-scope changed file: extra.txt", samples)
         for line in samples.splitlines():
             self.assertIn(line, result.stdout)
 
