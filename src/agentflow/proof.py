@@ -465,9 +465,14 @@ def verify_proof_checks(proof: Dict[str, Any], strict: bool = False) -> List[Dic
         message = check.get("message", status)
         if status == "failed":
             findings.append({"severity": "error", "message": f"{check_id}: {message}"})
+        elif status == "warning" and strict:
+            # #140: say a warning failed because of --strict, not "error: ...: warning".
+            text = f"{check_id} (warning, fails under --strict)"
+            if check.get("message"):
+                text += f": {check['message']}"
+            findings.append({"severity": "error", "message": text})
         elif status == "warning":
-            severity = "error" if strict else "warning"
-            findings.append({"severity": severity, "message": f"{check_id}: {message}"})
+            findings.append({"severity": "warning", "message": f"{check_id}: {message}"})
     return findings
 
 

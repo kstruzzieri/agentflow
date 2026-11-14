@@ -2831,7 +2831,7 @@ class TestPolicyFloorRatchet(unittest.TestCase):
             porcelain.finish_run(root, plan)
             action = porcelain.next_action(root)
             self.assertEqual(action.state, "proof_failing")
-            self.assertIn("steps_without_support: warning", action.diagnostics)
+            self.assertIn("steps_without_support (warning, fails under --strict)", action.diagnostics)
 
     def test_publication_failure_is_a_normal_stop_for_finish_run_and_mcp(self):
         from agentflow import proof as proof_module

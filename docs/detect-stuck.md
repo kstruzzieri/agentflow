@@ -8,7 +8,11 @@ read-only and writes nothing.
 
 - `repeated_command_failure` — the same command (argv + gate + cwd) fails N or
   more times within one `(step_id, attempt_id)` with no successful run in
-  between. Default N = 3.
+  between. Default N = 3. A command refused before it launched (receipt
+  `decision: "blocked"`, for example a high-risk command under
+  `risk_policy: "block"` or one with no bound confirmation under
+  `command_policy.confirmation: "bound"`) never ran, so it is not counted as a
+  failure and does not reset the count either.
 - `repeated_verify_failure` — M or more consecutive step-scope verification
   failures within one `(step_id, attempt_id)` with no file-change receipt
   landing between the first and last failure. Default M = 2.

@@ -122,6 +122,32 @@ class RepeatedCommandFailureTests(unittest.TestCase):
             self.assertEqual(finding["last_event"]["record_id"], "CR3")
             self.assertIn("no change in outcome", finding["message"])
 
+    def test_commands_refused_before_launch_are_not_failed_attempts(self) -> None:
+        # #140: a bound-confirmation refusal never ran, so it is not a failure.
+        refused = {"decision": "blocked", "confirmation_block_reason": "confirmation_missing"}
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            _write(root, "command-receipts", [
+                _cmd(f"CR{n}", "A1", f"2026-06-30T10:0{n}:00+00:00", None,
+                     ["rm", "-rf", "build"], **refused)
+                for n in range(1, 5)
+            ])
+            self.assertEqual(detect_stuck(root)["status"], "ok")
+
+    def test_refusal_between_failures_neither_counts_nor_resets(self) -> None:
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            _write(root, "command-receipts", [
+                _cmd("CR1", "A1", "2026-06-30T10:00:00+00:00", 1, ["make"]),
+                _cmd("CR2", "A1", "2026-06-30T10:01:00+00:00", None, ["make"],
+                     decision="blocked"),
+                _cmd("CR3", "A1", "2026-06-30T10:02:00+00:00", 1, ["make"]),
+                _cmd("CR4", "A1", "2026-06-30T10:03:00+00:00", 1, ["make"]),
+            ])
+            findings = detect_stuck(root)["findings"]
+            self.assertEqual(len(findings), 1)
+            self.assertEqual(findings[0]["evidence"]["receipt_ids"], ["CR1", "CR3", "CR4"])
+
     def test_success_interleave_resets_and_does_not_fire(self) -> None:
         with TemporaryDirectory() as tmp:
             root = Path(tmp)

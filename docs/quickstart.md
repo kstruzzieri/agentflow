@@ -205,7 +205,8 @@ Everything is in `.agent/`, as plain JSON and Markdown:
 
 Captured command output is stored there too, under `.agent/receipts/`. In your
 own repository, add `.agent/` to `.gitignore` and commit that before you start
-a run, unless you mean to publish proofs.
+a run, unless you mean to publish proofs. Until you do, `agentflow init` and
+`agentflow doctor` print a reminder.
 [Agent artifacts](agent-artifacts.md) covers what to commit and what to keep
 local.
 
