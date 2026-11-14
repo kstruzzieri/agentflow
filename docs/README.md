@@ -60,5 +60,8 @@ New here? Start with the [Quickstart](quickstart.md).
 - [Changelog](../CHANGELOG.md): every release.
 - [Examples](../examples/): copyable CI, MCP client, workflow pack, and
   aggregation setups.
+- [AI reviewer context](ai/PROJECT-CONTEXT.md): orientation, finding schema,
+  severity rubric, and review prompts for automated reviewers of this
+  repository.
 - [Branding](branding/README.md): logo files and usage, with a visual
   [brand guide](branding/brand-guide.html).

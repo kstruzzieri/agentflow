@@ -18,8 +18,9 @@ details are not APIs unless this page says otherwise.
 | Distribution and console scripts | SemVer-supported | The PyPI distribution may be `agentflow` or the fallback `agentflow-proof`; installed `agentflow` and `agentflow-mcp` console-script names do not change. |
 | Python internals | Internal | Modules, imports, functions, classes, constants, signatures, and package layout may change without deprecation. Use the CLI or MCP interface. |
 
-Before 1.0, compatibility-breaking corrections may still occur and are called
-out in release notes. The table is the contract that 1.0 freezes.
+Agentflow 1.0.0 (2026-10-04) froze this table as the contract. A change that
+breaks it waits for a major release, except for the security and
+data-integrity cases in the [deprecation policy](#deprecation-policy).
 
 ## Platform support
 

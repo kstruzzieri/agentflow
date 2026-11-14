@@ -1,10 +1,20 @@
+<!--
+This page is a test (tests/test_examples.py, QuickstartGuideTests). The fence
+info string says what each code block is:
+- bash: run in page order under `sh -e`.
+- bash expect-fail: one command, run in order; it must exit non-zero.
+- sh: shown to the reader, never run (for example, installing from PyPI).
+- text: output that the run must print, line by line.
+Any other fence fails the test.
+-->
+
 # Quickstart
 
 This walk-through takes an empty repository to a verified proof in about two
 minutes. You type every command yourself here so you can see each part. In real
 use, your coding agent runs them.
 
-The test suite runs the commands in steps 1 to 5, in order, and compares the
+The test suite runs the commands in steps 1 to 6, in order, and compares the
 sample output shown here with what the tool prints.
 
 ## Before you start
@@ -86,7 +96,9 @@ repository would itself be a change that no step covers.
 
 ## 3. Do the work
 
-Open the run, take step `P1`, make the edit, and tell Agentflow about it.
+Open the run, take step `P1`, make the edit, and tell Agentflow about it. The
+name after `--agent` is any label for who took the step; Agentflow records it
+in the step's run record.
 
 ```bash
 agentflow init-execution
@@ -137,14 +149,49 @@ validation gates: 1 run by agentflow
 proof verified
 ```
 
-The warning is expected here: the plan cites no evidence for its step. Real
-plans record evidence first. `agentflow verify-proof --strict` treats the
+The warning is expected here: the plan cites no evidence for its step.
+Evidence is a claim backed by a source, such as a file, a command, or a test,
+saved with `agentflow record-evidence`. Real plans record evidence first. `agentflow verify-proof --strict` treats the
 warning as a failure, so this demo proof does not pass strict verification.
 
 `verify-proof` checks the proof files against the checksums recorded in the
 proof. It does not look at your working files. `verify-run` and `audit-drift`
 do: they compare your uncommitted changes with the receipts, so run them
 before you commit.
+
+## 6. See Agentflow catch a change
+
+Make an edit that no step recorded, then check the run:
+
+```bash
+echo extra > extra.txt
+```
+
+```bash expect-fail
+agentflow verify-run --no-record
+```
+
+```text
+verify-run failed
+error: out-of-scope changed file: extra.txt
+error: changed file is not mapped to a step receipt: extra.txt
+```
+
+`verify-run` exits non-zero and names the file twice: `extra.txt` is outside
+the plan's `allowed_files`, and no receipt ties it to a step. `--no-record`
+checks without adding an entry to `.agent/verification-runs.jsonl`, so the
+proof you built still verifies.
+
+Delete the file and the run passes again:
+
+```bash
+rm extra.txt
+agentflow verify-run --no-record
+```
+
+```text
+verify-run passed
+```
 
 ## What you have now
 

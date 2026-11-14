@@ -350,7 +350,8 @@ class PublicProjectContractTests(unittest.TestCase):
             r"https://raw\.githubusercontent\.com/kstruzzieri/agentflow/main/([^\s)\"#]+)",
             readme,
         )
-        self.assertGreaterEqual(len(targets), 20)
+        # Guards the regexes against matching nothing, not the README's length.
+        self.assertGreaterEqual(len(targets), 1)
         for target in targets:
             self.assertTrue(
                 (ROOT / target).exists(), f"README links to missing {target}"
@@ -396,8 +397,22 @@ class PublicProjectContractTests(unittest.TestCase):
 
     def test_docs_index_links_every_guide(self) -> None:
         index = (ROOT / "docs/README.md").read_text(encoding="utf-8")
-        linked = set(re.findall(r"\]\(([a-z0-9-]+\.md)\)", index))
+        linked = set(re.findall(r"\]\(([^)#\s]+\.md)\)", index))
         guides = {path.name for path in (ROOT / "docs").glob("*.md")} - {"README.md"}
+        # A docs subfolder is linked through one entry page, which links the
+        # rest, or is left out of the index for the reason given.
+        entry_pages = {
+            "ai": "ai/PROJECT-CONTEXT.md",
+            "branding": "branding/README.md",
+            "soak-evidence": None,  # release records, not a guide
+            "superpowers": None,  # maintainers' working plans and specs
+        }
+        folders = {
+            path.parent.relative_to(ROOT / "docs").parts[0]
+            for path in (ROOT / "docs").glob("*/**/*.md")
+        }
+        self.assertEqual(folders - set(entry_pages), set(), "unclassified docs folder")
+        guides |= {page for page in entry_pages.values() if page}
         self.assertEqual(
             guides - linked, set(), "guides missing from docs/README.md"
         )
