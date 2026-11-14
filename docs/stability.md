@@ -84,6 +84,15 @@ and a 1.0.0 contract that carries it is rejected. `.agent/command-confirmations.
 is a new ledger (schema 1.0.0, same major). Command receipts are 1.2.0 and
 proof packs 1.2.0. `confirm-command` is CLI-only and has no MCP tool.
 
+## Run baseline
+
+`init-execution` writes `.agent/run-anchors.jsonl`, a new ledger (schema 1.0.0,
+same major) with one row naming the commit the run starts from (#139). File
+receipts 1.2.0 add `hunk_base_commit`; drift reports and verification runs
+1.2.0 add `baseline`. `verify-run`, `audit-drift` and `finish-run` accept
+`--base-ref`, and their MCP tools accept `base_ref`. The execution contract and
+proof pack schemas are unchanged.
+
 ## MCP contract
 
 The supported tool names and arguments are:
@@ -99,14 +108,14 @@ The supported tool names and arguments are:
 | `renew_lease` | `step`, `agent`; optional `attempt`, `minutes`, `root` |
 | `complete_step` | `step`; optional `attempt`, `agent`, `root` |
 | `verify_step` | `step`; optional `attempt`, `agent`, `strict`, `replay`, `root` |
-| `verify_run` | optional `strict`, `record`, `root` |
-| `audit_drift` | optional `plan`, `root` |
+| `verify_run` | optional `strict`, `record`, `base_ref`, `root` |
+| `audit_drift` | optional `plan`, `base_ref`, `root` |
 | `build_proof` | optional `strict`, `root` |
 | `verify_proof` | optional `replay`, `strict`, `require`, `root` |
 | `record_review` | `manifest`; optional `emit_evidence`, `root` |
 | `next_action` | optional `strict`, `root` |
 | `finish_step` | `step`; optional `attempt`, `agent`, `strict`, `replay`, `root` |
-| `finish_run` | optional `plan`, `strict`, `root` |
+| `finish_run` | optional `plan`, `strict`, `base_ref`, `root` |
 
 Every tool result uses the MCP content envelope plus structured fields
 `exit_code`, `stdout`, and `stderr`; when stdout is valid JSON, `data` contains

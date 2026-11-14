@@ -170,6 +170,17 @@ class RegistryTests(unittest.TestCase):
             ["verify-proof", "--root", ".", "--strict"],
         )
 
+    def test_drift_tools_forward_base_ref(self) -> None:
+        # #139: CI and agents can name the comparison base through MCP too.
+        for name in ("verify_run", "audit_drift", "finish_run"):
+            with self.subTest(tool=name):
+                tool = m.TOOLS_BY_NAME[name]
+                self.assertIn("base_ref", tool.input_schema["properties"])
+                argv = tool.argv({"root": ".", "base_ref": "origin/main"})
+                self.assertEqual(argv[-1], "--base-ref=origin/main")
+                self.assertEqual(m.cli.build_parser().parse_args(argv).base_ref, "origin/main")
+                self.assertNotIn("--base-ref", " ".join(tool.argv({"root": "."})))
+
     def test_verify_proof_tool_exposes_strict_input(self) -> None:
         schema = m.TOOLS_BY_NAME["verify_proof"].input_schema
         self.assertIn("strict", schema["properties"])

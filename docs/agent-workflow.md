@@ -641,9 +641,24 @@ files also fall back to whole-file coverage at verify-run time. File receipts st
 only hashes, spans, and counts, never raw changed-line text. Command receipts
 keep captured output under `.agent/receipts/`.
 
-Drift checks read changed files from `git status`, so they cover uncommitted
-changes only. Run `audit-drift` and `verify-run` before committing the work
-(#139).
+Drift checks compare everything changed since the run's baseline, committed or
+not (#139). `init-execution` records the baseline, the commit the run starts
+from (or none before the first commit), as the one row of
+`.agent/run-anchors.jsonl`; re-running it without `--force` never moves it.
+Changed files are everything that differs from the baseline plus untracked
+files, and hunks and file receipts are measured from the same commit. A move is
+a deletion plus an addition, so both paths need receipts.
+
+`verify-run`, `audit-drift` and `finish-run` accept `--base-ref REF` to compare
+with the merge base of HEAD and REF instead, as CI does with a pull request's
+base commit. The checks fail closed when the baseline cannot be trusted: the
+ledger is missing (while receipts name a baseline), malformed, or holds more
+than one row; the commit is missing from a shallow clone; or it is no longer an
+ancestor of HEAD after a rebase or an amended commit. Check such a run with
+`--base-ref`, or start a new one with `init-execution --force`. After merging
+another branch into the work, pass that branch as `--base-ref` so the files the
+merge brought in are not counted. Runs started by Agentflow 1.6 or older have
+no baseline and keep comparing uncommitted changes with HEAD.
 
 ## Completion Rule
 

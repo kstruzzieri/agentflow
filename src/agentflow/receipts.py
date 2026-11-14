@@ -33,7 +33,7 @@ from .execution import (
     resolve_attempt,
     try_load_execution_contract,
 )
-from .git import changed_file_records, git_blob_for_head
+from .git import changed_file_records, comparison_base, git_blob_for_head
 from .locks import file_lock
 from .risk import classify_command, evaluate_policy
 from .validation import path_in_effective_scope
@@ -549,6 +549,11 @@ def record_file_change(
         attribution, hunks = "disabled", []
     else:
         attribution, hunks = compute_hunks(root, record)
+    base = comparison_base(root)
+    if base["source"] != "head":
+        # #139: the commit this receipt's hunks were cut from (null: the empty
+        # tree). Its presence also marks the run as anchored.
+        receipt["hunk_base_commit"] = base["commit"]
     receipt["diff_engine"] = "git"
     receipt["diff_command_version"] = DIFF_COMMAND_VERSION
     receipt["diff_algorithm"] = "myers"

@@ -156,8 +156,8 @@ warning as a failure, so this demo proof does not pass strict verification.
 
 `verify-proof` checks the proof files against the checksums recorded in the
 proof. It does not look at your working files. `verify-run` and `audit-drift`
-do: they compare your uncommitted changes with the receipts, so run them
-before you commit.
+do: they compare everything changed since `init-execution` recorded the run's
+starting commit, committed or not, with the receipts.
 
 ## 6. See Agentflow catch a change
 

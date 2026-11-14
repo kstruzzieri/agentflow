@@ -443,22 +443,34 @@ class PublicProjectContractTests(unittest.TestCase):
             )
 
     def test_known_enforcement_limits_are_documented(self) -> None:
-        # Issues 138 and 139. Drop an assertion here only together with its fix.
+        # Issue 138 is open: drop its assertion only together with its fix.
+        # Issue 139 is fixed: drift checks compare with a run baseline, and the
+        # remaining limit is narrowed to runs that recorded none.
         def flat(relative: str) -> str:
             return " ".join((ROOT / relative).read_text(encoding="utf-8").split())
 
         model = flat("docs/security-model.md")
-        self.assertIn("uncommitted changes", model)
+        self.assertNotIn("cover uncommitted changes only", model)
+        self.assertIn("--base-ref", model)
         self.assertIn("without an amendment", model)
-        self.assertIn("uncommitted changes", flat("README.md"))
-        self.assertIn("local by default", flat("README.md"))
+        readme = flat("README.md")
+        self.assertNotIn("uncommitted changes", readme)
+        self.assertIn("committed or not", readme)
+        self.assertIn("local by default", readme)
         quickstart = flat("docs/quickstart.md")
         self.assertIn(".gitignore", quickstart)
         self.assertIn("verify-proof --strict", quickstart)
-        self.assertIn("plain checkout", flat("docs/ci-proof-gate.md"))
+        self.assertNotIn("run them before you commit", quickstart)
+        gate = flat("docs/ci-proof-gate.md")
+        self.assertIn("--base-ref", gate)
+        self.assertIn("fetch-depth: 0", gate)
+        self.assertNotIn("Stage configured proof bundle", gate)
         workflow = flat("docs/agent-workflow.md")
         self.assertIn("amend-plan", workflow)
         self.assertIn("File receipts store only", workflow)
+        self.assertIn("run-anchors.jsonl", workflow)
+        self.assertNotIn("cover uncommitted changes only", workflow)
+        self.assertNotIn("are not compared with receipts", flat("docs/stop-hook.md"))
 
     def test_guides_do_not_repeat_retired_claims(self) -> None:
         def flat(relative: str) -> str:

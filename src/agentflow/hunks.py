@@ -4,7 +4,11 @@ This module is the only place that shells ``git diff`` and computes hunk
 identity hashes. It imports only stdlib plus ``artifacts`` and ``contracts`` to
 stay free of import cycles (``receipts``/``validation``/``execution_coverage``
 all import this module). It deliberately does not use ``git.run_git`` because
-that helper strips stdout, and hunk patches / HEAD blobs need exact output.
+that helper strips stdout, and hunk patches / base blobs need exact output.
+
+#139: hunks are cut against the run's comparison base (``git.comparison_base``),
+not HEAD, so recorded and checked hunks come from the same diff once work is
+committed. A run without an anchor keeps HEAD.
 """
 
 from __future__ import annotations
@@ -19,6 +23,7 @@ from typing import Any, Dict, List, Optional, Tuple
 from .artifacts import read_jsonl
 from .contracts import DIFF_COMMAND_VERSION, EXECUTION_ARTIFACT_PATHS, HUNK_ATTRIBUTION_POLICIES
 from .execution import execution_contract_sha256, try_load_execution_contract
+from .git import comparison_base
 
 _HUNK_HEADER = re.compile(r"^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@")
 # Number of lines before each hunk to include in the context anchor window.
@@ -72,8 +77,14 @@ def _normalize_path(path: str) -> str:
     return path.replace("\\", "/")
 
 
-def _head_lines(root: Path, path: str) -> Optional[List[str]]:
-    code, stdout, _ = _git_text(root, ["show", f"HEAD:{path}"])
+def hunk_base(root: Path) -> str:
+    """The revision hunks are diffed against: the comparison base's tree, or HEAD."""
+    base = comparison_base(root)
+    return "HEAD" if base["source"] == "head" else base["tree"]
+
+
+def _head_lines(root: Path, path: str, rev: str = "HEAD") -> Optional[List[str]]:
+    code, stdout, _ = _git_text(root, ["show", f"{rev}:{path}"])
     if code != 0:
         return None
     # CRLF→LF normalization is deliberate: ensures cross-platform identity stability.
@@ -145,7 +156,8 @@ def compute_hunks(root: Path, record: Dict[str, Any]) -> Tuple[str, List[Dict[st
     path = record["path"]
     posix_path = _normalize_path(path)
     change_kind = record.get("change_kind", "modified")
-    head_lines = _head_lines(root, record.get("previous_path") or path)
+    rev = hunk_base(root)
+    head_lines = _head_lines(root, record.get("previous_path") or path, rev)
 
     if change_kind == "added":
         code, stdout, _ = _git_text(root, [*_base_flags(no_index=True), "--", "/dev/null", path])
@@ -159,7 +171,7 @@ def compute_hunks(root: Path, record: Dict[str, Any]) -> Tuple[str, List[Dict[st
         previous_path = record.get("previous_path") or ""
         if not previous_path:
             return "whole_file_fallback", []
-        code, blob, _ = _git_bytes(root, ["show", f"HEAD:{previous_path}"])
+        code, blob, _ = _git_bytes(root, ["show", f"{rev}:{previous_path}"])
         if code != 0:
             return "whole_file_fallback", []
         with NamedTemporaryFile("wb", suffix=".afhunk", delete=True) as handle:
@@ -172,8 +184,8 @@ def compute_hunks(root: Path, record: Dict[str, Any]) -> Tuple[str, List[Dict[st
             return "whole_file_fallback", []
         return "hunked", _parse_patch(stdout, posix_path, change_kind, head_lines)
 
-    # modified / deleted: working tree vs HEAD
-    code, stdout, _ = _git_text(root, [*_base_flags(no_index=False), "HEAD", "--", path])
+    # modified / deleted: working tree vs the hunk base
+    code, stdout, _ = _git_text(root, [*_base_flags(no_index=False), rev, "--", path])
     if code != 0:
         return "whole_file_fallback", []
     if _is_binary(stdout):

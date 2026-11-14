@@ -350,6 +350,29 @@ def _base_commit(source: Source, resolved_base: Optional[str], output_root: Path
     return out.strip() if code == 0 and out.strip() else None
 
 
+def _run_anchor_rows(source: Source) -> Optional[List[Dict[str, Any]]]:
+    path = source.root / EXECUTION_ARTIFACT_PATHS["run-anchors"]
+    return read_jsonl(path) if path.exists() else None
+
+
+def _run_anchor_collisions(sources: List[Source]) -> List[Dict[str, Any]]:
+    """#139: one aggregated run has one baseline. Sources must name the same
+    base commit, or all be runs that recorded none; recorded_at may differ."""
+    anchors: Dict[str, Any] = {}
+    for source in sources:
+        rows = _run_anchor_rows(source)
+        if rows is None:
+            anchors[source.source_id] = "absent"
+        elif len(rows) == 1 and "base_commit" in rows[0]:
+            anchors[source.source_id] = rows[0]["base_commit"]
+        else:
+            anchors[source.source_id] = "invalid"
+    values = set(anchors.values())
+    if len(values) > 1 or "invalid" in values:
+        return [_collision("run_anchor_mismatch", anchors=anchors)]
+    return []
+
+
 def _source_bases(sources: List[Source], base_ref: Optional[str], output_root: Path) -> Dict[str, Optional[str]]:
     resolved_base = _rev_parse(output_root, base_ref) if base_ref else None
     if base_ref and resolved_base is None:
@@ -574,6 +597,7 @@ def analyze(sources: List[Source], output_root: Path, base_ref: Optional[str] = 
     collisions += _malformed_id_collisions(sources)
     collisions += _intra_source_dup_id_collisions(sources)
     collisions += _base_commit_collisions(bases)
+    collisions += _run_anchor_collisions(sources)
     collisions += _step_overlap_collisions(sources)
     collisions += _file_overlap_collisions(sources)
     collisions += _concat_dup_collisions(sources)
@@ -908,6 +932,9 @@ def plan_write(sources: List[Source]) -> Dict[str, Any]:
         ledgers[_artifact_rel(name)] = _merge_concat(sources, _artifact_rel(name))
     review_rows, review_copies = _merge_review_runs(sources)
     ledgers[BASE_ARTIFACT_PATHS["review-runs"]] = review_rows
+    anchor_rows = _run_anchor_rows(sources[0])
+    if anchor_rows is not None:  # analyze() made every source agree
+        ledgers[EXECUTION_ARTIFACT_PATHS["run-anchors"]] = anchor_rows
 
     must_match: Dict[str, bytes] = {}
     for name in MUST_MATCH:

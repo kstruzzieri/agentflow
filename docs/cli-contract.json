@@ -286,6 +286,17 @@
         "nargs": null,
         "required": false,
         "takes_value": true
+      },
+      {
+        "choices": null,
+        "default": null,
+        "multiple": false,
+        "names": [
+          "--base-ref"
+        ],
+        "nargs": null,
+        "required": false,
+        "takes_value": true
       }
     ],
     "block-step": [
@@ -1007,6 +1018,17 @@
         "nargs": 0,
         "required": false,
         "takes_value": false
+      },
+      {
+        "choices": null,
+        "default": null,
+        "multiple": false,
+        "names": [
+          "--base-ref"
+        ],
+        "nargs": null,
+        "required": false,
+        "takes_value": true
       }
     ],
     "finish-step": [
@@ -2572,6 +2594,17 @@
         "nargs": 0,
         "required": false,
         "takes_value": false
+      },
+      {
+        "choices": null,
+        "default": null,
+        "multiple": false,
+        "names": [
+          "--base-ref"
+        ],
+        "nargs": null,
+        "required": false,
+        "takes_value": true
       },
       {
         "choices": null,

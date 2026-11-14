@@ -124,64 +124,66 @@ class CommittedProofBundleTests(unittest.TestCase):
             self.assertNotEqual(result.returncode, 0)
             self.assertIn("src/unreceipted.py", result.stdout)
 
-    def test_workflow_preserves_configured_baseline_before_verify_run(self) -> None:
-        stage = workflow_step("Stage configured proof bundle")
+    def test_workflow_checks_configured_proof_through_smoke_script(self) -> None:
+        # #139: --base-ref replaced the shell that rebuilt a Git baseline.
+        workflow = WORKFLOW_PATH.read_text(encoding="utf-8")
+        self.assertNotIn("Stage configured proof bundle", workflow)
+        step = workflow_step("Verify configured proof")
+        self.assertIn("AGENTFLOW_PROOF_BASE_REF", step)
+        self.assertIn("github.event.pull_request.base.sha", step)
+        self.assertIn("examples/ci-proof/smoke.sh", step)
 
-        self.assertIn("AGENTFLOW_PROOF_BASE_REF", stage)
-        self.assertIn('--exclude "./.git"', stage)
-        self.assertNotIn('rm -rf "$2/.git"', stage)
-        self.assertNotIn("proof bundle under verification", stage)
+    def run_workflow_step(self, cwd: Path, **env_overrides: str) -> subprocess.CompletedProcess:
+        script = workflow_run_script("Verify configured proof").replace(
+            "examples/ci-proof/smoke.sh", str(REPO_ROOT / "examples" / "ci-proof" / "smoke.sh")
+        )
+        env = os.environ.copy()
+        env.pop("AGENTFLOW_PROOF_BASE_REF", None)
+        env.update({"PYTHON": sys.executable, "PR_BASE_SHA": "", **env_overrides})
+        return subprocess.run(
+            ["bash", "-euo", "pipefail", "-c", script],
+            cwd=str(cwd), env=env, text=True,
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False,
+        )
 
-    def test_workflow_root_overlay_preserves_staged_git_repo(self) -> None:
+    def test_workflow_base_ref_fails_a_committed_unreceipted_edit(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp) / "repo"
             shutil.copytree(FIXTURE_ROOT, root)
             commit_fixture_copy(root)
+            base = subprocess.run(
+                ["git", "-C", str(root), "rev-parse", "HEAD"],
+                check=True, stdout=subprocess.PIPE, text=True,
+            ).stdout.strip()
             unreceipted_path = root / "src" / "unreceipted.py"
             unreceipted_path.parent.mkdir()
             unreceipted_path.write_text("print('unmapped')\n", encoding="utf-8")
+            commit_fixture_copy(root)
 
-            runner_temp = Path(tmp) / "runner"
-            runner_temp.mkdir()
-            env = os.environ.copy()
-            env["AGENTFLOW_PROOF_ROOT"] = "."
-            env["AGENTFLOW_PROOF_BASE_REF"] = "HEAD"
-            env["RUNNER_TEMP"] = str(runner_temp)
+            passed = self.run_workflow_step(root, AGENTFLOW_PROOF_ROOT=".", PR_BASE_SHA="HEAD")
+            self.assertEqual(passed.returncode, 0, passed.stdout + passed.stderr)
 
-            result = subprocess.run(
-                [
-                    "bash",
-                    "-euo",
-                    "pipefail",
-                    "-c",
-                    workflow_run_script("Stage configured proof bundle"),
-                ],
-                cwd=str(root),
-                env=env,
-                text=True,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                check=False,
+            # A push has no pull request base: the step checks the ledgers only.
+            pushed = self.run_workflow_step(root, AGENTFLOW_PROOF_ROOT=".")
+            self.assertEqual(pushed.returncode, 0, pushed.stdout + pushed.stderr)
+
+            failed = self.run_workflow_step(root, AGENTFLOW_PROOF_ROOT=".", PR_BASE_SHA=base)
+            self.assertNotEqual(failed.returncode, 0)
+            self.assertIn("src/unreceipted.py", failed.stdout)
+
+            explicit = self.run_workflow_step(
+                root, AGENTFLOW_PROOF_ROOT=".", PR_BASE_SHA="HEAD", AGENTFLOW_PROOF_BASE_REF=base
             )
-            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertNotEqual(explicit.returncode, 0)
 
-            status = subprocess.run(
-                [
-                    "git",
-                    "-C",
-                    str(runner_temp / "proof-bundle"),
-                    "status",
-                    "--porcelain",
-                    "--untracked-files=all",
-                ],
-                text=True,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                check=False,
-            )
-            self.assertEqual(status.returncode, 0, status.stdout + status.stderr)
-            self.assertIn("src/unreceipted.py", status.stdout)
-
+    def test_workflow_refuses_a_base_ref_for_a_subdirectory_root(self) -> None:
+        result = self.run_workflow_step(
+            REPO_ROOT,
+            AGENTFLOW_PROOF_ROOT="tests/fixtures/proof-bundle",
+            AGENTFLOW_PROOF_BASE_REF="HEAD",
+        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("AGENTFLOW_PROOF_ROOT=.", result.stdout + result.stderr)
 
 if __name__ == "__main__":
     unittest.main()

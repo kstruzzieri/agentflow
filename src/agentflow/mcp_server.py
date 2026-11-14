@@ -208,20 +208,33 @@ def _argv_verify_step(a: Dict[str, Any]) -> List[str]:
     return argv
 
 
+_BASE_REF_PROP = {
+    "base_ref": {
+        "type": "string",
+        "description": "Compare against the merge base of HEAD and this ref instead of the run's recorded baseline.",
+    }
+}
+
+
+def _base_ref(a: Dict[str, Any]) -> List[str]:
+    # One argv token, so a ref cannot be read as another option.
+    return [f"--base-ref={a['base_ref']}"] if a.get("base_ref") is not None else []
+
+
 def _argv_verify_run(a: Dict[str, Any]) -> List[str]:
     argv = ["verify-run", "--json", *_root(a)]
     if a.get("strict"):
         argv += ["--strict"]
     if a.get("record") is False:
         argv += ["--no-record"]
-    return argv
+    return argv + _base_ref(a)
 
 
 def _argv_audit_drift(a: Dict[str, Any]) -> List[str]:
     argv = ["audit-drift", *_root(a)]
     if a.get("plan"):
         argv += ["--plan", str(a["plan"])]
-    return argv
+    return argv + _base_ref(a)
 
 
 def _argv_build_proof(a: Dict[str, Any]) -> List[str]:
@@ -270,7 +283,7 @@ def _argv_finish_run(a: Dict[str, Any]) -> List[str]:
         argv += ["--plan", str(a["plan"])]
     if a.get("strict"):
         argv += ["--strict"]
-    return argv
+    return argv + _base_ref(a)
 
 
 TOOLS: List[Tool] = [
@@ -415,6 +428,7 @@ TOOLS: List[Tool] = [
                     "type": "boolean",
                     "description": "Append a verification-run entry (default true). Set false for read-only checks.",
                 },
+                **_BASE_REF_PROP,
                 **_ROOT_PROP,
             }
         ),
@@ -422,9 +436,13 @@ TOOLS: List[Tool] = [
     ),
     Tool(
         "audit_drift",
-        "Compare git working-tree changes against the locked plan scope.",
+        "Compare changes since the run baseline against the locked plan scope.",
         _object_schema(
-            {"plan": {"type": "string", "description": "Plan path (default .agent/plan.lock.json)."}, **_ROOT_PROP}
+            {
+                "plan": {"type": "string", "description": "Plan path (default .agent/plan.lock.json)."},
+                **_BASE_REF_PROP,
+                **_ROOT_PROP,
+            }
         ),
         _argv_audit_drift,
     ),
@@ -501,6 +519,7 @@ TOOLS: List[Tool] = [
             {
                 "plan": {"type": "string", "description": "Plan path (default .agent/plan.lock.json)."},
                 "strict": {"type": "boolean", "description": "Treat warnings as failures."},
+                **_BASE_REF_PROP,
                 **_ROOT_PROP,
             }
         ),
