@@ -24,3 +24,8 @@ PYTHONPATH=src python3 -m agentflow verify-proof --strict --root "$PROOF_ROOT"
 
 See [`workflow.yml`](workflow.yml) for a complete job. The repository CI runs
 this packet through `tests/test_examples.py`.
+
+This job verifies a committed proof bundle as it stands. It does not compare
+source edits in a pull request with their receipts; that needs the baseline
+staging described in the [CI proof gate guide](../../docs/ci-proof-gate.md),
+which also covers minimum-policy flags.

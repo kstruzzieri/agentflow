@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- The README is now a short landing page. Its reference sections moved to
+  `docs/`: a new [Quickstart](docs/quickstart.md), a
+  [CI proof gate](docs/ci-proof-gate.md) guide, and a
+  [documentation index](docs/README.md). Platform support is in
+  `docs/stability.md` and source installs are in `CONTRIBUTING.md`. The README
+  uses absolute links, so the PyPI project page shows the logo and working
+  links from the next release.
+
 ## [1.6.0] - 2026-11-12
 
 Agentflow 1.6.0 adds an opt-in `bound` confirmation mode: a high-risk command

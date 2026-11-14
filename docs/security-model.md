@@ -85,6 +85,8 @@ Keep HTTP bound to loopback unless every reachable client and network path is tr
 
 Proof integrity is **not cryptographic signing**. Agentflow does not establish the identity of a proof producer, protect an operator's private key, prove that a bundle is complete, or prevent a party who can rewrite a bundle from recomputing its checksums. Proof signing (for example, HMAC or Sigstore) is out of scope for v1.0. Likewise, a command receipt's `provenance` records which Agentflow command wrote it, not who ran the command: anyone who can write `.agent/` can write any value (see [Command Receipt Provenance](agent-workflow.md#command-receipt-provenance)).
 
+Two limits apply while a run is in progress. First, drift checks (`verify-run`, `audit-drift`, and hunk attribution) read changed files from `git status`, so they cover uncommitted changes only: edits that are committed before the checks run are not compared with receipts (#139). Second, the plan is hash-bound only once `build-proof` runs: an edit to `.agent/plan.lock.json` made without an amendment before that point is not detected (#138).
+
 ### Threat assumptions
 
 The verifier obtains the intended proof bundle from a trusted channel and can compare it against an independently retained reference, such as a CI artifact, commit, or release attachment.

@@ -4,10 +4,9 @@ Use Agentflow for planned software work in this repository.
 
 Agentflow is published on PyPI as `agentflow-proof` (`pip install
 agentflow-proof`), and prebuilt single-file artifacts (`agentflow.pyz`,
-`agentflow-mcp.pyz`) are published on the GitHub Releases page from `v0.4.0`
-on. For development in this repository, install from this source checkout so
-the CLI under test is the code in the tree. See `README.md` for the supported
-install paths:
+`agentflow-mcp.pyz`) are published on the GitHub Releases page. For development
+in this repository, install from this source checkout so the CLI under test is
+the code in the tree. See `CONTRIBUTING.md` for the supported install paths:
 
 - `uv tool install --editable /path/to/agentflow`
 - `pipx install --editable /path/to/agentflow`

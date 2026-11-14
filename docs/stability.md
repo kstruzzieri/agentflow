@@ -21,6 +21,16 @@ details are not APIs unless this page says otherwise.
 Before 1.0, compatibility-breaking corrections may still occur and are called
 out in release notes. The table is the contract that 1.0 freezes.
 
+## Platform support
+
+Linux and macOS are supported and tested in release-blocking CI on Python 3.11,
+3.12, and 3.13. Windows is **best effort**: the Python CLI may work, but Windows
+has no release-blocking CI leg and no compatibility guarantee until this support
+tier changes. The POSIX `sh` stop hook (`hooks/stop-gate.sh`) and shell-dependent
+examples are POSIX-only; use a POSIX shell on Windows or do not use those parts.
+A future supported Windows tier requires Windows CI plus adapted or replaced
+POSIX-only hooks and tests.
+
 ## CLI contract
 
 The supported command names are:

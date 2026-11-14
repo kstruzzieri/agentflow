@@ -586,20 +586,24 @@ class RepositoryReleaseDisciplineTests(unittest.TestCase):
         self.assertNotIn("agentflow-proof is already published", readme)
 
     def test_checksum_instructions_download_every_hashed_artifact(self) -> None:
-        for relative in ("README.md", "docs/packaging.md"):
-            with self.subTest(relative=relative):
-                text = (REPO_ROOT / relative).read_text(encoding="utf-8")
-                checksum = text.rindex("sha256sum -c SHA256SUMS")
-                download = text.lower().rfind("download", 0, checksum)
-                instructions = text[download:checksum]
-                for artifact in (
-                    "agentflow.pyz",
-                    "agentflow-mcp.pyz",
-                    "agentflow_proof-*.whl",
-                    "agentflow_proof-*.tar.gz",
-                    "SHA256SUMS",
-                ):
-                    self.assertIn(artifact, instructions)
+        text = (REPO_ROOT / "docs" / "packaging.md").read_text(encoding="utf-8")
+        checksum = text.rindex("sha256sum -c SHA256SUMS")
+        download = text.lower().rfind("download", 0, checksum)
+        instructions = text[download:checksum]
+        for artifact in (
+            "agentflow.pyz",
+            "agentflow-mcp.pyz",
+            "agentflow_proof-*.whl",
+            "agentflow_proof-*.tar.gz",
+            "SHA256SUMS",
+        ):
+            self.assertIn(artifact, instructions)
+        # The README no longer carries the steps; it must point at them.
+        readme = (REPO_ROOT / "README.md").read_text(encoding="utf-8")
+        self.assertIn(
+            "https://github.com/kstruzzieri/agentflow/blob/main/docs/packaging.md",
+            readme,
+        )
 
     def test_pypi_packet_names_each_pending_trusted_publisher(self) -> None:
         text = (REPO_ROOT / "docs" / "pypi-publishing.md").read_text(
