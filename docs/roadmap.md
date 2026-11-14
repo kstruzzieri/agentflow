@@ -1,6 +1,6 @@
 # Agentflow Roadmap
 
-Last updated: 2026-11-12
+Last updated: 2026-11-14
 
 Agentflow `1.6.0` is a standard-library-only Python CLI for plan-locked,
 auditable agent work. It supports Python 3.11–3.13 and ships as the
@@ -29,126 +29,64 @@ MCP zipapps through GitHub Releases.
   in [`docs/stability.md`](stability.md) and
   [`docs/compatibility.md`](compatibility.md).
 
-## v1.0.0 (shipped 2026-10-04)
+## On main, not yet released
 
-The v1.0.0 milestone was a stability milestone, not a feature milestone: it
-turned the proof and execution formats into promises. The record lives in the
-[v1.0.0 milestone](https://github.com/kstruzzieri/agentflow/milestone/1) and
-the [tracking issue #11](https://github.com/kstruzzieri/agentflow/issues/11).
+- The README is a short landing page, with a tested
+  [quickstart](quickstart.md), a [CI proof gate guide](ci-proof-gate.md), and
+  a [documentation index](README.md). Reference material moved from the README
+  into `docs/`, and the docs now state two enforcement limits plainly
+  ([#141](https://github.com/kstruzzieri/agentflow/pull/141)).
 
-- Promises written down: `CHANGELOG.md` and release discipline
-  ([#3](https://github.com/kstruzzieri/agentflow/issues/3)), the public API
-  surface and semver policy
-  ([#4](https://github.com/kstruzzieri/agentflow/issues/4)), platform support
-  tiers ([#7](https://github.com/kstruzzieri/agentflow/issues/7)), the
-  security posture ([#8](https://github.com/kstruzzieri/agentflow/issues/8)),
-  and the public-project templates
-  ([#10](https://github.com/kstruzzieri/agentflow/issues/10)).
-- Freeze: the load-bearing schemas soaked and were stamped `1.0.0`
-  ([#5](https://github.com/kstruzzieri/agentflow/issues/5)); `verify-proof`
-  1.x verifies every proof built by any 1.y, and the 0.4.0-built fixture stays
-  in the compatibility matrix.
-- Distribution: PyPI release through trusted publishing with the wheel and
-  sdist alongside the zipapps
-  ([#6](https://github.com/kstruzzieri/agentflow/issues/6)) and runnable
-  end-to-end examples
-  ([#9](https://github.com/kstruzzieri/agentflow/issues/9)). The bare
-  `agentflow` PyPI name is pursued separately under PEP 541; if it transfers,
-  only `project.name` changes.
+## Next: 1.7.0 (planned)
 
-## v1.4.0 (shipped 2026-11-10)
+The aim: the checks keep holding when the agent being checked does not
+cooperate. The README work that opens this release is already on main.
 
-- The proof records how each validation gate was satisfied (run by Agentflow,
-  replayed, self-reported, inspection evidence, or missing), `verify-proof`
-  recomputes that record and prints a one-line summary, and the docs define
-  each command-receipt provenance value
-  ([#110](https://github.com/kstruzzieri/agentflow/issues/110)). The
-  proof-pack schema moves to `1.1.0`, the first additive minor bump under the
-  compatibility policy; Agentflow 1.3 and older refuse a `1.1.0` proof and ask
-  for an upgrade.
-- `verify-proof --require KEY=MIN` lets the verifier, not the agent's own
-  execution contract, set the minimum policy a proof must meet: hunk
-  attribution, the review gate, the command risk policy, leases, and the
-  receipt requirements. The MCP `verify_proof` tool takes the same list as
-  `require`
-  ([#111](https://github.com/kstruzzieri/agentflow/issues/111)). No schema
-  changes.
-- A floor on `risk_policy`, `lease_policy` or `hunk_attribution` also checks
-  the contract the work ran under: every step event, command and file
-  receipt, verification run and the drift report records the hash of the
-  contract it was decided under, and `verify-proof --require` on those keys
-  fails unless each names the hash-verified contract
-  ([#117](https://github.com/kstruzzieri/agentflow/issues/117)). The
-  step-runs, command-receipts, file-receipts, verification-runs and
-  drift-report schemas move to `1.1.0`; Agentflow 1.3 and older reject the
-  new records in working state.
-- Every replay of an attested gate (`replay-gates`, the `--replay` options of
-  `verify-step`, `finish-step` and `verify-proof`, and MCP `replay`) applies
-  the risk policy and command timeout that `run` applies, and refuses to run
-  under an invalid execution contract, so `replay-gates --record` can no
-  longer turn a command the policy would block into a trusted receipt
-  ([#119](https://github.com/kstruzzieri/agentflow/issues/119)). No schema
-  changes; `verify-proof --replay` now fails on a proof whose contract blocks
-  one of its high-risk attested gates.
+- Drift checks cover committed work. A run records its starting commit, so
+  `verify-run` and `audit-drift` compare everything changed since then instead
+  of only uncommitted changes, and both accept `--base-ref` so CI no longer
+  needs to rebuild a baseline by hand ([#139](https://github.com/kstruzzieri/agentflow/issues/139)).
+- Plan edits are bound to the run. A change to the locked plan without a
+  recorded amendment fails verification instead of passing unnoticed until the
+  proof is built ([#138](https://github.com/kstruzzieri/agentflow/issues/138)).
+- Small rough edges from a first-run pass: a hint when `.agent/` is not
+  ignored, a one-line error outside a Git repository, `--require` keys in the
+  help text, a clearer strict-mode label, and stuck-loop counting of refused
+  commands ([#140](https://github.com/kstruzzieri/agentflow/issues/140)).
+- Docs and release polish: follow-ups from the README change
+  ([#142](https://github.com/kstruzzieri/agentflow/issues/142)), and a check of the README on PyPI plus refreshed package
+  metadata before the release is tagged ([#143](https://github.com/kstruzzieri/agentflow/issues/143)).
 
-## v1.5.0 (shipped 2026-11-12)
+Until #138 and #139 ship, both limits are stated in
+[`docs/security-model.md`](security-model.md). Items move up to "On main, not
+yet released" as they merge.
 
-- `agentflow simulate-risk` re-checks every recorded command against a
-  proposed `risk_policy` (`--risk-policy`) and, optionally, a proposed plan
-  (`--plan`), and reports which commands it would have blocked or held for
-  confirmation, grouped by risk category, before a team adopts the stricter
-  setting. Commands Agentflow did not start itself (self-reported or
-  external) are marked advisory, and receipts whose recorded risk no longer
-  matches today's analyzer are listed separately as analyzer drift. It writes
-  nothing and exits 0 whatever it finds, so it is a report, not a gate
-  ([#113](https://github.com/kstruzzieri/agentflow/issues/113)). No schema
-  changes.
-- `verify-proof` judges every hashed source by the bytes it hashed. The checks
-  after the hash check (criterion, design-decision and validation-gate
-  coverage, receipt outputs, review integrity and `--replay`) no longer read
-  those files from disk again, so a file swapped while a proof is being
-  verified cannot change the verdict, and a source that failed its hash is
-  reported instead of read again
-  ([#126](https://github.com/kstruzzieri/agentflow/issues/126)). No schema
-  changes; output is unchanged for a bundle whose files do not change during
-  verification.
+## Shipped
 
-## v1.6.0 (shipped 2026-11-12)
+Each release's full notes are in the [changelog](../CHANGELOG.md).
 
-- Bound self-confirmation for high-risk commands. With
-  `command_policy.confirmation` set to `bound` (it requires
-  `risk_policy: "require-confirmation"`), `--confirm-risk` and
-  `AGENTFLOW_CONFIRM_RISK=1` no longer let a high-risk command run. A separate
-  `agentflow confirm-command --step STEP -- <argv>` records a confirmation tied
-  to the step, the exact argv, the plan and the contract; it expires (15
-  minutes by default, 24 hours at most) and `run` consumes it once. The proof
-  records each confirmation, `verify-proof` checks it against the ledger and
-  receipts, and `verify-proof --require confirmation=bound` makes it a floor.
-  This proves binding, not who confirmed
-  ([#112](https://github.com/kstruzzieri/agentflow/issues/112), phase 1).
-  New schema versions: execution contract 1.1.0, command receipts and proof
-  packs 1.2.0, and the new command-confirmations ledger 1.0.0. Agentflow 1.5
-  and older cannot read the receipts and proofs this version writes, and `run`
-  now refuses a contract that is present but unreadable instead of falling
-  back to defaults.
+| Release | Date | In one line |
+| --- | --- | --- |
+| [1.6.0](../CHANGELOG.md#160---2026-11-12) | 2026-11-12 | Bound confirmation for high-risk commands: tied to the exact command, expiring, used once ([#112](https://github.com/kstruzzieri/agentflow/issues/112), phase 1). |
+| [1.5.0](../CHANGELOG.md#150---2026-11-12) | 2026-11-12 | `simulate-risk` previews a stricter risk policy; `verify-proof` judges each source by the bytes it hashed. |
+| [1.4.0](../CHANGELOG.md#140---2026-11-10) | 2026-11-10 | The proof records how each gate was satisfied; `verify-proof --require` lets CI set the minimum policy. |
+| [1.3.0](../CHANGELOG.md#130---2026-11-04) | 2026-11-04 | An edit from a stopped attempt can no longer pass unverified. |
+| [1.2.2](../CHANGELOG.md#122---2026-11-03) | 2026-11-03 | Restores fail-closed resume in `next-action`. |
+| [1.2.1](../CHANGELOG.md#121---2026-11-02) | 2026-11-02 | Fixes three cases where `next-action` pointed an agent the wrong way. |
+| [1.2.0](../CHANGELOG.md#120---2026-10-29) | 2026-10-29 | Shows why a run is stuck: `next-step --explain` and recorded blockers. |
+| [1.1.1](../CHANGELOG.md#111---2026-10-26) | 2026-10-26 | A step can no longer complete over a gate whose last run failed. |
+| [1.1.0](../CHANGELOG.md#110---2026-10-18) | 2026-10-18 | Closes integrity and recovery gaps in the execution ledger and proof chain. |
+| [1.0.0](../CHANGELOG.md#100---2026-10-04) | 2026-10-04 | The stability release: eight artifact schemas frozen, PyPI distribution, written compatibility promises ([milestone](https://github.com/kstruzzieri/agentflow/milestone/1), [#11](https://github.com/kstruzzieri/agentflow/issues/11)). |
 
-## After 1.0
-
-Open issue that tightens who approves risky commands:
+## Later, not committed
 
 - Host approval: an approver outside the agent confirms each high-risk
-  command (`confirmation: "host"`, phase 2 of
-  [#112](https://github.com/kstruzzieri/agentflow/issues/112), owned by
-  Golem). Phase 1, binding the confirmation to the exact command, shipped in
-  1.6.0.
-
-No next milestone is committed. Other candidates, each starting as an issue
-with a concrete use case and compatibility impact:
-
+  command (`confirmation: "host"`, phase 2 of [#112](https://github.com/kstruzzieri/agentflow/issues/112), owned by Golem).
 - PyInstaller single-binary packaging (deferred until a consumer needs
   Python-free machines; see `docs/packaging.md`).
 - Cryptographic proof signing (proof integrity remains checksum-based tamper
   evidence, stated plainly in the security posture doc).
 - New workflow features, within the additive-only minor policy.
 
-This roadmap communicates direction, not a release commitment.
+Each of these starts as an issue with a concrete use case and compatibility
+impact. This roadmap communicates direction, not a release commitment.
