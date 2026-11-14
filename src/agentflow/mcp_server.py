@@ -31,6 +31,7 @@ from urllib.parse import urlparse
 
 from . import __version__, cli
 from .porcelain import _agent_args
+from .proof import POLICY_FLOOR_KEYS
 
 # The single MCP protocol version this server implements. Per the spec, a server
 # that supports only one version always responds to initialize with that version.
@@ -445,7 +446,8 @@ TOOLS: List[Tool] = [
                     "items": {"type": "string"},
                     "description": (
                         "Minimum execution-contract policies as KEY=MIN, for example "
-                        "'hunk_attribution=enforce'; the proof fails below any of them."
+                        "'hunk_attribution=enforce'; the proof fails below any of them. "
+                        "KEY is one of: " + ", ".join(POLICY_FLOOR_KEYS) + "."
                     ),
                 },
                 **_ROOT_PROP,

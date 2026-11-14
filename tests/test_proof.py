@@ -2229,6 +2229,35 @@ class _ProofRootMixin:
                 for name in ("proof-pack.json", "proof-pack.md")}
 
 
+class StrictWarningLabelTests(_ProofRootMixin, unittest.TestCase):
+    """#140: a warning that fails under --strict says so instead of 'error: ...: warning'."""
+
+    def _verify(self, root: Path, *args: str):
+        from agentflow.cli import main
+        out = io.StringIO()
+        with redirect_stdout(out), redirect_stderr(io.StringIO()):
+            status = main(["verify-proof", "--root", str(root), *args])
+        return status, out.getvalue().splitlines()
+
+    def test_strict_failure_names_the_warning_and_the_flag(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = self._root(tmp)
+            self.assertEqual(self._build(root)[0], 0)
+            status, lines = self._verify(root, "--strict")
+            self.assertEqual(status, 1)
+            self.assertIn("error: steps_without_support (warning, fails under --strict)", lines)
+            self.assertNotIn("error: steps_without_support: warning", lines)
+
+    def test_non_strict_warning_line_is_unchanged(self) -> None:
+        # docs/quickstart.md shows this line and QuickstartGuideTests compares it.
+        with tempfile.TemporaryDirectory() as tmp:
+            root = self._root(tmp)
+            self.assertEqual(self._build(root)[0], 0)
+            status, lines = self._verify(root)
+            self.assertEqual(status, 0)
+            self.assertIn("warning: steps_without_support: warning", lines)
+
+
 class PolicyFloorProofTests(_ProofRootMixin, unittest.TestCase):
     """#66: build-proof joins the review.policy floor of the proof it replaces."""
 
@@ -2254,7 +2283,7 @@ class PolicyFloorProofTests(_ProofRootMixin, unittest.TestCase):
             self.assertIn("steps_without_support: warning", out.splitlines())
             errors = [f["message"] for f in verify_proof(root, root / ".agent/proof-pack.json")
                       if f["severity"] == "error"]
-            self.assertIn("steps_without_support: warning", errors)
+            self.assertIn("steps_without_support (warning, fails under --strict)", errors)
 
     def test_non_strict_rebuild_passes_when_the_run_meets_the_floor(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

@@ -2416,6 +2416,54 @@ class AgentflowCliTests(unittest.TestCase):
                     self.assertIn("execution contract", output["errors"][0]["message"])
 
 
+class AgentDirIgnoreHintTests(unittest.TestCase):
+    """#140: init and doctor say so when Git would commit .agent/ receipts."""
+
+    HINT = ".agent/ is not ignored by Git"
+
+    def _repo(self, tmp: str, gitignore: str = "") -> Path:
+        cwd = Path(tmp)
+        subprocess.run(["git", "init"], cwd=str(cwd), check=True, capture_output=True)
+        if gitignore:
+            (cwd / ".gitignore").write_text(gitignore, encoding="utf-8")
+        return cwd
+
+    def _doctor_messages(self, cwd: Path) -> list:
+        self.assertEqual(run_agentflow(cwd, "init-execution").returncode, 0)
+        result = run_agentflow(cwd, "doctor", "--json")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        payload = json.loads(result.stdout)
+        self.assertEqual(payload["status"], "passed")
+        return [(f["severity"], f["message"]) for f in payload["findings"]]
+
+    def test_init_and_doctor_warn_when_agent_dir_is_not_ignored(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            cwd = self._repo(tmp)
+            result = run_agentflow(cwd, "init")
+            self.assertEqual(result.returncode, 0, result.stderr)
+            hints = [line for line in result.stdout.splitlines() if self.HINT in line]
+            self.assertEqual(len(hints), 1, result.stdout)
+            self.assertTrue(hints[0].startswith("hint: "), hints[0])
+            self.assertFalse((cwd / ".gitignore").exists())
+            self.assertTrue(
+                any(sev == "warning" and self.HINT in msg for sev, msg in self._doctor_messages(cwd))
+            )
+
+    def test_no_hint_when_agent_dir_is_ignored(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            cwd = self._repo(tmp, gitignore="/.agent/\n")
+            result = run_agentflow(cwd, "init")
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertNotIn(self.HINT, result.stdout)
+            self.assertFalse(any(self.HINT in msg for _, msg in self._doctor_messages(cwd)))
+
+    def test_no_hint_outside_a_git_repository(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            result = run_agentflow(Path(tmp), "init")
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertNotIn(self.HINT, result.stdout)
+
+
 class PorcelainCommandTests(unittest.TestCase):
     def _driven_plan(self) -> dict:
         plan = valid_plan()

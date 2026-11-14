@@ -363,6 +363,34 @@ class PolicyFloorTests(unittest.TestCase):
                 self.assertIn("--require", result.stderr)
 
 
+class RequireKeyDiscoveryTests(unittest.TestCase):
+    """#140: the valid --require keys are listed where a user looks for them."""
+
+    def test_help_lists_every_policy_floor_key(self) -> None:
+        result = subprocess.run(
+            [PY, "-m", "agentflow", "verify-proof", "--help"],
+            cwd=str(ROOT),
+            env={**os.environ, "PYTHONPATH": str(ROOT / "src"), "COLUMNS": "200"},
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        help_text = " ".join(result.stdout.split())
+        for key in proof_module.POLICY_FLOOR_KEYS:
+            with self.subTest(key=key):
+                self.assertIn(key, help_text)
+
+    def test_mcp_verify_proof_tool_lists_every_policy_floor_key(self) -> None:
+        from agentflow import mcp_server
+
+        description = mcp_server.TOOLS_BY_NAME["verify_proof"].input_schema["properties"][
+            "require"
+        ]["description"]
+        for key in proof_module.POLICY_FLOOR_KEYS:
+            with self.subTest(key=key):
+                self.assertIn(key, description)
+
+
 PIN = "execution_contract_sha256"
 LEDGERS = (
     ".agent/step-runs.jsonl",

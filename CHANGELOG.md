@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `agentflow init` prints a one-line hint, and `agentflow doctor` reports a
+  warning, when Git does not ignore `.agent/`, whose receipts hold captured
+  command output (#140). Neither writes `.gitignore`. The `doctor --json`
+  finding uses the existing `severity` and `message` fields.
+- `agentflow verify-proof --help` and the MCP `verify_proof` tool now list the
+  keys `--require` accepts (#140).
+
+### Fixed
+
+- `verify-proof --strict` now prints
+  `error: steps_without_support (warning, fails under --strict)` for a warning
+  it fails on, instead of `error: steps_without_support: warning`, and appends
+  the check's own message when it has one (#140). The non-strict
+  `warning: ...` line is unchanged.
+- The stuck-loop detector no longer counts a command refused before launch
+  (receipt `decision: "blocked"`, for example a high-risk command with no
+  bound confirmation) as a failed attempt in `repeated_command_failure`, so
+  `verify-run` stops warning that such a command "failed" (#140).
+
 ### Changed
 
 - The README is now a short landing page. Its reference sections moved to

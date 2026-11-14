@@ -204,7 +204,9 @@ def _repeated_command_failure(step_id, attempt_id, slice_events, thresholds):
         streaks[key] = []
 
     for event in slice_events:
-        if not _is_command(event):
+        # #140: a command refused before launch never ran, so it is not a
+        # failed attempt; it neither extends nor resets a streak.
+        if not _is_command(event) or event["data"].get("decision") == "blocked":
             continue
         key = _identity(event["data"])
         if _command_failed(event["data"]):

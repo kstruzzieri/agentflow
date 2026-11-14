@@ -32,7 +32,9 @@ from .contracts import (
     strict_mode,
 )
 from .execution import (
+    AGENT_DIR_UNIGNORED,
     AMENDMENT_REASON_CODES,
+    agent_dir_unignored,
     amend_step,
     block_step,
     claim_step,
@@ -151,13 +153,18 @@ def command_init(args: argparse.Namespace) -> int:
         print("error: --profile requires --pack", file=sys.stderr)
         return 2
     if pack_path:
-        return _command_init_with_pack(root, pack_path, profile_id, args)
-    created, skipped = create_initial_artifacts(root, force=args.force)
-    for path in created:
-        print(f"created {path}")
-    for path in skipped:
-        print(f"skipped {path}")
-    return 0
+        status = _command_init_with_pack(root, pack_path, profile_id, args)
+    else:
+        created, skipped = create_initial_artifacts(root, force=args.force)
+        for path in created:
+            print(f"created {path}")
+        for path in skipped:
+            print(f"skipped {path}")
+        status = 0
+    # #140: a hint only; writing .gitignore would itself be an unplanned change.
+    if status == 0 and agent_dir_unignored(root):
+        print(f"hint: {AGENT_DIR_UNIGNORED}")
+    return status
 
 
 def _command_init_with_pack(
@@ -2272,7 +2279,10 @@ def build_parser() -> argparse.ArgumentParser:
         action="append",
         type=_policy_requirement,
         metavar="KEY=MIN",
-        help="fail unless the proof's execution contract sets KEY at least to MIN (repeatable)",
+        help=(
+            "fail unless the proof's execution contract sets KEY at least to MIN "
+            "(repeatable); KEY is one of: " + ", ".join(POLICY_FLOOR_KEYS)
+        ),
     )
     verify.set_defaults(func=command_verify_proof)
 

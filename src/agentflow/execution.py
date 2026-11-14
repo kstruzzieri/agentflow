@@ -34,7 +34,7 @@ from .contracts import (
     RISK_POLICIES,
     STEP_RUNS_SCHEMA_VERSION,
 )
-from .git import is_git_repo
+from .git import is_git_repo, run_git
 from .locks import file_lock
 from .versioning import parse_schema_version, validate_schema_version_policy
 
@@ -506,6 +506,22 @@ def _older_major_remedy(root: Path) -> str:
     )
 
 
+AGENT_DIR_UNIGNORED = (
+    ".agent/ is not ignored by Git, and its receipts hold captured command output; "
+    "add /.agent/ to .gitignore unless you mean to publish a reviewed proof bundle"
+)
+
+
+def agent_dir_unignored(root: Path) -> bool:
+    """#140: True only inside a Git work tree whose ignore rules miss ``.agent/``.
+
+    ``git check-ignore`` exits 1 when nothing matches and 128 outside a repo.
+    """
+    if shutil.which("git") is None:
+        return False
+    return run_git(root, ["check-ignore", "-q", ".agent/"])[0] == 1
+
+
 def doctor(root: Path) -> Dict[str, Any]:
     findings: List[Dict[str, str]] = []
     # An incompatible or unreadable contract is exactly what doctor exists to
@@ -540,6 +556,8 @@ def doctor(root: Path) -> Dict[str, Any]:
         findings.append({"severity": "error", "message": ".agent directory is not writable"})
     if not is_git_repo(root):
         findings.append({"severity": "warning", "message": "root is not a git repository"})
+    elif agent_dir_unignored(root):
+        findings.append({"severity": "warning", "message": AGENT_DIR_UNIGNORED})
     status = "failed" if any(finding["severity"] == "error" for finding in findings) else "passed"
     return {"status": status, "contract": contract, "findings": findings}
 
