@@ -1038,6 +1038,14 @@ def write_canonical(
         agent_dir = staging / ".agent"
         agent_dir.mkdir(parents=True, exist_ok=True)
         _stage_canonical(plan, agent_dir)
+        # Valid source chains can conflict after concat deduplication and ordering.
+        staged_plan, _ = try_read_json(staging / BASE_ARTIFACT_PATHS["plan-lock"])
+        problem = plan_binding_error(staging, staged_plan)
+        if problem:
+            return {
+                **report, "status": "collision",
+                "collisions": [_collision("merged_plan_binding_failed", error=problem)],
+            }
         # Provenance is generated fresh each run, never read/merged from inputs
         # (contracts keeps "aggregation" out of the merge-path lists).
         provenance = {

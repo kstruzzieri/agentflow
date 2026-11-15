@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import shutil
 import tempfile
 import unittest
 from pathlib import Path
@@ -10,7 +11,7 @@ from typing import List, Optional
 from unittest import mock
 
 from agentflow import porcelain
-from agentflow.aggregate import analyze, parse_sources
+from agentflow.aggregate import Source, analyze, parse_sources, write_canonical
 from agentflow.artifacts import (
     create_initial_artifacts,
     plan_binding_sha256,
@@ -25,6 +26,7 @@ from agentflow.plan_binding import plan_binding_error
 from agentflow.proof import InvalidWorkingState, build_proof, verify_proof
 from agentflow.validation import audit_drift
 
+from tests.test_aggregate import _repo_with_worktrees
 from tests.test_run_baseline import (
     commit_all,
     edit_line,
@@ -396,6 +398,56 @@ class FailClosedAndLegacyTests(unittest.TestCase):
 
 
 class AggregationTests(unittest.TestCase):
+    def _amended_sources(self, tmp: str, shared: bool = False) -> tuple:
+        output, first, second = _repo_with_worktrees(tmp)
+        bound_run(first)
+        init_execution_artifacts(first, force=True)
+        shutil.copytree(first / ".agent", second / ".agent", dirs_exist_ok=True)
+        widen(first)
+        relock(first)
+        shutil.copyfile(first / PLAN, second / PLAN)
+        self.assertEqual(amend(first, "AM1")[0], 0)
+        if shared:
+            shutil.copyfile(first / AMENDMENTS, second / AMENDMENTS)
+        else:
+            self.assertEqual(amend(second, "AM2")[0], 0)
+        sources = [Source(first, "a", "a"), Source(second, "b", "b")]
+        for source in sources:
+            self.assertIsNone(plan_binding_error(source.root, current(source.root)))
+        self.assertEqual(analyze(sources, output, base_ref="HEAD")["status"], "ok")
+        return output, sources
+
+    def test_conflicting_merged_amendments_preserve_existing_output(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            output, sources = self._amended_sources(tmp)
+            (output / ".agent").mkdir()
+            sentinel = output / ".agent/keep.txt"
+            sentinel.write_bytes(b"existing proof")
+            before = {
+                path: path.read_bytes()
+                for source in sources
+                for path in (source.root / ".agent").rglob("*") if path.is_file()
+            }
+            result = write_canonical(sources, output, base_ref="HEAD")
+            self.assertEqual(result["status"], "collision", result)
+            self.assertTrue(any(
+                collision["kind"] == "merged_plan_binding_failed"
+                and "amendment AM2" in collision["error"]
+                for collision in result["collisions"]
+            ), result)
+            self.assertEqual(list((output / ".agent").iterdir()), [sentinel])
+            self.assertEqual(sentinel.read_bytes(), b"existing proof")
+            self.assertEqual(list(output.glob(".agent.aggregate.*")), [])
+            self.assertEqual(before, {path: path.read_bytes() for path in before})
+
+    def test_shared_amendment_merges_once_and_keeps_valid_binding(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            output, sources = self._amended_sources(tmp, shared=True)
+            result = write_canonical(sources, output, base_ref="HEAD")
+            self.assertEqual(result["status"], "ok", result)
+            self.assertEqual(len(read_jsonl(output / AMENDMENTS)), 1)
+            self.assertIsNone(plan_binding_error(output, current(output)))
+
     def _sources(self, tmp: str, edit_second: bool = False, amend_second: bool = False) -> List:
         roots = []
         for name in ("a", "b"):
