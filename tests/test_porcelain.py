@@ -157,10 +157,12 @@ def _shared_path_repo(root: Path) -> None:
     _ready_repo_with_steps(root, steps, extra_allowed=("src/a.py", "src/shared.py"))
 
 
-def _attempt(root: Path, step_id: str, path: str, text, amend: bool = False) -> None:
+def _attempt(root: Path, step_id: str, path: str, text, amend: bool = False, after_open=None) -> None:
     """Open an attempt, write path (delete it when text is None), record it, pass the gate."""
     opener = ["amend-step", step_id, "--reason", "tweak"] if amend else ["claim-step", step_id]
     assert cli.main([*opener, "--agent", "tester", "--root", str(root)]) == 0
+    if after_open is not None:
+        after_open()
     if text is None:
         (root / path).unlink()
     else:
@@ -1157,12 +1159,12 @@ class TestNextActionInflightWork(unittest.TestCase):
                     ]
                     _ready_repo_with_steps(root, steps,
                                            extra_allowed=("src/a.py", "src/shared.py", "src/original.py"))
-                    if kind == "rename":
-                        # Staged-rename classification exists only in runs without a
-                        # #139 baseline; an anchored run sees a delete plus an add.
-                        (root / ".agent/run-anchors.jsonl").unlink()
                     _set_hunk_policy(root, policy)
-                    _attempt(root, "P2", "src/shared.py", edited)
+                    # Staged-rename classification exists only in runs without a
+                    # #139 baseline; an anchored run sees a delete plus an add. A
+                    # run 1.6 started has claims and no anchor (#148).
+                    drop_anchor = (root / ".agent/run-anchors.jsonl").unlink if kind == "rename" else None
+                    _attempt(root, "P2", "src/shared.py", edited, after_open=drop_anchor)
                     self.assertEqual(cli.main(["finish-step", "P2", "--root", str(root)]), 0)
                     _attempt(root, "P1", "src/a.py", "a = 1\n")
                     if kind == "rename":

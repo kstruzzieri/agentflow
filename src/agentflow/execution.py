@@ -215,7 +215,13 @@ def init_execution_artifacts(root: Path, force: bool = False) -> Tuple[List[str]
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(content, encoding="utf-8")
         created.append(relative_path)
-    _write_run_anchor(root, starts_run=".agent/step-runs.jsonl" in created, created=created, skipped=skipped)
+    # #148: a run with no claims and no run-start row has nothing to protect,
+    # so it gets the row now (a run 1.6 started, or a row deleted before the
+    # first claim). A run with claims keeps the comparison it started with.
+    starts_run = ".agent/step-runs.jsonl" in created or (
+        not (root / EXECUTION_ARTIFACT_PATHS["run-anchors"]).exists() and not read_step_events(root)
+    )
+    _write_run_anchor(root, starts_run=starts_run, created=created, skipped=skipped)
     (root / ".agent/handoffs").mkdir(parents=True, exist_ok=True)
     (root / ".agent/attempts").mkdir(parents=True, exist_ok=True)
     (root / ".agent/receipts").mkdir(parents=True, exist_ok=True)
@@ -788,6 +794,22 @@ def resolve_attempt(root: Path, step_id: str, attempt_id: Optional[str]) -> str:
     raise ValueError(f"{step_id} has no open attempt; run claim-step first")
 
 
+def _refuse_unstarted_run(root: Path) -> None:
+    """#148: init-execution is the one place a run starts.
+
+    Without the ledger or contract, claim-step would start a run itself; with
+    an empty ledger and no run-start row, drift checks would fall back to
+    HEAD and miss committed work. A ledger with events and no row is a run an
+    older version started, and keeps working.
+    """
+    if not (
+        _step_runs_path(root).exists()
+        and (root / EXECUTION_ARTIFACT_PATHS["execution-contract"]).exists()
+        and ((root / EXECUTION_ARTIFACT_PATHS["run-anchors"]).exists() or read_step_events(root))
+    ):
+        raise ValueError("no run started; run agentflow init-execution first; nothing was recorded")
+
+
 def claim_step(
     root: Path,
     plan: Dict[str, Any],
@@ -797,6 +819,7 @@ def claim_step(
     now: Optional[datetime] = None,
 ) -> Dict[str, Any]:
     _find_step(plan, step_id)
+    _refuse_unstarted_run(root)  # before the lock, which would create a file
     enforce = lease_policy(root) == "enforce"
     with file_lock(_step_runs_lock_path(root)):
         state = read_step_state(root)

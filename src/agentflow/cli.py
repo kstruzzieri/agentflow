@@ -47,6 +47,7 @@ from .execution import (
     init_execution_artifacts,
     mark_step_verified,
     next_step,
+    read_step_events,
     reclaim_step,
     renew_lease,
     require_lifecycle_owner,
@@ -259,7 +260,9 @@ def command_init_execution(args: argparse.Namespace) -> int:
     # #138: a run pins the plan it starts with, so one that starts without a
     # locked plan could never detect a plan edit. Checked before anything is
     # written; re-running on an existing run starts nothing and is not checked.
-    if args.force or not (root / ".agent/step-runs.jsonl").exists():
+    if args.force or not (root / ".agent/step-runs.jsonl").exists() or (
+        not (root / ".agent/run-anchors.jsonl").exists() and not read_step_events(root)
+    ):
         try:
             _locked_plan(root)
         except ValueError as exc:

@@ -191,6 +191,92 @@ class AnchorLedgerTests(unittest.TestCase):
             self.assertEqual([row["base_commit"] for row in read_jsonl(root / ANCHORS)], [head])
 
 
+NO_RUN = "no run started; run agentflow init-execution first; nothing was recorded"
+
+
+class RunStartRequiredTests(unittest.TestCase):
+    """#148: init-execution is the one place a run starts."""
+
+    def assert_refused(self, root: Path, task_plan: dict) -> None:
+        before = (root / ".agent/step-runs.jsonl").read_bytes() if (root / ".agent/step-runs.jsonl").exists() else None
+        with self.assertRaises(ValueError) as caught:
+            claim_step(root, task_plan, "P1", "agent-a")
+        self.assertEqual(str(caught.exception), NO_RUN)
+        after = (root / ".agent/step-runs.jsonl").read_bytes() if (root / ".agent/step-runs.jsonl").exists() else None
+        self.assertEqual(after, before)
+        self.assertFalse((root / ".agent/attempts/P1.current").exists())
+
+    def test_claim_without_step_runs_ledger_is_refused(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = seeded_repo(tmp)
+            create_initial_artifacts(root)
+            write_json(root / ".agent/plan.lock.json", one_step_plan())
+            self.assert_refused(root, one_step_plan())
+
+    def test_claim_without_contract_is_refused(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = seeded_repo(tmp)
+            task_plan = start_run(root)
+            (root / ".agent/execution.contract.json").unlink()
+            self.assert_refused(root, task_plan)
+
+    def test_claim_with_no_anchor_and_no_events_is_refused_until_init_execution(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = seeded_repo(tmp)
+            task_plan = start_run(root)
+            (root / ANCHORS).unlink()
+            self.assert_refused(root, task_plan)
+            head = git(root, "rev-parse", "HEAD")
+            created, _skipped = init_execution_artifacts(root)
+            self.assertIn(ANCHORS, created)
+            self.assertEqual([row["base_commit"] for row in read_jsonl(root / ANCHORS)], [head])
+            claim_step(root, task_plan, "P1", "agent-a")
+            with comparison_snapshot():
+                self.assertEqual(comparison_base(root)["source"], "run-anchor")
+
+    def test_run_with_events_and_no_anchor_keeps_head_comparison(self) -> None:
+        # A run an older version started: claims already recorded, no anchor.
+        with tempfile.TemporaryDirectory() as tmp:
+            root = seeded_repo(tmp)
+            task_plan = start_run(root, plan())
+            claim_step(root, task_plan, "P1", "agent-a")
+            (root / ANCHORS).unlink()
+            init_execution_artifacts(root)
+            self.assertFalse((root / ANCHORS).exists())
+            self.assertEqual(claim_step(root, task_plan, "P2", "agent-a")["attempt_id"], "A2")
+            with comparison_snapshot():
+                self.assertEqual(comparison_base(root)["source"], "head")
+
+    def test_outside_git_claims_after_init_execution(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            task_plan = start_run(root)
+            self.assertEqual(claim_step(root, task_plan, "P1", "agent-a")["attempt_id"], "A1")
+
+    def test_outside_git_no_anchor_and_no_events_is_refused(self) -> None:
+        # Since #138 the run-start row pins the plan outside Git too, so a run
+        # without one is not exempt.
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            task_plan = start_run(root)
+            (root / ANCHORS).unlink()
+            self.assert_refused(root, task_plan)
+            init_execution_artifacts(root)
+            self.assertEqual([row["base_commit"] for row in read_jsonl(root / ANCHORS)], [None])
+            claim_step(root, task_plan, "P1", "agent-a")
+
+    def test_cli_claim_without_init_execution_is_one_line(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = seeded_repo(tmp)
+            create_initial_artifacts(root)
+            write_json(root / ".agent/plan.lock.json", one_step_plan())
+            code, out, err = run_cli("claim-step", "P1", "--agent", "agent-a", "--root", str(root))
+            self.assertEqual(code, 2)
+            self.assertEqual(out, "")
+            self.assertEqual(err, NO_RUN + "\n")
+            self.assertFalse((root / ".agent/step-runs.jsonl").exists())
+
+
 class CommittedDriftTests(unittest.TestCase):
     def test_committed_recorded_work_passes(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -326,8 +412,8 @@ class CommittedDriftTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = seeded_repo(tmp)
             task_plan = start_run(root)
-            (root / ANCHORS).unlink()
             claim_step(root, task_plan, "P1", "agent-a")
+            (root / ANCHORS).unlink()  # a run started by 1.6 or older: claims, no anchor
             edit_line(root, "src/app.txt", 1, "RECORDED")
             finish_step(root, "P1", "A1", ["src/app.txt"])
             commit_all(root, "recorded work")
@@ -414,8 +500,8 @@ class RegistrationTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = seeded_repo(tmp)
             task_plan = start_run(root)
-            (root / ANCHORS).unlink()  # a run started by an older version
             claim_step(root, task_plan, "P1", "agent-a")
+            (root / ANCHORS).unlink()  # a run started by an older version
             action = next_action(root)
             self.assertNotIn("run-anchors", " ".join([action.reason, *action.diagnostics]))
             self.assertEqual(action.step_id, "P1")
@@ -429,8 +515,8 @@ class BaseRefTests(unittest.TestCase):
         root = seeded_repo(str(work))
         base = git(root, "rev-parse", "HEAD")
         task_plan = start_run(root)
-        (root / ANCHORS).unlink()
         claim_step(root, task_plan, "P1", "agent-a")
+        (root / ANCHORS).unlink()  # a run started by 1.6 or older: claims, no anchor
         edit_line(root, "src/app.txt", 1, "RECORDED")
         finish_step(root, "P1", "A1", ["src/app.txt"])
         (root / "stray.txt").write_text("unrecorded\n", encoding="utf-8")

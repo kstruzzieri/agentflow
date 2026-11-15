@@ -22,6 +22,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `claim-step`, and the MCP `claim_step` tool, refuse to start a run that
+  `init-execution` did not start (#148). Without the step-runs ledger or the
+  execution contract, or with no run-start row and no claims yet, they record
+  nothing and report
+  `no run started; run agentflow init-execution first; nothing was recorded`
+  (the CLI exits 2). Before, such a run had no baseline, so drift checks compared
+  with HEAD and missed committed out-of-scope work. `init-execution` now
+  writes the run-start row for a run that has none and no claims yet, such as
+  one 1.6 started; an existing row is never moved, and a run that already has
+  claims keeps comparing with HEAD. Scripts that call `claim-step` before
+  `init-execution` must run `init-execution` first.
 - `verify-proof --strict` now prints
   `error: steps_without_support (warning, fails under --strict)` for a warning
   it fails on, instead of `error: steps_without_support: warning`, and appends
