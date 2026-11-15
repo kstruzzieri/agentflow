@@ -54,6 +54,7 @@ from .execution_coverage import verify_run, verify_step
 from .events import filter_events_since, project_events, valid_since
 from .capabilities import append_capability_receipt, build_capability_receipt
 from .handoff import export_handoff, lint_handoff_text
+from .git import comparison_snapshot
 from .hunks import format_unmapped_hunk
 from . import porcelain
 from .locks import file_lock
@@ -1510,7 +1511,7 @@ def command_finish_run(args: argparse.Namespace) -> int:
     # finish_run captures each delegated gate's output internally, so stdout
     # stays clean for --json and the failing gate's detail is surfaced in
     # result["diagnostics"] rather than swallowed.
-    result = porcelain.finish_run(root, plan_path, strict_mode(args.strict))
+    result = porcelain.finish_run(root, plan_path, strict_mode(args.strict), base_ref=args.base_ref)
     if args.json:
         print(json.dumps(result, indent=2, sort_keys=True))
     else:
@@ -2049,6 +2050,14 @@ def build_parser() -> argparse.ArgumentParser:
     audit = subparsers.add_parser("audit-drift", help="compare git changes to plan scope")
     audit.add_argument("--root", default=".")
     audit.add_argument("--plan", default=".agent/plan.lock.json")
+    audit.add_argument(
+        "--base-ref",
+        metavar="REF",
+        help=(
+            "compare against the merge base of HEAD and REF instead of the run's "
+            "recorded baseline (for CI: the pull request's base commit)"
+        ),
+    )
     audit.set_defaults(func=command_audit_drift)
 
     next_step_parser = subparsers.add_parser("next-step", help="show the next eligible plan step")
@@ -2193,6 +2202,14 @@ def build_parser() -> argparse.ArgumentParser:
         dest="record",
         help="verify without appending to .agent/verification-runs.jsonl",
     )
+    verify_run_parser.add_argument(
+        "--base-ref",
+        metavar="REF",
+        help=(
+            "compare against the merge base of HEAD and REF instead of the run's "
+            "recorded baseline (for CI: the pull request's base commit)"
+        ),
+    )
     verify_run_parser.add_argument("--json", action="store_true")
     verify_run_parser.set_defaults(record=True)
     verify_run_parser.set_defaults(func=command_verify_run)
@@ -2334,6 +2351,14 @@ def build_parser() -> argparse.ArgumentParser:
     finish_run_parser.add_argument("--plan", default=".agent/plan.lock.json")
     finish_run_parser.add_argument("--json", action="store_true")
     finish_run_parser.add_argument("--strict", action="store_true")
+    finish_run_parser.add_argument(
+        "--base-ref",
+        metavar="REF",
+        help=(
+            "compare against the merge base of HEAD and REF instead of the run's "
+            "recorded baseline (for CI: the pull request's base commit)"
+        ),
+    )
     finish_run_parser.set_defaults(func=command_finish_run)
 
     status = subparsers.add_parser("status", help="summarize current workflow state")
@@ -2350,7 +2375,8 @@ def main(argv: Optional[List[str]] = None) -> int:
         # #117: one read of the execution contract for the whole command, taken
         # before it does any work, so a gate it replays or runs before the
         # first policy read cannot change which contract its records name.
-        with execution_contract_snapshot():
+        # #139: likewise one comparison base for every changed-file check.
+        with execution_contract_snapshot(), comparison_snapshot(getattr(args, "base_ref", None)):
             if isinstance(getattr(args, "root", None), str):
                 try:
                     execution_contract_sha256(Path(args.root).resolve())

@@ -839,8 +839,8 @@ class SchemaBumpTests(unittest.TestCase):
         from agentflow import contracts
         self.assertEqual(contracts.STEP_RUNS_SCHEMA_VERSION, "1.1.0")
         self.assertEqual(contracts.COMMAND_RECEIPTS_SCHEMA_VERSION, "1.2.0")  # #112 bound fields
-        self.assertEqual(contracts.FILE_RECEIPTS_SCHEMA_VERSION, "1.1.0")
-        self.assertEqual(contracts.VERIFICATION_RUNS_SCHEMA_VERSION, "1.1.0")
+        self.assertEqual(contracts.FILE_RECEIPTS_SCHEMA_VERSION, "1.2.0")  # #139 hunk_base_commit
+        self.assertEqual(contracts.VERIFICATION_RUNS_SCHEMA_VERSION, "1.2.0")  # #139 baseline
 
     def test_pre_bump_rows_still_validate_backward_compat(self):
         # The #30 namespacing bump had to keep rows written before it readable.
@@ -1062,6 +1062,50 @@ class MalformedIdTests(unittest.TestCase):
             report = aggregate.analyze([Source(a, "w1", "a")], out, base_ref="HEAD")
             self.assertEqual(report["status"], "collision")
             self.assertTrue(any(c["kind"] == "malformed_id" for c in report["collisions"]))
+
+
+class RunAnchorTests(unittest.TestCase):
+    """#139: sources must start from the same run baseline (or none)."""
+
+    def _anchor(self, root, commit, recorded_at="2026-11-14T00:00:00+00:00"):
+        from agentflow.contracts import RUN_ANCHORS_SCHEMA_VERSION
+        append_jsonl(root / ".agent/run-anchors.jsonl", {
+            "schema_version": RUN_ANCHORS_SCHEMA_VERSION, "id": "RA1", "anchor": "run_start",
+            "base_commit": commit, "recorded_at": recorded_at,
+        })
+
+    def _two(self, tmp):
+        a = build_tree(Path(tmp) / "a", steps=["P1"])
+        b = build_tree(Path(tmp) / "b", steps=["P2"])
+        return a, b, [Source(a, "w1", "a"), Source(b, "w2", "b")]
+
+    def test_anchor_mismatch_collides(self):
+        import tempfile
+        for b_commit in ("b" * 40, None, "absent"):
+            with self.subTest(b_commit=b_commit), tempfile.TemporaryDirectory() as tmp:
+                a, b, sources = self._two(tmp)
+                self._anchor(a, "a" * 40)
+                if b_commit != "absent":
+                    self._anchor(b, b_commit)
+                kinds = [c["kind"] for c in aggregate._run_anchor_collisions(sources)]
+                self.assertEqual(kinds, ["run_anchor_mismatch"])
+
+    def test_same_anchor_writes_one_row(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            a, b, sources = self._two(tmp)
+            self._anchor(a, "a" * 40)
+            self._anchor(b, "a" * 40, recorded_at="2026-11-14T01:00:00+00:00")
+            self.assertEqual(aggregate._run_anchor_collisions(sources), [])
+            rows = aggregate.plan_write(sources)["ledgers"][".agent/run-anchors.jsonl"]
+            self.assertEqual([row["base_commit"] for row in rows], ["a" * 40])
+
+    def test_no_anchors_writes_no_ledger(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            _a, _b, sources = self._two(tmp)
+            self.assertEqual(aggregate._run_anchor_collisions(sources), [])
+            self.assertNotIn(".agent/run-anchors.jsonl", aggregate.plan_write(sources)["ledgers"])
 
 
 class PlanWriteTests(unittest.TestCase):

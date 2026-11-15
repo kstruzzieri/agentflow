@@ -143,6 +143,7 @@ def _append_verification(
     strict: bool,
     replay: bool,
     result: Dict[str, Any],
+    baseline: Optional[Dict[str, Any]] = None,
 ) -> None:
     entry: Dict[str, Any] = {
         "schema_version": VERIFICATION_RUNS_SCHEMA_VERSION,
@@ -159,6 +160,8 @@ def _append_verification(
         entry["step_id"] = step_id
     if attempt_id is not None:
         entry["attempt_id"] = attempt_id
+    if baseline is not None:
+        entry["baseline"] = baseline
     append_jsonl(root / ".agent/verification-runs.jsonl", entry)
 
 
@@ -1007,6 +1010,17 @@ def verify_run(
     for error in validate_plan(plan):
         result["errors"].append({"severity": "error", "message": error})
     drift = audit_drift(root, plan)
+    baseline = drift.get("baseline")
+    if baseline is not None:
+        result["baseline"] = baseline
+    if baseline is not None and "error" in baseline:
+        # #139: no trustworthy base means no changed-file check can run; fail
+        # closed with the one reason instead of a cascade from the same cause.
+        result["errors"].append({"severity": "error", "message": baseline["error"]})
+        result["status"] = "failed"
+        if record:
+            _append_verification(root, "run", None, None, effective_strict, False, result, baseline)
+        return result
     if drift.get("status") == "fail":
         for path in drift.get("out_of_scope_files", []):
             if not path.startswith(".agent/"):
@@ -1065,5 +1079,5 @@ def verify_run(
     elif result["warnings"]:
         result["status"] = "warning"
     if record:
-        _append_verification(root, "run", None, None, effective_strict, False, result)
+        _append_verification(root, "run", None, None, effective_strict, False, result, baseline)
     return result

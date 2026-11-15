@@ -82,10 +82,10 @@ build-proof ok
 verify-proof ok
 ```
 
-`verify-run` and `audit-drift` compare your uncommitted changes with the last
-commit, so run them before you commit. A changed file with no receipt fails
-`verify-run`. An unrecorded edit inside a recorded file, or a file outside the
-plan's scope, fails `audit-drift`.
+`verify-run` and `audit-drift` compare everything changed since the run
+started, committed or not. A changed file with no receipt fails `verify-run`.
+An unrecorded edit inside a recorded file, or a file outside the plan's scope,
+fails `audit-drift`.
 
 Anyone with the proof files can check them again later with
 `agentflow verify-proof`, which compares the ledgers and receipts with the

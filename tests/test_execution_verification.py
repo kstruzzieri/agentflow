@@ -87,6 +87,17 @@ def plan() -> dict:
     }
 
 
+def _anchor_at_head(root: Path) -> None:
+    """#139: the seed commit predates the run, so move the run baseline onto it."""
+    path = root / ".agent/run-anchors.jsonl"
+    row = json.loads(path.read_text(encoding="utf-8"))
+    row["base_commit"] = subprocess.run(
+        ["git", "-C", str(root), "rev-parse", "HEAD"],
+        check=True, stdout=subprocess.PIPE, text=True,
+    ).stdout.strip()
+    path.write_text(json.dumps(row) + "\n", encoding="utf-8")
+
+
 class ExecutionVerificationTests(unittest.TestCase):
     def _root(self, tmp: str, claim: bool = True) -> Path:
         root = Path(tmp)
@@ -1581,6 +1592,7 @@ class ExecutionVerificationTests(unittest.TestCase):
             root = self._root(tmp)
             seed = "a\nTARGET\nb\n" + "".join(f"pad{i}\n" for i in range(10)) + "a\nTARGET\nb\n"
             self._seed_commit(root, "fixture.txt", seed)
+            _anchor_at_head(root)
             text = (root / "fixture.txt").read_text()
             once = text.replace("TARGET", "CHANGED", 1)  # edit only the FIRST block
             (root / "fixture.txt").write_text(once, encoding="utf-8")

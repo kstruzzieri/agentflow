@@ -7,33 +7,40 @@ also set how strict a run must be, from configuration the agent cannot edit.
 This repository runs the gate in `.github/workflows/ci.yml`. A smaller job you
 can copy is in [`examples/ci-proof/`](../examples/ci-proof/).
 
-## What a plain checkout does not check
+## Checking the source edits
 
-`verify-run` and `audit-drift` read changed files from `git status`. In a fresh
-CI checkout nothing is uncommitted, so running them there checks the proof's
-own files and says nothing about the source edits in the pull request (#139).
-
-To check source edits against their receipts, CI has to rebuild the state the
-agent worked in. This repository's workflow does that in its "Stage configured
-proof bundle" step:
-
-1. Copy the files from the pull request's base commit into a temporary
-   directory and commit them there as the baseline.
-2. Replace those files with the pull request's files, uncommitted.
-3. Run the checks against that directory.
-
-The copyable job in `examples/ci-proof/` skips this. It verifies a committed
-proof bundle as it stands, which is the right check for a bundle and not a
-check of source edits.
-
-## The two checks
-
-The workflow stages a proof root into a temporary Git repository, then runs:
+`verify-run` and `audit-drift` compare everything changed since a baseline
+commit, committed or not (#139). In a fresh CI checkout nothing is
+uncommitted, so name the baseline with `--base-ref`: the checks then compare
+with the merge base of HEAD and that ref, and a source edit with no receipt
+fails even though it is committed.
 
 ```bash
-agentflow verify-run --no-record --root "$PROOF_ROOT"
+agentflow verify-run --no-record --root "$PROOF_ROOT" --base-ref "$BASE_SHA"
 agentflow verify-proof --root "$PROOF_ROOT"
 ```
+
+Three settings make this work on a pull request:
+
+- Pass the pull request's base commit, `github.event.pull_request.base.sha`.
+- Check out the pull request's own commits,
+  `ref: ${{ github.event.pull_request.head.sha }}`. The default checkout is a
+  merge with the base branch, and a file the base branch also changed no
+  longer matches its receipt.
+- Fetch the history with `fetch-depth: 0`, so the base commit is there.
+
+Without `--base-ref`, the checks use the baseline the run recorded at
+`init-execution`. That record lives in `.agent/`, which the agent can write,
+so keep `--base-ref` in CI configuration the agent cannot edit. It is a live
+check: `verify-proof` does not re-check it later.
+
+On a push, pass `--base-ref HEAD`, which checks the ledgers only. The pull
+request run already compared the source edits, and a squash or rebase merge
+can leave the commit the run recorded out of the branch's history, which fails
+the recorded-baseline check. The copyable job in
+[`examples/ci-proof/`](../examples/ci-proof/) does all of this.
+
+## The two checks
 
 `verify-run --no-record` is for CI and other read-only checks: it validates the
 execution ledger without appending a new entry to
@@ -76,18 +83,19 @@ gate under the tighter receipt policy. See the
 
 ## Choosing the proof root and baseline
 
-The workflow reads two variables. They belong to the workflow, not to the
-`agentflow` command.
+This repository's workflow reads two variables. They belong to the workflow,
+not to the `agentflow` command, and the workflow passes them to
+`examples/ci-proof/smoke.sh`.
 
 - `AGENTFLOW_PROOF_ROOT` selects the committed proof bundle. This repository
   points it at `tests/fixtures/proof-bundle` so CI can regression test the
-  verifier itself without committing task-local root `.agent/` artifacts.
+  verifier itself without committing task-local root `.agent/` artifacts. A
+  subdirectory like that is checked as a standalone copy with no history.
   Repositories that commit the active task's proof bundle should set it to `.`.
-- `AGENTFLOW_PROOF_BASE_REF` selects the baseline commit. When it is unset and
-  the proof root is `.`, a pull request uses the PR base commit as the temporary
-  Git baseline before overlaying the current proof root, so `verify-run` still
-  sees source edits that lack file receipts. Set it explicitly when the
-  baseline should be a different commit.
+- `AGENTFLOW_PROOF_BASE_REF` selects the baseline commit, passed as
+  `--base-ref`. When it is unset and the proof root is `.`, a pull request uses
+  its base commit and a push uses `HEAD`. It needs the proof root to be `.`;
+  with a subdirectory the workflow fails rather than ignore it.
 
 ```yaml
 env:

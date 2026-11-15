@@ -494,12 +494,13 @@ class ContractPinWriterTests(unittest.TestCase):
                 for record in _records(root, ledger):
                     with self.subTest(ledger=ledger, record=record.get("id", record.get("event"))):
                         self.assertEqual(record.get(PIN), digest)
-                        # #112 moved command receipts to 1.2.0 (bound confirmation fields).
-                        expected = "1.2.0" if ledger == ".agent/command-receipts.jsonl" else "1.1.0"
+                        # #112 moved command receipts to 1.2.0 (bound confirmation fields);
+                        # #139 moved file receipts and verification runs to 1.2.0.
+                        expected = "1.1.0" if ledger == ".agent/step-runs.jsonl" else "1.2.0"
                         self.assertEqual(record["schema_version"], expected)
             drift = json.loads((root / ".agent/drift-report.json").read_text(encoding="utf-8"))
             self.assertEqual(drift.get(PIN), digest)
-            self.assertEqual(drift["schema_version"], "1.1.0")
+            self.assertEqual(drift["schema_version"], "1.2.0")  # #139 baseline
 
     def test_a_command_that_rewrites_the_contract_is_pinned_to_the_one_it_ran_under(self) -> None:
         # The child restores a strong contract before exit. The receipt must

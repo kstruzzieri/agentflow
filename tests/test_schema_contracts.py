@@ -768,7 +768,7 @@ class ReviewSchemaTests(unittest.TestCase):
 class LeaseSchemaContractTests(unittest.TestCase):
     def test_lease_schema_versions_bumped(self) -> None:
         self.assertEqual(PROOF_PACK_SCHEMA_VERSION, "1.2.0")
-        self.assertEqual(DRIFT_REPORT_SCHEMA_VERSION, "1.1.0")
+        self.assertEqual(DRIFT_REPORT_SCHEMA_VERSION, "1.2.0")  # #139 baseline
         self.assertEqual(STEP_RUNS_SCHEMA_VERSION, "1.1.0")
 
     def test_proof_pattern_accepts_lease_version(self) -> None:
@@ -845,8 +845,9 @@ class ContractPinSchemaContractTests(unittest.TestCase):
 
 class HunkContractTests(unittest.TestCase):
     def test_versions_bumped(self) -> None:
-        self.assertEqual(FILE_RECEIPTS_SCHEMA_VERSION, "1.1.0")
-        self.assertEqual(DRIFT_REPORT_SCHEMA_VERSION, "1.1.0")
+        # #139 raised both to 1.2.0 (hunk_base_commit, baseline).
+        self.assertEqual(FILE_RECEIPTS_SCHEMA_VERSION, "1.2.0")
+        self.assertEqual(DRIFT_REPORT_SCHEMA_VERSION, "1.2.0")
 
     def test_hunk_enums_defined(self) -> None:
         self.assertEqual(HUNK_ATTRIBUTION_POLICIES, ("enforce", "observe", "off"))
@@ -981,6 +982,43 @@ class AggregationSchemaContractTests(unittest.TestCase):
         for version in ("01.0.0", "1.00.0", "1.0", "1.0.0-rc1", "1.0.0\n"):
             with self.subTest(version=version):
                 self.assertIsNone(re.search(specs[0]["pattern"], version))
+
+
+class RunBaselineSchemaContractTests(unittest.TestCase):
+    """#139: an optional baseline on drift and verification records, an
+    optional hunk base on file receipts, and the new run-anchors ledger."""
+
+    def test_baseline_fields_are_optional_additions(self) -> None:
+        for name, field in (
+            ("drift-report", "baseline"),
+            ("verification-runs", "baseline"),
+            ("file-receipts", "hunk_base_commit"),
+        ):
+            with self.subTest(schema=name):
+                schema = load_schema(f"{name}.schema.json")
+                self.assertIn(field, schema["properties"])
+                self.assertNotIn(field, schema["required"])
+                pattern = schema["properties"]["schema_version"]["pattern"]
+                for version in ("1.0.0", "1.1.0", "1.2.0"):
+                    self.assertRegex(version, pattern)
+        baseline = load_schema("drift-report.schema.json")["properties"]["baseline"]
+        self.assertEqual(baseline["properties"]["source"]["enum"], ["head", "run-anchor", "base-ref"])
+
+    def test_run_anchors_schema(self) -> None:
+        from agentflow.contracts import (
+            ARTIFACT_COMPATIBILITY_POLICIES,
+            EXECUTION_ARTIFACT_PATHS,
+            RUN_ANCHORS_SCHEMA_VERSION,
+        )
+
+        schema = load_schema("run-anchors.schema.json")
+        self.assertEqual(RUN_ANCHORS_SCHEMA_VERSION, "1.0.0")
+        self.assertRegex(RUN_ANCHORS_SCHEMA_VERSION, schema["properties"]["schema_version"]["pattern"])
+        self.assertEqual(
+            sorted(schema["required"]), ["anchor", "base_commit", "id", "recorded_at", "schema_version"]
+        )
+        self.assertEqual(EXECUTION_ARTIFACT_PATHS["run-anchors"], ".agent/run-anchors.jsonl")
+        self.assertEqual(ARTIFACT_COMPATIBILITY_POLICIES["run-anchors"], "same_major")
 
 
 if __name__ == "__main__":

@@ -312,7 +312,8 @@ def _validate_file_receipt(
 def _projection_ledgers(root: Path) -> Dict[str, List[Dict[str, Any]]]:
     ledgers: Dict[str, List[Dict[str, Any]]] = {}
     for name, relative in EXECUTION_ARTIFACT_PATHS.items():
-        if name in ("execution-contract", "command-confirmations"):
+        # run-anchors (#139) is absent from runs older versions started.
+        if name in ("execution-contract", "command-confirmations", "run-anchors"):
             continue
         path = root / relative
         if not path.is_file():
@@ -1557,7 +1558,9 @@ def complete_step_rechecked(root: Path, step_id: str, attempt_id: Optional[str],
     return complete_step(root, step_id, attempt_id, agent_id=agent_id, recheck=recheck)
 
 
-def finish_run(root: Path, plan_path: Path, strict: bool = False) -> Dict[str, Any]:
+def finish_run(
+    root: Path, plan_path: Path, strict: bool = False, base_ref: Optional[str] = None
+) -> Dict[str, Any]:
     # Import inside the function: cli.py imports porcelain, so a top-level
     # `from . import cli` here would create a circular import.
     import contextlib
@@ -1568,9 +1571,11 @@ def finish_run(root: Path, plan_path: Path, strict: bool = False) -> Dict[str, A
     root_args = ["--root", str(root)]
     plan_args = ["--plan", str(plan_path)]
     strict_args = ["--strict"] if strict else []
+    # One token, so a ref starting with "-" is not read as another option.
+    base_args = [f"--base-ref={base_ref}"] if base_ref is not None else []
     gates = [
-        ("audit-drift", ["audit-drift", *root_args, *plan_args]),
-        ("verify-run", ["verify-run", *root_args, *plan_args, *strict_args]),
+        ("audit-drift", ["audit-drift", *root_args, *plan_args, *base_args]),
+        ("verify-run", ["verify-run", *root_args, *plan_args, *strict_args, *base_args]),
         ("build-proof", ["build-proof", *root_args, *plan_args, *strict_args]),
         ("verify-proof", ["verify-proof", *root_args, *strict_args]),
     ]

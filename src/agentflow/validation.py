@@ -24,7 +24,15 @@ from .execution import (
     read_step_state,
     try_load_execution_contract,
 )
-from .git import changed_file_records, changed_files, is_git_repo
+from .git import (
+    BaselineError,
+    baseline_summary,
+    changed_file_records,
+    changed_files,
+    comparison_base,
+    is_git_repo,
+    run_git,
+)
 from .hunks import effective_hunk_policy, unmapped_hunks
 from .versioning import parse_schema_version, validate_schema_version
 
@@ -609,6 +617,15 @@ def audit_drift(root: Path, plan: Dict[str, Any]) -> Dict[str, Any]:
         report["notes"].append("Not a git repository; drift audit could not inspect changed files.")
         return report
 
+    try:
+        base = comparison_base(root)
+    except BaselineError as exc:
+        report["status"] = "fail"
+        report["baseline"] = {"source": exc.source, "error": str(exc)}
+        report["notes"].append(str(exc))
+        return report
+    report["baseline"] = baseline_summary(base)
+
     files = changed_files(root)
     report["changed_files"] = files
 
@@ -664,7 +681,18 @@ def audit_drift(root: Path, plan: Dict[str, Any]) -> Dict[str, Any]:
                 )
 
     if not files:
-        report["notes"].append("No changed files detected by git status.")
+        report["notes"].append(
+            "No changed files detected by git status."
+            if base["source"] == "head"
+            else "No changed files since the run baseline."
+        )
+    if report["status"] == "fail" and base["commit"]:
+        code, merges, _ = run_git(root, ["rev-list", "--merges", "--count", f"{base['commit']}..HEAD"])
+        if code == 0 and merges.strip() not in ("", "0"):
+            report["notes"].append(
+                f"{merges.strip()} merge commit(s) since the baseline: files a merge brought in "
+                "count as changed. Check with --base-ref naming the branch you merged."
+            )
 
     # #20: enforce-mode stale-attempt note. Purely informational -- it never
     # changes the pass/fail verdict; reclaim-step/fail-step is the operator resolution.

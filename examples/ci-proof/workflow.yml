@@ -9,14 +9,25 @@ jobs:
   proof:
     runs-on: ubuntu-latest
     env:
-      PROOF_ROOT: tests/fixtures/proof-bundle
+      # The directory that holds the committed .agent/ proof bundle.
+      PROOF_ROOT: .
     steps:
       # Pinned to commit SHAs; refresh the pins when you copy this workflow.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # The pull request's own commits, which the receipts describe (not a
+          # merge with the base branch), and the history --base-ref needs.
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.11"
-      - run: |
-          PYTHONPATH=src python3 -m agentflow verify-run --no-record --root "$PROOF_ROOT"
+      - env:
+          # A pull request compares with its base commit. A push checks the
+          # ledgers only: the pull request already compared the edits, and a
+          # squash or rebase merge can drop the baseline the run recorded.
+          BASE_REF: ${{ github.event.pull_request.base.sha || 'HEAD' }}
+        run: |
+          PYTHONPATH=src python3 -m agentflow verify-run --no-record --root "$PROOF_ROOT" --base-ref "$BASE_REF"
           PYTHONPATH=src python3 -m agentflow verify-proof --root "$PROOF_ROOT"
           PYTHONPATH=src python3 -m agentflow verify-proof --strict --root "$PROOF_ROOT"

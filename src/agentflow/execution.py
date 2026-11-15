@@ -32,9 +32,10 @@ from .contracts import (
     LEASE_POLICIES,
     REVIEW_GATE_POLICIES,
     RISK_POLICIES,
+    RUN_ANCHORS_SCHEMA_VERSION,
     STEP_RUNS_SCHEMA_VERSION,
 )
-from .git import is_git_repo, run_git
+from .git import head_commit, is_git_repo, run_git
 from .locks import file_lock
 from .versioning import parse_schema_version, validate_schema_version_policy
 
@@ -212,10 +213,42 @@ def init_execution_artifacts(root: Path, force: bool = False) -> Tuple[List[str]
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(content, encoding="utf-8")
         created.append(relative_path)
+    _write_run_anchor(root, starts_run=".agent/step-runs.jsonl" in created, created=created, skipped=skipped)
     (root / ".agent/handoffs").mkdir(parents=True, exist_ok=True)
     (root / ".agent/attempts").mkdir(parents=True, exist_ok=True)
     (root / ".agent/receipts").mkdir(parents=True, exist_ok=True)
     return created, skipped
+
+
+def _write_run_anchor(root: Path, starts_run: bool, created: List[str], skipped: List[str]) -> None:
+    """#139: record the commit a fresh run starts from (null before the first commit).
+
+    Only when this call starts the run (it wrote step-runs.jsonl): re-running
+    init-execution must never move an existing run's baseline, and a run that
+    older versions started keeps comparing with HEAD. #138 adds the plan hash
+    to this row, which is why it is a row and not a bare commit id.
+    """
+    relative = EXECUTION_ARTIFACT_PATHS["run-anchors"]
+    path = root / relative
+    if not starts_run:
+        if path.exists():
+            skipped.append(relative)
+        return
+    if not is_git_repo(root):
+        return
+    contract = (root / EXECUTION_ARTIFACT_PATHS["execution-contract"]).read_bytes()
+    row = {
+        "schema_version": RUN_ANCHORS_SCHEMA_VERSION,
+        "id": "RA1",
+        "anchor": "run_start",
+        "base_commit": head_commit(root),
+        "recorded_at": utc_now(),
+        # Hashed from the bytes on disk: this command's contract snapshot was
+        # taken before init-execution wrote the contract.
+        "execution_contract_sha256": hashlib.sha256(contract).hexdigest(),
+    }
+    path.write_text(json.dumps(row, sort_keys=True) + "\n", encoding="utf-8")
+    created.append(relative)
 
 
 # #117: the contract bytes each CLI invocation reads, by absolute path. MCP tool

@@ -40,60 +40,25 @@ jobs:
       - name: Run unit tests
         run: PYTHONPATH=src python3 -m unittest discover -s tests -v
 
-      - name: Stage configured proof bundle
+      - name: Verify configured proof
+        env:
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
         run: |
           proof_root="$AGENTFLOW_PROOF_ROOT"
-          proof_base_ref="${AGENTFLOW_PROOF_BASE_REF:-}"
-          if [ -z "$proof_base_ref" ] && [ "$proof_root" = "." ] && [ "${{ github.event_name }}" = "pull_request" ]; then
-            proof_base_ref="${{ github.event.pull_request.base.sha }}"
-          fi
           if [ ! -f "$proof_root/.agent/proof-pack.json" ]; then
             echo "::error file=$proof_root/.agent/proof-pack.json::Agentflow proof metadata is missing"
             exit 1
           fi
-
-          bundle="$RUNNER_TEMP/proof-bundle"
-          rm -rf "$bundle"
-          mkdir -p "$bundle"
-
-          copy_tree() {
-            tar -C "$1" --exclude "./.git" --exclude "./.git/*" -cf - . | tar -C "$2" -xf -
-          }
-
-          if [ -n "$proof_base_ref" ]; then
-            baseline="$RUNNER_TEMP/proof-baseline"
-            rm -rf "$baseline"
-            mkdir -p "$baseline"
-            git archive "$proof_base_ref" -- "$proof_root" | tar -x -C "$baseline"
-            if [ "$proof_root" = "." ]; then
-              copy_tree "$baseline" "$bundle"
-            else
-              copy_tree "$baseline/$proof_root" "$bundle"
-            fi
-          else
-            copy_tree "$proof_root" "$bundle"
+          base_ref=""
+          if [ "$proof_root" = "." ]; then
+            # A pull request compares with its base commit, committed changes
+            # included (#139). A push checks the ledgers only (HEAD): the pull
+            # request run compared the edits, and a squash or rebase merge can
+            # drop the baseline the run recorded.
+            base_ref="${AGENTFLOW_PROOF_BASE_REF:-${PR_BASE_SHA:-HEAD}}"
+          elif [ -n "${AGENTFLOW_PROOF_BASE_REF:-}" ]; then
+            echo "::error::AGENTFLOW_PROOF_BASE_REF needs AGENTFLOW_PROOF_ROOT=. (a subdirectory is checked as a copy with no history)"
+            exit 1
           fi
-
-          git -C "$bundle" init -q
-          git -C "$bundle" add -A
-          git -C "$bundle" \
-            -c user.email=ci@agentflow.invalid \
-            -c user.name=agentflow-ci \
-            commit -qm "proof bundle baseline"
-
-          if [ -n "$proof_base_ref" ]; then
-            find "$bundle" -mindepth 1 -maxdepth 1 ! -name .git -exec rm -rf {} +
-            copy_tree "$proof_root" "$bundle"
-          fi
-
-      - name: Run CI proof example
-        run: PYTHONPATH=src PYTHON=python3 sh examples/ci-proof/smoke.sh "$RUNNER_TEMP/proof-bundle"
-
-      - name: verify-run
-        run: PYTHONPATH=src python3 -m agentflow verify-run --no-record --root "$RUNNER_TEMP/proof-bundle"
-
-      - name: verify-proof integrity
-        run: PYTHONPATH=src python3 -m agentflow verify-proof --root "$RUNNER_TEMP/proof-bundle"
-
-      - name: verify strict proof policy
-        run: PYTHONPATH=src python3 -m agentflow verify-proof --strict --root "$RUNNER_TEMP/proof-bundle"
+          AGENTFLOW_BASE_REF="$base_ref" PYTHONPATH=src PYTHON=python3 \
+            sh examples/ci-proof/smoke.sh "$proof_root"

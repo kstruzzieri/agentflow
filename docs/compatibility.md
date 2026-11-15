@@ -96,6 +96,23 @@ worktree whose contract sets `confirmation: "bound"`; `verify-proof` reports
 each such run written under the bound contract (`CRn ran with no bound
 confirmation under confirmation bound`).
 
+### Run baseline (#139)
+
+`init-execution` writes `.agent/run-anchors.jsonl` (new ledger, 1.0.0) when it
+starts a run in a Git repository: one row naming the commit the run starts
+from, or `null` before the first commit. File receipts 1.2.0 add optional
+`hunk_base_commit`, the commit their hunks were measured from. Drift reports
+and verification runs 1.2.0 add optional `baseline` (`source`, `commit`, and
+`ref` for `--base-ref`). The execution contract and proof pack are unchanged,
+and a proof built without the ledger keeps its hashes.
+
+A run with no `run-anchors.jsonl` and no receipt carrying `hunk_base_commit`
+keeps the earlier behaviour: changed files come from `git status`. Agentflow
+1.6 and older ignore the new ledger but reject the 1.2.0 receipts and records,
+so a run this version has worked in cannot go back to them. A receipt an older
+version writes into an anchored run carries no hunk base; its hunks were cut
+from HEAD, so they may not match and fail closed.
+
 ## Compatibility fixtures
 
 The compatibility matrix contains:

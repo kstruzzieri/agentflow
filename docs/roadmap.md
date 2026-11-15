@@ -36,16 +36,16 @@ MCP zipapps through GitHub Releases.
   a [documentation index](README.md). Reference material moved from the README
   into `docs/`, and the docs now state two enforcement limits plainly
   ([#141](https://github.com/kstruzzieri/agentflow/pull/141)).
+- Drift checks cover committed work. A run records its starting commit, so
+  `verify-run` and `audit-drift` compare everything changed since then instead
+  of only uncommitted changes, and both accept `--base-ref` so CI no longer
+  needs to rebuild a baseline by hand ([#139](https://github.com/kstruzzieri/agentflow/issues/139)).
 
 ## Next: 1.7.0 (planned)
 
 The aim: the checks keep holding when the agent being checked does not
 cooperate. The README work that opens this release is already on main.
 
-- Drift checks cover committed work. A run records its starting commit, so
-  `verify-run` and `audit-drift` compare everything changed since then instead
-  of only uncommitted changes, and both accept `--base-ref` so CI no longer
-  needs to rebuild a baseline by hand ([#139](https://github.com/kstruzzieri/agentflow/issues/139)).
 - Plan edits are bound to the run. A change to the locked plan without a
   recorded amendment fails verification instead of passing unnoticed until the
   proof is built ([#138](https://github.com/kstruzzieri/agentflow/issues/138)).
@@ -57,7 +57,7 @@ cooperate. The README work that opens this release is already on main.
   ([#142](https://github.com/kstruzzieri/agentflow/issues/142)), and a check of the README on PyPI plus refreshed package
   metadata before the release is tagged ([#143](https://github.com/kstruzzieri/agentflow/issues/143)).
 
-Until #138 and #139 ship, both limits are stated in
+Until #138 ships, its limit is stated in
 [`docs/security-model.md`](security-model.md). Items move up to "On main, not
 yet released" as they merge.
 

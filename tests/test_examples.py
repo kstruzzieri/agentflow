@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 import re
 import shutil
@@ -14,9 +15,98 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 
 
 class CiProofExampleTests(unittest.TestCase):
-    def test_copyable_workflow_defines_proof_root(self) -> None:
+    def test_copyable_workflow_checks_source_edits(self) -> None:
+        # #139: the copyable job compares the pull request with its base commit.
         workflow = (REPO_ROOT / "examples/ci-proof/workflow.yml").read_text(encoding="utf-8")
-        self.assertIn("PROOF_ROOT: tests/fixtures/proof-bundle", workflow)
+        self.assertIn("PROOF_ROOT: .", workflow)
+        self.assertIn("fetch-depth: 0", workflow)
+        self.assertIn("github.event.pull_request.head.sha", workflow)
+        self.assertIn("github.event.pull_request.base.sha", workflow)
+        self.assertIn("--base-ref", workflow)
+
+    def test_copyable_workflow_checks_ledgers_only_on_push(self) -> None:
+        # After a squash or rebase merge the recorded baseline may be gone.
+        workflow = (REPO_ROOT / "examples/ci-proof/workflow.yml").read_text(encoding="utf-8")
+        self.assertIn("github.event.pull_request.base.sha || 'HEAD'", workflow)
+
+    def test_smoke_script_checks_a_copied_anchored_bundle(self) -> None:
+        # #139: a bundle whose run recorded a baseline is copied into a fresh
+        # repository that lacks that commit; the copy compares with its one commit.
+        gate = "python3 -c \"print('ok')\""
+        with tempfile.TemporaryDirectory() as tmp:
+            work, outer = Path(tmp) / "work", Path(tmp) / "outer"
+            work.mkdir()
+            outer.mkdir()
+            env = {**os.environ, "PYTHONPATH": str(REPO_ROOT / "src")}
+
+            def git(cwd: Path, *args: str) -> None:
+                subprocess.run(
+                    ["git", "-c", "user.name=T", "-c", "user.email=t@e.invalid",
+                     "-c", "commit.gpgsign=false", *args],
+                    cwd=cwd, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                )
+
+            def af(*args: str) -> None:
+                result = subprocess.run(
+                    [sys.executable, "-m", "agentflow", *args], cwd=work, env=env,
+                    text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False,
+                )
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+            git(work, "init", "-q")
+            (work / "seed.txt").write_text("seed\n", encoding="utf-8")
+            git(work, "add", "-A")
+            git(work, "commit", "-qm", "seed")
+            af("init")
+            plan_path = work / ".agent/plan.lock.json"
+            plan = json.loads(plan_path.read_text(encoding="utf-8"))
+            plan.update({
+                "objective": "o", "scope": ["notes.txt"], "invariants": ["i"],
+                "allowed_files": ["notes.txt", ".agent/"], "rollback_plan": "r",
+                "validation_gates": [gate],
+                "steps": [{
+                    "id": "P1", "action": "a", "files": ["notes.txt", ".agent/"],
+                    "expected_diff": ["d"], "preconditions": [], "evidence_ids": [],
+                    "validation": [gate],
+                    "gates": [{"kind": "command", "run": ["python3", "-c", "print('ok')"]}],
+                }],
+            })
+            plan_path.write_text(json.dumps(plan), encoding="utf-8")
+            af("lock-plan", ".agent/plan.lock.json")
+            af("init-execution")
+            self.assertTrue((work / ".agent/run-anchors.jsonl").exists())
+            af("claim-step", "P1", "--agent", "t")
+            (work / "notes.txt").write_text("hello\n", encoding="utf-8")
+            af("record-file-change", "--step", "P1", "--path", "notes.txt")
+            af("run", "--step", "P1", "--gate", gate, "--", "python3", "-c", "print('ok')")
+            af("verify-step", "P1")
+            af("complete-step", "P1")
+            af("finish-run")
+            git(outer, "init", "-q")
+            shutil.copytree(work, outer / "bundle", ignore=shutil.ignore_patterns(".git"))
+            git(outer, "add", "-A")
+            git(outer, "commit", "-qm", "bundle")
+
+            result = subprocess.run(
+                ["sh", "examples/ci-proof/smoke.sh", str(outer / "bundle")],
+                cwd=REPO_ROOT,
+                env={**env, "PYTHON": sys.executable},
+                text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False,
+            )
+            self.assertIn("verify-run passed", result.stdout, result.stdout + result.stderr)
+            self.assertNotIn("not in this clone", result.stdout + result.stderr)
+
+    def test_smoke_script_refuses_a_base_ref_it_cannot_honor(self) -> None:
+        # The fixture root is a subdirectory, checked as a copy with no history.
+        result = subprocess.run(
+            ["sh", "examples/ci-proof/smoke.sh"],
+            cwd=REPO_ROOT,
+            env={**os.environ, "PYTHONPATH": str(REPO_ROOT / "src"), "PYTHON": sys.executable,
+                 "AGENTFLOW_BASE_REF": "HEAD"},
+            text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False,
+        )
+        self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
+        self.assertIn("AGENTFLOW_BASE_REF", result.stderr)
 
     def test_smoke_script_default_root_uses_copy_fallback(self) -> None:
         # No-argument invocation is the README command; the fixture root is a

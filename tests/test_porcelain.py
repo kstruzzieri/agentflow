@@ -80,6 +80,17 @@ def _plan(steps):
     }
 
 
+def _anchor_at_head(root: Path) -> None:
+    """#139: the seed commit predates the run, so move the run baseline onto it."""
+    path = root / ".agent/run-anchors.jsonl"
+    row = json.loads(path.read_text(encoding="utf-8"))
+    row["base_commit"] = subprocess.run(
+        ["git", "-C", str(root), "rev-parse", "HEAD"],
+        check=True, stdout=subprocess.PIPE, text=True,
+    ).stdout.strip()
+    path.write_text(json.dumps(row) + "\n", encoding="utf-8")
+
+
 def _ready_repo_with_steps(root: Path, steps, extra_allowed: tuple = (), blocked: tuple = ()):
     _init_repo(root)
     cli.main(["init", "--root", str(root)])
@@ -1146,6 +1157,10 @@ class TestNextActionInflightWork(unittest.TestCase):
                     ]
                     _ready_repo_with_steps(root, steps,
                                            extra_allowed=("src/a.py", "src/shared.py", "src/original.py"))
+                    if kind == "rename":
+                        # Staged-rename classification exists only in runs without a
+                        # #139 baseline; an anchored run sees a delete plus an add.
+                        (root / ".agent/run-anchors.jsonl").unlink()
                     _set_hunk_policy(root, policy)
                     _attempt(root, "P2", "src/shared.py", edited)
                     self.assertEqual(cli.main(["finish-step", "P2", "--root", str(root)]), 0)
@@ -2245,6 +2260,7 @@ class TestNextActionRecovery(unittest.TestCase):
             (root / "src/feature.py").write_text("x = 0\n")
             _git(root, "add", "src/feature.py")
             _git(root, "commit", "-qm", "base")
+            _anchor_at_head(root)
             _finish(root, "P1", "src/feature.py")
             (root / "src/feature.py").unlink()
             action = porcelain.next_action(root, agent_id="tester")
@@ -2584,6 +2600,7 @@ class TestStoppedAttemptEdit(unittest.TestCase):
             (root / "src/feature.py").write_text("x = 0\n")
             _git(root, "add", "src/feature.py")
             _git(root, "commit", "-qm", "seed")
+            _anchor_at_head(root)
 
         with TemporaryDirectory() as d:  # deleting completed content is an edit
             root = Path(d)

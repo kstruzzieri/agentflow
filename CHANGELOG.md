@@ -15,6 +15,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   finding uses the existing `severity` and `message` fields.
 - `agentflow verify-proof --help` and the MCP `verify_proof` tool now list the
   keys `--require` accepts (#140).
+- `verify-run`, `audit-drift` and `finish-run` accept `--base-ref REF`, and
+  their MCP tools accept `base_ref`, to compare with the merge base of HEAD and
+  REF instead of the run's recorded baseline (#139). CI passes the pull
+  request's base commit. The ref must have exactly one merge base with HEAD.
 
 ### Fixed
 
@@ -30,6 +34,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Drift checks cover committed work (#139). `init-execution` records the commit
+  a run starts from in a new ledger, `.agent/run-anchors.jsonl`, and
+  `verify-run`, `audit-drift`, hunk attribution and `next-action` compare
+  everything changed since then, committed or not, instead of `git status`.
+  A run with committed, unrecorded edits that passed before now fails. A move
+  is a deletion plus an addition. The checks fail closed when the baseline is
+  missing, malformed, absent from a shallow clone, or no longer an ancestor of
+  HEAD. Runs started by older versions have no baseline and keep the earlier
+  behaviour. Schemas: run anchors 1.0.0 (new), file receipts, drift reports
+  and verification runs 1.2.0. See `docs/compatibility.md`.
+- CI checks source edits with `--base-ref` instead of rebuilding a Git
+  baseline in shell, and the copyable job in `examples/ci-proof/` now checks
+  pull request edits against their receipts; a push checks the ledgers only
+  (`--base-ref HEAD`). `examples/ci-proof/smoke.sh` takes `AGENTFLOW_BASE_REF`,
+  and compares a copied subdirectory bundle with the copy's one commit. Setting `AGENTFLOW_PROOF_BASE_REF` with a
+  subdirectory proof root now fails instead of rebuilding that subdirectory's
+  history.
 - The README is now a short landing page. Its reference sections moved to
   `docs/`: a new [Quickstart](docs/quickstart.md), a
   [CI proof gate](docs/ci-proof-gate.md) guide, and a

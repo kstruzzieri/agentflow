@@ -1,0 +1,46 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agentflow.dev/schemas/run-anchors.schema.json",
+  "title": "Agentflow Run Anchor",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "id",
+    "anchor",
+    "base_commit",
+    "recorded_at"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "pattern": "^1\\.0\\.(?:0|[1-9][0-9]*)$"
+    },
+    "id": {
+      "type": "string",
+      "pattern": "^RA1$"
+    },
+    "anchor": {
+      "enum": [
+        "run_start"
+      ]
+    },
+    "base_commit": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "pattern": "^(?:[0-9a-f]{40}|[0-9a-f]{64})$"
+    },
+    "recorded_at": {
+      "type": "string"
+    },
+    "execution_contract_sha256": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "pattern": "^[0-9a-f]{64}$"
+    }
+  },
+  "additionalProperties": true
+}
