@@ -34,6 +34,7 @@ from .git import (
     run_git,
 )
 from .hunks import effective_hunk_policy, unmapped_hunks
+from .plan_binding import plan_binding_error
 from .versioning import parse_schema_version, validate_schema_version
 
 
@@ -598,6 +599,18 @@ def path_in_effective_scope(plan: Dict[str, Any], step_id: str, path: str) -> bo
 
 
 def audit_drift(root: Path, plan: Dict[str, Any]) -> Dict[str, Any]:
+    report = _audit_changed_files(root, plan)
+    # #138: applied last, so no changed-file verdict (a warning outside Git, a
+    # clean diff) can soften a plan that is not the one the run accepts.
+    problem = plan_binding_error(root, plan)
+    if problem:
+        report["status"] = "fail"
+        if problem not in report["notes"]:  # an unreadable anchor already said so
+            report["notes"].append(problem)
+    return report
+
+
+def _audit_changed_files(root: Path, plan: Dict[str, Any]) -> Dict[str, Any]:
     report = {
         "schema_version": DRIFT_REPORT_SCHEMA_VERSION,
         "status": "pass",

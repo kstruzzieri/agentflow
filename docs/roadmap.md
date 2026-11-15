@@ -41,14 +41,16 @@ MCP zipapps through GitHub Releases.
   of only uncommitted changes, and both accept `--base-ref` so CI no longer
   needs to rebuild a baseline by hand ([#139](https://github.com/kstruzzieri/agentflow/issues/139)).
 
+- Plan edits are bound to the run. The run pins its locked plan when it
+  starts, and a change without an amendment recorded after the plan is locked
+  again fails verification instead of passing unnoticed until the proof is
+  built ([#138](https://github.com/kstruzzieri/agentflow/issues/138)).
+
 ## Next: 1.7.0 (planned)
 
 The aim: the checks keep holding when the agent being checked does not
 cooperate. The README work that opens this release is already on main.
 
-- Plan edits are bound to the run. A change to the locked plan without a
-  recorded amendment fails verification instead of passing unnoticed until the
-  proof is built ([#138](https://github.com/kstruzzieri/agentflow/issues/138)).
 - Small rough edges from a first-run pass: a hint when `.agent/` is not
   ignored, a one-line error outside a Git repository, `--require` keys in the
   help text, a clearer strict-mode label, and stuck-loop counting of refused
@@ -57,9 +59,7 @@ cooperate. The README work that opens this release is already on main.
   ([#142](https://github.com/kstruzzieri/agentflow/issues/142)), and a check of the README on PyPI plus refreshed package
   metadata before the release is tagged ([#143](https://github.com/kstruzzieri/agentflow/issues/143)).
 
-Until #138 ships, its limit is stated in
-[`docs/security-model.md`](security-model.md). Items move up to "On main, not
-yet released" as they merge.
+Items move up to "On main, not yet released" as they merge.
 
 ## Shipped
 

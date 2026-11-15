@@ -595,20 +595,38 @@ These commands read state and write nothing:
 - New facts that invalidate the plan require an amendment.
 - Dependency churn, test weakening, and architecture drift must be declared.
 
-`lock-plan` validates the plan and stamps it as locked. To change a locked
-plan, record the reason, edit the plan, and lock it again:
+`lock-plan` validates the plan and stamps it as locked. `init-execution` then
+starts the run and pins that plan: it refuses to start a run while the plan is
+unlocked or invalid. To change the plan during a run, edit it, lock it again,
+and record the change:
 
 ```bash
-agentflow amend-plan --id AM1 --reason "Scope grew: also update the changelog" \
-  --changed-scope "add CHANGELOG.md to allowed_files"
 # edit .agent/plan.lock.json
 agentflow lock-plan .agent/plan.lock.json
+agentflow amend-plan --id AM1 --reason "Scope grew: also update the changelog" \
+  --changed-scope "add CHANGELOG.md to allowed_files"
+agentflow amend-step P2 --agent "$USER" --reason "AM1 widened the step"  # each touched step
 ```
 
 `amend-plan` appends the amendment to `.agent/amendments.jsonl`; it does not
-edit the plan for you. Agentflow does not yet detect a plan edit made without
-an amendment while the run is in progress (#138). Once `build-proof` has run,
-any plan edit fails `verify-proof`.
+edit the plan for you. It runs after `lock-plan` because it records the plan it
+accepts: the row stores the hash of the plan it replaces and of the locked plan
+on disk. Pass `--plan PATH` when the edited plan is not `.agent/plan.lock.json`.
+
+A plan edit with no amendment fails `verify-step`, `verify-run`, `audit-drift`,
+`finish-run`, `build-proof` and `verify-proof` with one line (#138):
+
+```text
+plan does not match the accepted plan (expected 1a2b3c4d5e6f, found 9f8e7d6c5b4a) and no amendment records the change; lock the plan, then record it with amend-plan
+```
+
+The accepted plan is the one pinned at `init-execution`, followed through this
+run's amendments in order. Locking the plan again without changing it keeps
+the binding. An amendment recorded before the edit does not cover the edit, and
+putting an earlier plan back needs its own amendment. `--base-ref` does not
+change the check, and `next-action` reports `state_invalid` until the change is
+recorded. Runs started by Agentflow 1.6 or older are not pinned and behave as
+before.
 
 ## Evidence Rules
 
@@ -645,6 +663,9 @@ Drift checks compare everything changed since the run's baseline, committed or
 not (#139). `init-execution` records the baseline, the commit the run starts
 from (or none before the first commit), as the one row of
 `.agent/run-anchors.jsonl`; re-running it without `--force` never moves it.
+The same row carries the run's id and the hash of the locked plan (#138, see
+[Plan Lock Rules](#plan-lock-rules)), and is written outside Git too, where it
+names no commit.
 Changed files are everything that differs from the baseline plus untracked
 files, and hunks and file receipts are measured from the same commit. A move is
 a deletion plus an addition, so both paths need receipts.

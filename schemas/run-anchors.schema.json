@@ -13,7 +13,7 @@
   "properties": {
     "schema_version": {
       "type": "string",
-      "pattern": "^1\\.0\\.(?:0|[1-9][0-9]*)$"
+      "pattern": "^1\\.[01]\\.(?:0|[1-9][0-9]*)$"
     },
     "id": {
       "type": "string",
@@ -35,6 +35,17 @@
       "type": "string"
     },
     "execution_contract_sha256": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "run_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "plan_sha256": {
       "type": [
         "string",
         "null"

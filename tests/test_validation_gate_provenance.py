@@ -254,6 +254,15 @@ class ValidationGateProvenanceTests(unittest.TestCase):
                 (root / 'custom.json').write_text(json.dumps(plan))
                 if not keep_default:
                     path.unlink()
+                # #138: a custom plan that differs from the pinned one is a plan
+                # change, so build-proof needs it recorded as an amendment.
+                refused = agentflow(root, 'build-proof', '--plan', 'custom.json')
+                self.assertEqual(refused.returncode, 1, refused.stdout + refused.stderr)
+                self.assertIn('plan does not match the accepted plan', refused.stdout + refused.stderr)
+                amended = agentflow(
+                    root, 'amend-plan', '--id', 'AM1', '--reason', 'custom gate', '--plan', 'custom.json'
+                )
+                self.assertEqual(amended.returncode, 0, amended.stdout + amended.stderr)
                 built = agentflow(root, 'build-proof', '--plan', 'custom.json')
                 self.assertEqual(built.returncode, 0, built.stdout + built.stderr)
                 verified = agentflow(root, 'verify-proof')

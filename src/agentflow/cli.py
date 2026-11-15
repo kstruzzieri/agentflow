@@ -16,6 +16,8 @@ from .artifacts import (
     SCHEMA_VERSION,
     append_jsonl,
     create_initial_artifacts,
+    ledger_lock_path,
+    plan_binding_sha256,
     read_json,
     read_jsonl,
     utc_now,
@@ -58,6 +60,7 @@ from .git import comparison_snapshot
 from .hunks import format_unmapped_hunk
 from . import porcelain
 from .locks import file_lock
+from .plan_binding import accepted_plan
 from .packs import (
     PackError,
     find_profile,
@@ -238,8 +241,30 @@ def command_pack_inspect(args: argparse.Namespace) -> int:
     return 0
 
 
+def _locked_plan(root: Path, relative: str = ".agent/plan.lock.json") -> Dict[str, Any]:
+    """The plan, if it is valid and locked; ValueError with one line otherwise."""
+    try:
+        plan = _load_plan(root / relative)
+    except (OSError, ValueError) as exc:  # missing, malformed, or an unsupported version
+        raise ValueError(f"needs a valid locked plan: {exc}") from None
+    if not isinstance(plan, dict) or plan.get("locked") is not True or validate_plan(plan):
+        raise ValueError(
+            f"needs a valid locked plan; run agentflow lock-plan {relative} first"
+        )
+    return plan
+
+
 def command_init_execution(args: argparse.Namespace) -> int:
     root = Path(args.root).resolve()
+    # #138: a run pins the plan it starts with, so one that starts without a
+    # locked plan could never detect a plan edit. Checked before anything is
+    # written; re-running on an existing run starts nothing and is not checked.
+    if args.force or not (root / ".agent/step-runs.jsonl").exists():
+        try:
+            _locked_plan(root)
+        except ValueError as exc:
+            print(_terminal_safe(f"init-execution {exc}"), file=sys.stderr)
+            return 2
     created, skipped = init_execution_artifacts(root, force=args.force)
     for path in created:
         print(f"created {path}")
@@ -496,7 +521,23 @@ def command_amend_plan(args: argparse.Namespace) -> int:
         "requires_approval": args.requires_approval,
         "created_at": utc_now(),
     }
-    append_jsonl(root / ".agent/amendments.jsonl", amendment)
+    ledger = root / ".agent/amendments.jsonl"
+    ledger.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        # #138: held across reading the accepted plan and appending, so two
+        # amendments cannot both replace the same plan.
+        with file_lock(ledger_lock_path(ledger)):
+            bound = accepted_plan(root)
+            if bound is not None:
+                # The hash excludes `locked`, so an unlocked draft must not be
+                # recorded here and locked afterwards.
+                plan = _locked_plan(root, args.plan)
+                amendment["run_id"], amendment["previous_plan_sha256"] = bound
+                amendment["plan_sha256"] = plan_binding_sha256(plan)
+            append_jsonl(ledger, amendment)
+    except ValueError as exc:
+        print(_terminal_safe(f"amend-plan {exc}"), file=sys.stderr)
+        return 2
     print(_terminal_safe(f"recorded amendment {args.id}"))
     return 0
 
@@ -1960,6 +2001,11 @@ def build_parser() -> argparse.ArgumentParser:
     amend.add_argument("--changed-steps", action="append")
     amend.add_argument("--changed-risk")
     amend.add_argument("--requires-approval", action="store_true")
+    amend.add_argument(
+        "--plan",
+        default=".agent/plan.lock.json",
+        help="the edited, locked plan this amendment accepts (default: .agent/plan.lock.json)",
+    )
     amend.set_defaults(func=command_amend_plan)
 
     evidence = subparsers.add_parser("record-evidence", help="append an evidence ledger entry")

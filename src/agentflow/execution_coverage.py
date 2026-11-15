@@ -25,6 +25,7 @@ from .execution import (
     try_load_execution_contract,
 )
 from .git import changed_file_records, is_git_repo
+from .plan_binding import plan_binding_error
 from .hunks import effective_hunk_policy, unmapped_hunks
 from .receipts import (
     command_receipts,
@@ -303,6 +304,10 @@ def verify_step(
     # An error in every mode: a warning would still let finish-step complete.
     for message in _inherited_receipt_errors(root, plan, step_id, resolved_attempt):
         _add_finding(result, "error", message)
+    # #138: a step cannot verify against a plan the run does not accept.
+    binding = plan_binding_error(root, plan)
+    if binding:
+        _add_finding(result, "error", binding)
     if replay:
         replay_result = replay_gates(root, plan, step_id=step_id, record=False)
         result["errors"].extend(replay_result["errors"])
@@ -1009,6 +1014,8 @@ def verify_run(
     require_file_receipts = _requires_file_receipts(root, strict)
     for error in validate_plan(plan):
         result["errors"].append({"severity": "error", "message": error})
+    # #138: read here, not from the drift notes, and never moved by --base-ref.
+    binding = plan_binding_error(root, plan)
     drift = audit_drift(root, plan)
     baseline = drift.get("baseline")
     if baseline is not None:
@@ -1017,10 +1024,14 @@ def verify_run(
         # #139: no trustworthy base means no changed-file check can run; fail
         # closed with the one reason instead of a cascade from the same cause.
         result["errors"].append({"severity": "error", "message": baseline["error"]})
+        if binding and binding != baseline["error"]:
+            result["errors"].append({"severity": "error", "message": binding})
         result["status"] = "failed"
         if record:
             _append_verification(root, "run", None, None, effective_strict, False, result, baseline)
         return result
+    if binding:
+        result["errors"].append({"severity": "error", "message": binding})
     if drift.get("status") == "fail":
         for path in drift.get("out_of_scope_files", []):
             if not path.startswith(".agent/"):
