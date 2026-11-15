@@ -113,29 +113,59 @@ The release guard requires Python 3.11 or newer because it reads
    PYTHONPATH=src python3 -m unittest discover -s tests -v
    ```
 
-5. Commit the version and CHANGELOG changes through a normal pull request.
-6. After that commit reaches `main`, validate the intended tag before creating
+5. Look at the README the way PyPI will show it. `twine check` only confirms
+   that the long description parses. Render the built wheel's description with
+   PyPI's own renderer, in a throwaway virtual environment outside the
+   repository:
+
+   ```bash
+   python3 -m venv /tmp/agentflow-render
+   /tmp/agentflow-render/bin/pip install build==1.5.0 'readme_renderer[md]'
+   /tmp/agentflow-render/bin/python -m build --wheel --outdir /tmp/agentflow-render/dist
+   /tmp/agentflow-render/bin/python - <<'EOF'
+   import email, glob, zipfile
+   from readme_renderer.markdown import render
+   wheel = glob.glob("/tmp/agentflow-render/dist/agentflow_proof-*.whl")[0]
+   with zipfile.ZipFile(wheel) as z:
+       name = next(n for n in z.namelist() if n.endswith(".dist-info/METADATA"))
+       msg = email.message_from_bytes(z.read(name))
+   html = render(msg.get_payload(decode=True).decode("utf-8"))
+   open("/tmp/agentflow-render/readme.html", "w", encoding="utf-8").write(html)
+   EOF
+   ```
+
+   Open `/tmp/agentflow-render/readme.html` in a browser and check that the
+   logo, the brand badge and the four status badges load, that the header
+   block is centered, and that every link opens the page it names. PyPI drops
+   the `<source>` inside `<picture>`, so only the light logo appears there.
+
+6. Commit the version and CHANGELOG changes through a normal pull request.
+7. After that commit reaches `main`, validate the intended tag before creating
    it:
 
    ```bash
    python3 scripts/check_release.py --tag vX.Y.Z
    ```
 
-7. Create and push the exact validated tag:
+8. Create and push the exact validated tag:
 
    ```bash
    git tag vX.Y.Z
    git push origin vX.Y.Z
    ```
 
-8. The `Release` workflow validates the tag, both version declarations, and
+9. The `Release` workflow validates the tag, both version declarations, and
    CHANGELOG before it runs tests or builds artifacts. It builds and smokes the
    zipapps, generates `SHA256SUMS`, and creates the GitHub release using the
    matching CHANGELOG section as its notes.
-9. Download `agentflow.pyz`, `agentflow-mcp.pyz`,
-   `agentflow_proof-*.whl`, `agentflow_proof-*.tar.gz`, and `SHA256SUMS` from
-   the release; run `sha256sum -c SHA256SUMS`, then
-   `python3 agentflow.pyz --version`.
+10. Download `agentflow.pyz`, `agentflow-mcp.pyz`,
+    `agentflow_proof-*.whl`, `agentflow_proof-*.tar.gz`, and `SHA256SUMS` from
+    the release; run `sha256sum -c SHA256SUMS`, then
+    `python3 agentflow.pyz --version`.
+11. After a reviewer approves the `pypi` environment and the upload finishes,
+    open https://pypi.org/project/agentflow-proof/ and confirm that the
+    project page shows the new version with the logo, badges and working links
+    seen in step 5.
 
 > **Do not bump the version ahead of a release.** Ordinary CI checks only that
 > the version declarations agree and permits `## [Unreleased]` to contain

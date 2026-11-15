@@ -80,6 +80,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `docs/stability.md` and source installs are in `CONTRIBUTING.md`. The README
   uses absolute links, so the PyPI project page shows the logo and working
   links from the next release.
+- Package metadata: the classifier is now
+  `Development Status :: 5 - Production/Stable`, and the Documentation link on
+  PyPI opens the documentation index (`docs/README.md`) (#143). The release
+  checklist in `docs/packaging.md` now renders the README with PyPI's renderer
+  before the release and checks the PyPI project page after the upload.
 
 ## [1.6.0] - 2026-11-12
 
