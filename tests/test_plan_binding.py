@@ -145,6 +145,41 @@ class RunStartPinTests(unittest.TestCase):
             self.assertEqual(code, 2)
             self.assertEqual((root / ".agent/step-runs.jsonl").read_bytes(), before)
 
+    def test_cli_recovery_refuses_invalid_plan_before_writing(self) -> None:
+        for invalid in (None, "not json", {"locked": True}, {**one_step_plan(), "locked": False}):
+            with self.subTest(plan=invalid), tempfile.TemporaryDirectory() as tmp:
+                root = seeded_repo(tmp)
+                bound_run(root)
+                (root / ANCHORS).unlink()
+                if invalid is None:
+                    (root / PLAN).unlink()
+                elif isinstance(invalid, str):
+                    (root / PLAN).write_text(invalid, encoding="utf-8")
+                else:
+                    write_json(root / PLAN, invalid)
+                before = {p: p.read_bytes() for p in (root / ".agent").rglob("*") if p.is_file()}
+                code, out, err = run_cli("init-execution", "--root", str(root))
+                self.assertEqual(code, 2)
+                self.assertEqual(out, "")
+                self.assertIn("needs a valid locked plan", err)
+                self.assertEqual(len(err.strip().splitlines()), 1)
+                self.assertEqual(
+                    {p: p.read_bytes() for p in (root / ".agent").rglob("*") if p.is_file()}, before,
+                )
+
+    def test_cli_recovery_pins_locked_plan_and_detects_later_edits(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = seeded_repo(tmp)
+            task_plan = bound_run(root)
+            (root / ANCHORS).unlink()
+            code, out, err = run_cli("init-execution", "--root", str(root))
+            self.assertEqual(code, 0, err)
+            self.assertIn("created " + ANCHORS, out)
+            self.assertEqual(anchor(root)["plan_sha256"], plan_binding_sha256(task_plan))
+            claim_step(root, task_plan, "P1", "agent-a")
+            widen(root)
+            self.assertIn(MISMATCH, plan_binding_error(root, current(root)))
+
     def test_cli_rerun_on_an_existing_run_still_succeeds(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = seeded_repo(tmp)
