@@ -1328,6 +1328,9 @@ class TestNextActionRunStates(unittest.TestCase):
             plan = json.loads(plan_path.read_text())
             plan["objective"] = "changed after proof"
             plan_path.write_text(json.dumps(plan, indent=2))
+            # #138: an unrecorded plan edit is an invalid state, not a stale proof.
+            self.assertEqual(porcelain.next_action(root).state, "state_invalid")
+            cli.main(["amend-plan", "--root", str(root), "--id", "AM1", "--reason", "new objective"])
             action = porcelain.next_action(root)
             self.assertEqual(action.state, "proof_stale")
 
@@ -2921,6 +2924,8 @@ class TestRecordedBlockers(unittest.TestCase):
             plan = json.loads(plan_path.read_text())
             plan["objective"] = "changed after proof"
             plan_path.write_text(json.dumps(plan, indent=2))
+            # #138: the plan edit is recorded, so only the proof is out of date.
+            cli.main(["amend-plan", "--root", str(root), "--id", "AM1", "--reason", "new objective"])
 
         def corrupt_proof(root):
             _completed_step(root)

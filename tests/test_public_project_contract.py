@@ -443,7 +443,8 @@ class PublicProjectContractTests(unittest.TestCase):
             )
 
     def test_known_enforcement_limits_are_documented(self) -> None:
-        # Issue 138 is open: drop its assertion only together with its fix.
+        # Issue 138 is fixed: the plan is bound to the run, and the remaining
+        # limit (checked at checkpoints, not per attempt) is stated instead.
         # Issue 139 is fixed: drift checks compare with a run baseline, and the
         # remaining limit is narrowed to runs that recorded none.
         def flat(relative: str) -> str:
@@ -452,7 +453,9 @@ class PublicProjectContractTests(unittest.TestCase):
         model = flat("docs/security-model.md")
         self.assertNotIn("cover uncommitted changes only", model)
         self.assertIn("--base-ref", model)
-        self.assertIn("without an amendment", model)
+        self.assertNotIn("is not detected (#138)", model)
+        self.assertIn("between two checks", model)
+        self.assertIn("not an approval", model)
         readme = flat("README.md")
         self.assertNotIn("uncommitted changes", readme)
         self.assertIn("committed or not", readme)
@@ -467,6 +470,10 @@ class PublicProjectContractTests(unittest.TestCase):
         self.assertNotIn("Stage configured proof bundle", gate)
         workflow = flat("docs/agent-workflow.md")
         self.assertIn("amend-plan", workflow)
+        self.assertNotIn("does not yet detect a plan edit", workflow)
+        self.assertIn("plan does not match the accepted plan", workflow)
+        # The amendment follows the re-lock: it records the plan it accepts.
+        self.assertIn("agentflow lock-plan .agent/plan.lock.json agentflow amend-plan", workflow)
         self.assertIn("File receipts store only", workflow)
         self.assertIn("run-anchors.jsonl", workflow)
         self.assertNotIn("cover uncommitted changes only", workflow)

@@ -10,7 +10,7 @@ from contextvars import ContextVar
 from pathlib import Path
 from typing import Any, Dict, Iterator, List, Optional, Tuple
 
-from .artifacts import read_jsonl
+from .artifacts import read_jsonl, source_exists
 from .contracts import (
     ARTIFACT_COMPATIBILITY_POLICIES,
     EXECUTION_ARTIFACT_PATHS,
@@ -50,6 +50,7 @@ def head_commit(root: Path) -> Optional[str]:
 
 RUN_ANCHORS_PATH = EXECUTION_ARTIFACT_PATHS["run-anchors"]
 _COMMIT = re.compile(r"^(?:[0-9a-f]{40}|[0-9a-f]{64})$")
+_SHA256 = re.compile(r"^[0-9a-f]{64}$")
 
 
 class BaselineError(RuntimeError, ValueError):
@@ -112,16 +113,12 @@ def baseline_summary(base: Dict[str, Any]) -> Dict[str, Any]:
 def _resolve_comparison(root: Path, base_ref: Optional[str]) -> Dict[str, Any]:
     if base_ref is not None:
         return _resolve_base_ref(root, base_ref)
-    path = root / RUN_ANCHORS_PATH
-    if not path.exists():
-        if _receipts_name_a_baseline(root):
-            raise BaselineError(
-                f"{RUN_ANCHORS_PATH} is missing, but file receipts were recorded against a run "
-                "baseline; restore it, or check with --base-ref REF",
-                "run-anchor",
-            )
+    # #138: a run outside Git has a run-start row too (it pins the plan), but
+    # nothing to diff against, so it keeps the behaviour it always had.
+    row = read_run_anchor(root) if is_git_repo(root) else None
+    if row is None:
         return {"source": "head", "commit": None, "tree": None}
-    commit = _read_anchor(path)
+    commit = row["base_commit"]
     if commit is None:
         return {"source": "run-anchor", "commit": None, "tree": _empty_tree(root)}
     code, _, _ = run_git(root, ["cat-file", "-e", f"{commit}^{{commit}}"])
@@ -144,7 +141,26 @@ def _resolve_comparison(root: Path, base_ref: Optional[str]) -> Dict[str, Any]:
     return {"source": "run-anchor", "commit": commit, "tree": commit}
 
 
-def _read_anchor(path: Path) -> Optional[str]:
+def read_run_anchor(root: Path) -> Optional[Dict[str, Any]]:
+    """The run-start row, or None for a run that recorded none (older versions).
+
+    Reads no Git state, so the plan binding (#138) can use it where a moved
+    comparison base or ``--base-ref`` must not matter. Raises BaselineError for
+    a row no check can trust.
+    """
+    path = root / RUN_ANCHORS_PATH
+    if not source_exists(path):
+        if _receipts_name_a_baseline(root):
+            raise BaselineError(
+                f"{RUN_ANCHORS_PATH} is missing, but file receipts were recorded against a run "
+                "baseline; restore it, or check with --base-ref REF",
+                "run-anchor",
+            )
+        return None
+    return _read_anchor(path)
+
+
+def _read_anchor(path: Path) -> Dict[str, Any]:
     def bad(reason: str) -> BaselineError:
         return BaselineError(f"{RUN_ANCHORS_PATH} {reason}; drift checks cannot trust it", "run-anchor")
 
@@ -166,7 +182,14 @@ def _read_anchor(path: Path) -> Optional[str]:
     commit = row.get("base_commit", "missing")
     if commit is not None and not (isinstance(commit, str) and _COMMIT.match(commit)):
         raise bad("base_commit must be a commit id or null")
-    return commit
+    # #138: both absent on rows older versions wrote; a pin needs its run id.
+    plan_hash = row.get("plan_sha256")
+    if plan_hash is not None and not (isinstance(plan_hash, str) and _SHA256.match(plan_hash)):
+        raise bad("plan_sha256 must be a sha256 or null")
+    run_id = row.get("run_id")
+    if ("run_id" in row or plan_hash is not None) and not (isinstance(run_id, str) and run_id):
+        raise bad("run_id must be a non-empty string")
+    return row
 
 
 def _receipts_name_a_baseline(root: Path) -> bool:

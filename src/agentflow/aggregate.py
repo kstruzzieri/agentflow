@@ -16,10 +16,11 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
-from .artifacts import read_jsonl, try_read_json, write_json
+from .artifacts import read_json, read_jsonl, try_read_json, write_json
 from .contracts import AGGREGATION_SCHEMA_VERSION, ARTIFACT_PATHS, BASE_ARTIFACT_PATHS, EXECUTION_ARTIFACT_PATHS
 from .git import run_git
 from .packs import _safe_relative_path
+from .plan_binding import plan_binding_error
 from .receipts import sha256_path
 
 SOURCE_ID_RE = re.compile(r"^[a-z0-9]{1,16}$")
@@ -357,20 +358,36 @@ def _run_anchor_rows(source: Source) -> Optional[List[Dict[str, Any]]]:
 
 def _run_anchor_collisions(sources: List[Source]) -> List[Dict[str, Any]]:
     """#139: one aggregated run has one baseline. Sources must name the same
-    base commit, or all be runs that recorded none; recorded_at may differ."""
+    base commit, or all be runs that recorded none; recorded_at may differ.
+    #138: and the same plan pin, since the output keeps the first source's row."""
     anchors: Dict[str, Any] = {}
     for source in sources:
         rows = _run_anchor_rows(source)
         if rows is None:
             anchors[source.source_id] = "absent"
         elif len(rows) == 1 and "base_commit" in rows[0]:
-            anchors[source.source_id] = rows[0]["base_commit"]
+            anchors[source.source_id] = [rows[0]["base_commit"], rows[0].get("plan_sha256")]
         else:
             anchors[source.source_id] = "invalid"
-    values = set(anchors.values())
-    if len(values) > 1 or "invalid" in values:
+    values = {json.dumps(value) for value in anchors.values()}
+    if len(values) > 1 or '"invalid"' in values:
         return [_collision("run_anchor_mismatch", anchors=anchors)]
     return []
+
+
+def _plan_binding_collisions(sources: List[Source]) -> List[Dict[str, Any]]:
+    """#138: each source is checked on its own before merging, so one source's
+    amendment cannot account for another source's plan edit."""
+    collisions = []
+    for source in sources:
+        try:
+            plan = read_json(source.root / BASE_ARTIFACT_PATHS["plan-lock"])
+        except (OSError, ValueError):
+            continue  # a missing or unreadable plan is reported by its own check
+        problem = plan_binding_error(source.root, plan)
+        if problem:
+            collisions.append(_collision("plan_binding_failed", source=source.source_id, error=problem))
+    return collisions
 
 
 def _source_bases(sources: List[Source], base_ref: Optional[str], output_root: Path) -> Dict[str, Optional[str]]:
@@ -598,6 +615,7 @@ def analyze(sources: List[Source], output_root: Path, base_ref: Optional[str] = 
     collisions += _intra_source_dup_id_collisions(sources)
     collisions += _base_commit_collisions(bases)
     collisions += _run_anchor_collisions(sources)
+    collisions += _plan_binding_collisions(sources)
     collisions += _step_overlap_collisions(sources)
     collisions += _file_overlap_collisions(sources)
     collisions += _concat_dup_collisions(sources)
@@ -1020,6 +1038,14 @@ def write_canonical(
         agent_dir = staging / ".agent"
         agent_dir.mkdir(parents=True, exist_ok=True)
         _stage_canonical(plan, agent_dir)
+        # Valid source chains can conflict after concat deduplication and ordering.
+        staged_plan, _ = try_read_json(staging / BASE_ARTIFACT_PATHS["plan-lock"])
+        problem = plan_binding_error(staging, staged_plan)
+        if problem:
+            return {
+                **report, "status": "collision",
+                "collisions": [_collision("merged_plan_binding_failed", error=problem)],
+            }
         # Provenance is generated fresh each run, never read/merged from inputs
         # (contracts keeps "aggregation" out of the merge-path lists).
         provenance = {

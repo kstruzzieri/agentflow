@@ -93,6 +93,14 @@ receipts 1.2.0 add `hunk_base_commit`; drift reports and verification runs
 `--base-ref`, and their MCP tools accept `base_ref`. The execution contract and
 proof pack schemas are unchanged.
 
+## Plan binding
+
+`init-execution` pins the locked plan on the run-start row (#138): run anchors
+1.1.0 add `run_id` and `plan_sha256`, and amendments 0.3.0 add `run_id`,
+`previous_plan_sha256` and `plan_sha256`. `init-execution` refuses to start a
+run without a valid locked plan, and `amend-plan` accepts `--plan`. No other
+schema changes.
+
 ## MCP contract
 
 The supported tool names and arguments are:

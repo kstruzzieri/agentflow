@@ -46,8 +46,9 @@ git init -q
 
 A plan says what the work is, which files it may touch, and how each step is
 checked. `init` creates the `.agent/` folder; `lock-plan` validates the plan and
-marks it locked. To change a locked plan, record the change with `amend-plan`.
-Once the proof is built, any edit to the plan fails `verify-proof`.
+marks it locked. Once the run starts, a plan edit must be locked again and
+recorded with `amend-plan`; an unrecorded edit fails the run's checks. Once the
+proof is built, any edit to the plan fails `verify-proof`.
 
 ```bash
 agentflow init

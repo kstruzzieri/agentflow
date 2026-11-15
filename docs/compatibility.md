@@ -113,6 +113,22 @@ so a run this version has worked in cannot go back to them. A receipt an older
 version writes into an anchored run carries no hunk base; its hunks were cut
 from HEAD, so they may not match and fail closed.
 
+### Plan binding (#138)
+
+Run anchors 1.1.0 add optional `run_id` and `plan_sha256` (the locked plan's
+canonical hash, or `null`), and `init-execution` now writes the row outside
+Git too, with `base_commit: null`. Amendments 0.3.0 add optional `run_id`,
+`previous_plan_sha256` and `plan_sha256`, which `amend-plan` writes on a pinned
+run. Drift reports, verification runs and the proof pack are unchanged; `run_id`
+is left out of the proof's normalized execution hash, as timestamps are.
+
+A run whose anchor has no `plan_sha256`, or that has no anchor, is not pinned
+and behaves as before, so runs in flight are unaffected. Two behaviours change
+for new runs: `agentflow init-execution` exits 2 when the plan is not valid and
+locked, and a plan edited after the run starts must be locked again and then
+recorded with `amend-plan`, in that order. An amendment recorded before the
+edit no longer accounts for it. Agentflow 1.6 and older ignore the new fields.
+
 ## Compatibility fixtures
 
 The compatibility matrix contains:

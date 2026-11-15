@@ -1012,8 +1012,19 @@ class RunBaselineSchemaContractTests(unittest.TestCase):
         )
 
         schema = load_schema("run-anchors.schema.json")
-        self.assertEqual(RUN_ANCHORS_SCHEMA_VERSION, "1.0.0")
-        self.assertRegex(RUN_ANCHORS_SCHEMA_VERSION, schema["properties"]["schema_version"]["pattern"])
+        self.assertEqual(RUN_ANCHORS_SCHEMA_VERSION, "1.1.0")
+        pattern = schema["properties"]["schema_version"]["pattern"]
+        for version in ("1.0.0", RUN_ANCHORS_SCHEMA_VERSION):
+            self.assertRegex(version, pattern)
+        # #138: the plan pin and its run id are optional, so 1.0.0 rows stay valid.
+        self.assertEqual(schema["properties"]["plan_sha256"]["type"], ["string", "null"])
+        self.assertEqual(schema["properties"]["run_id"]["type"], "string")
+        amendments = load_schema("amendments.schema.json")
+        for version in ("0.2.0", "0.3.0"):
+            self.assertRegex(version, amendments["properties"]["schema_version"]["pattern"])
+        for key in ("run_id", "previous_plan_sha256", "plan_sha256"):
+            self.assertIn(key, amendments["properties"])
+            self.assertNotIn(key, amendments["required"])
         self.assertEqual(
             sorted(schema["required"]), ["anchor", "base_commit", "id", "recorded_at", "schema_version"]
         )

@@ -56,6 +56,7 @@ from .execution_coverage import (
     incomplete_execution_errors,
     validation_gate_coverage,
 )
+from .plan_binding import plan_binding_error
 from .receipts import command_receipts, file_receipts, replay_gates, verify_receipt_outputs
 from .review import (
     build_time_review_policy,
@@ -176,7 +177,9 @@ def _aggregation_manifest_errors(manifest: Dict[str, Any]) -> List[str]:
 
 def _normalized_execution_hash(root: Path) -> str:
     payload: Dict[str, Any] = {}
-    volatile = {"started_at", "finished_at", "recorded_at", "lease_expires_at"}
+    # run_id (#138) is random per run, like a timestamp: two identical runs
+    # must normalize alike. The file hashes still cover it.
+    volatile = {"started_at", "finished_at", "recorded_at", "lease_expires_at", "run_id"}
     for name, relative_path in EXECUTION_ARTIFACT_PATHS.items():
         path = root / relative_path
         if not path.exists():
@@ -895,6 +898,11 @@ def _reject_invalid_working_state(root: Path, plan: Dict[str, Any]) -> None:
     plan_errors = validate_plan(plan)
     if plan_errors:
         raise InvalidWorkingState("plan", plan_errors)
+    # #138: build-proof trusts the saved drift report, which may predate a
+    # plan edit, so the binding is checked here too.
+    binding = plan_binding_error(root, plan)
+    if binding:
+        raise InvalidWorkingState("plan", [binding])
 
     declared_step_ids = {step["id"] for step in plan["steps"]}
     ledger_step_ids = {
@@ -1756,6 +1764,7 @@ def _verify_proof(
         findings.extend(_unless_unverified(_verify_design_decision_coverage, root, proof))
         findings.extend(_unless_unverified(_verify_validation_gate_coverage, root, proof))
         findings.extend(_unless_unverified(_verify_confirmations, root, proof))
+        findings.extend(_unless_unverified(_verify_plan_binding, root, proof))
         findings.extend(_unless_unverified(confirmation_findings, root))
         findings.extend(verify_proof_checks(proof, effective_proof_strict))
         findings.extend(_unless_unverified(verify_receipt_outputs, root))
@@ -1770,6 +1779,24 @@ def _verify_proof(
                 )
             )
     return findings
+
+
+def _verify_plan_binding(root: Path, proof: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """#138: recompute the plan binding from the hashed plan, run-start row and
+    amendments. Hashing a plan that contradicts its own amendment history
+    faithfully does not make it the accepted plan."""
+    default = ".agent/plan.lock.json"
+    coverage = proof.get("coverage")
+    # The plan the proof was built with, as the validation-gate check resolves
+    # it; that check reports a source that is not a hashed, in-root file.
+    source = coverage.get("validation_gate_plan", default) if isinstance(coverage, dict) else default
+    if not isinstance(source, str) or source not in proof.get("generated_from", []):
+        return []
+    plan_path = root / source
+    if not plan_path.resolve().is_relative_to(root.resolve()) or not source_exists(plan_path):
+        return []
+    problem = plan_binding_error(root, read_json(plan_path))
+    return [{"severity": "error", "message": problem}] if problem else []
 
 
 def _unless_unverified(check, *args: Any) -> List[Dict[str, Any]]:

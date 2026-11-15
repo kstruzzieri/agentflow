@@ -50,6 +50,7 @@ from .execution_coverage import (
 )
 from .git import changed_file_records
 from .hunks import effective_hunk_policy, format_unmapped_hunk, unmapped_hunks
+from .plan_binding import plan_binding_error
 from .proof import verify_proof
 from .receipts import command_receipts, file_receipts, sha256_path
 from .validation import audit_drift, path_in_effective_scope, validate_plan
@@ -415,6 +416,11 @@ def _validated_contract(root: Path, plan: Any) -> Dict[str, Any]:
         plan_errors.append("locked_at must be a string or null")
     if plan_errors:
         raise _InvalidState("plan_invalid", "; ".join(plan_errors), plan_path)
+    # #138: before any action is chosen, so no claim, run or amendment is
+    # offered under a plan the run does not accept.
+    binding = plan_binding_error(root, plan)
+    if binding:
+        raise _InvalidState("plan_binding", binding, plan_path)
     if not (root / contract_path).exists():
         raise _InvalidState(
             "execution_contract_missing", f"{contract_path} is missing", contract_path

@@ -16,7 +16,7 @@ from agentflow.artifacts import create_initial_artifacts, read_jsonl, write_json
 from agentflow.contracts import PLAN_SCHEMA_VERSION, RUN_ANCHORS_SCHEMA_VERSION
 from agentflow.execution import claim_step, complete_step, init_execution_artifacts, mark_step_verified
 from agentflow.execution_coverage import verify_run
-from agentflow.git import comparison_snapshot
+from agentflow.git import comparison_base, comparison_snapshot
 from agentflow.receipts import record_command, record_file_change
 from agentflow.validation import audit_drift
 
@@ -160,11 +160,15 @@ class AnchorLedgerTests(unittest.TestCase):
             rows = read_jsonl(root / ANCHORS)
             self.assertEqual([row["base_commit"] for row in rows], [None])
 
-    def test_init_execution_outside_git_writes_no_anchor(self) -> None:
+    def test_init_execution_outside_git_records_no_commit(self) -> None:
+        # #138: the row is written outside Git too (it pins the plan); with no
+        # repository there is still nothing to compare against.
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             init_execution_artifacts(root)
-            self.assertFalse((root / ANCHORS).exists())
+            self.assertEqual([row["base_commit"] for row in read_jsonl(root / ANCHORS)], [None])
+            with comparison_snapshot():
+                self.assertEqual(comparison_base(root)["source"], "head")
 
     def test_init_execution_rerun_keeps_anchor(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

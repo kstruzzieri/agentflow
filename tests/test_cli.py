@@ -12,6 +12,7 @@ import unittest
 from pathlib import Path
 
 from agentflow.artifacts import append_jsonl
+from agentflow.execution import init_execution_artifacts
 from agentflow.contracts import (
     AMENDMENTS_SCHEMA_VERSION,
     EXECUTION_CONTRACT_SCHEMA_VERSION,
@@ -1063,7 +1064,7 @@ class AgentflowCliTests(unittest.TestCase):
             plan["locked"] = True
             plan["locked_at"] = "2026-06-23T00:00:00+00:00"
             self._write_plan(cwd, plan)
-            self.assertEqual(run_agentflow(cwd, "init-execution").returncode, 0)
+            init_execution_artifacts(cwd)  # library call: the CLI needs a locked plan first (#138)
             self.assertEqual(
                 run_agentflow(cwd, "claim-step", "P1", "--agent", "agent-a").returncode, 0
             )
@@ -1082,7 +1083,7 @@ class AgentflowCliTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             cwd = Path(tmp)
             self._reject_fixture(cwd)
-            self.assertEqual(run_agentflow(cwd, "init-execution").returncode, 0)
+            init_execution_artifacts(cwd)  # library call: the CLI needs a locked plan first (#138)
             contract_path = cwd / ".agent/execution.contract.json"
             contract = json.loads(contract_path.read_text(encoding="utf-8"))
             contract.pop("contract_type")
@@ -1101,7 +1102,7 @@ class AgentflowCliTests(unittest.TestCase):
             plan = self._reject_fixture(cwd)
             plan["steps"] = []
             self._write_plan(cwd, plan)
-            self.assertEqual(run_agentflow(cwd, "init-execution").returncode, 0)
+            init_execution_artifacts(cwd)  # library call: the CLI needs a locked plan first (#138)
             for step_id, attempt_id in (("P1", "A1"), ("P2", "A2")):
                 append_jsonl(
                     cwd / ".agent/step-runs.jsonl",
@@ -1484,7 +1485,7 @@ class AgentflowCliTests(unittest.TestCase):
             cwd = Path(tmp)
             subprocess.run(["git", "init"], cwd=str(cwd), check=True, stdout=subprocess.PIPE)
             self.assertEqual(run_agentflow(cwd, "init").returncode, 0)
-            self.assertEqual(run_agentflow(cwd, "init-execution").returncode, 0)
+            init_execution_artifacts(cwd)  # library call: the CLI needs a locked plan first (#138)
             plan = valid_plan()
             plan["allowed_files"] = ["fixture.txt", ".agent/"]
             plan["validation_gates"] = ["python3 -c \"print('ok')\""]
@@ -1540,7 +1541,7 @@ class AgentflowCliTests(unittest.TestCase):
             cwd = Path(tmp)
             subprocess.run(["git", "init"], cwd=str(cwd), check=True, stdout=subprocess.PIPE)
             self.assertEqual(run_agentflow(cwd, "init").returncode, 0)
-            self.assertEqual(run_agentflow(cwd, "init-execution").returncode, 0)
+            init_execution_artifacts(cwd)  # library call: the CLI needs a locked plan first (#138)
             plan = valid_plan()
             plan["allowed_files"] = ["fixture.txt", ".agent/"]
             plan["validation_gates"] = ["python3 -c \"print('ok')\""]
@@ -1595,7 +1596,7 @@ class AgentflowCliTests(unittest.TestCase):
             cwd = Path(tmp)
             subprocess.run(["git", "init"], cwd=str(cwd), check=True, stdout=subprocess.PIPE)
             self.assertEqual(run_agentflow(cwd, "init").returncode, 0)
-            self.assertEqual(run_agentflow(cwd, "init-execution").returncode, 0)
+            init_execution_artifacts(cwd)  # library call: the CLI needs a locked plan first (#138)
             gate = "python3 -c \"print('ok')\""
             plan = valid_plan()
             plan["validation_gates"] = [gate]
@@ -1629,7 +1630,7 @@ class AgentflowCliTests(unittest.TestCase):
             cwd = Path(tmp)
             subprocess.run(["git", "init"], cwd=str(cwd), check=True, stdout=subprocess.PIPE)
             self.assertEqual(run_agentflow(cwd, "init").returncode, 0)
-            self.assertEqual(run_agentflow(cwd, "init-execution").returncode, 0)
+            init_execution_artifacts(cwd)  # library call: the CLI needs a locked plan first (#138)
             plan = valid_plan()
             plan["allowed_files"] = ["fixture.txt", ".agent/"]
             plan["validation_gates"] = ["python3 -c \"print('ok')\""]
@@ -1664,7 +1665,7 @@ class AgentflowCliTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             cwd = Path(tmp)
             self.assertEqual(run_agentflow(cwd, "init").returncode, 0)
-            self.assertEqual(run_agentflow(cwd, "init-execution").returncode, 0)
+            init_execution_artifacts(cwd)  # library call: the CLI needs a locked plan first (#138)
 
             result = run_agentflow(cwd, "status")
 
@@ -1693,7 +1694,7 @@ class AgentflowCliTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             cwd = Path(tmp)
             self.assertEqual(run_agentflow(cwd, "init").returncode, 0)
-            self.assertEqual(run_agentflow(cwd, "init-execution").returncode, 0)
+            init_execution_artifacts(cwd)  # library call: the CLI needs a locked plan first (#138)
             (cwd / ".agent/step-runs.jsonl").write_text(
                 '{"schema_version": "9.0.0", "event": "claimed"}\n', encoding="utf-8"
             )
@@ -1726,7 +1727,7 @@ class AgentflowCliTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             cwd = Path(tmp)
             self.assertEqual(run_agentflow(cwd, "init").returncode, 0)
-            self.assertEqual(run_agentflow(cwd, "init-execution").returncode, 0)
+            init_execution_artifacts(cwd)  # library call: the CLI needs a locked plan first (#138)
             contract_path = cwd / ".agent/execution.contract.json"
             contract = json.loads(contract_path.read_text(encoding="utf-8"))
             contract["schema_version"] = _next_major(EXECUTION_CONTRACT_SCHEMA_VERSION)
@@ -1790,7 +1791,7 @@ class AgentflowCliTests(unittest.TestCase):
                 run_agentflow(cwd, "lock-plan", str(plan_path)).returncode,
                 0,
             )
-            self.assertEqual(run_agentflow(cwd, "init-execution").returncode, 0)
+            init_execution_artifacts(cwd)  # library call: the CLI needs a locked plan first (#138)
             contract_path = cwd / ".agent/execution.contract.json"
             contract = json.loads(contract_path.read_text(encoding="utf-8"))
             contract["concurrency"] = []
@@ -1828,6 +1829,15 @@ class AgentflowCliTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             cwd = Path(tmp)
 
+            # #138: starting a run needs a valid locked plan.
+            refused = run_agentflow(cwd, "init-execution")
+            self.assertEqual(refused.returncode, 2, refused.stdout + refused.stderr)
+            self.assertFalse((cwd / ".agent/step-runs.jsonl").exists())
+            plan = valid_plan()
+            plan["locked"] = True
+            (cwd / ".agent").mkdir()
+            (cwd / ".agent/plan.lock.json").write_text(json.dumps(plan), encoding="utf-8")
+
             result = run_agentflow(cwd, "init-execution")
 
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
@@ -1838,7 +1848,7 @@ class AgentflowCliTests(unittest.TestCase):
     def test_doctor_json_reports_ready_after_init_execution(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             cwd = Path(tmp)
-            self.assertEqual(run_agentflow(cwd, "init-execution").returncode, 0)
+            init_execution_artifacts(cwd)  # library call: the CLI needs a locked plan first (#138)
 
             result = run_agentflow(cwd, "doctor", "--json")
 
@@ -1851,7 +1861,7 @@ class AgentflowCliTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             cwd = Path(tmp)
             self.assertEqual(run_agentflow(cwd, "init").returncode, 0)
-            self.assertEqual(run_agentflow(cwd, "init-execution").returncode, 0)
+            init_execution_artifacts(cwd)  # library call: the CLI needs a locked plan first (#138)
             plan = design_reference_plan()
             plan["locked"] = True
             (cwd / ".agent/plan.lock.json").write_text(
@@ -1880,7 +1890,7 @@ class AgentflowCliTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             cwd = Path(tmp)
             self.assertEqual(run_agentflow(cwd, "init").returncode, 0)
-            self.assertEqual(run_agentflow(cwd, "init-execution").returncode, 0)
+            init_execution_artifacts(cwd)  # library call: the CLI needs a locked plan first (#138)
             plan = valid_plan()
             plan["locked"] = True
             (cwd / ".agent/plan.lock.json").write_text(
@@ -1897,7 +1907,7 @@ class AgentflowCliTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             cwd = Path(tmp)
             self.assertEqual(run_agentflow(cwd, "init").returncode, 0)
-            self.assertEqual(run_agentflow(cwd, "init-execution").returncode, 0)
+            init_execution_artifacts(cwd)  # library call: the CLI needs a locked plan first (#138)
             plan = valid_plan()
             plan["locked"] = True
             (cwd / ".agent/plan.lock.json").write_text(
@@ -1929,7 +1939,7 @@ class AgentflowCliTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             cwd = Path(tmp)
             self.assertEqual(run_agentflow(cwd, "init").returncode, 0)
-            self.assertEqual(run_agentflow(cwd, "init-execution").returncode, 0)
+            init_execution_artifacts(cwd)  # library call: the CLI needs a locked plan first (#138)
             plan = valid_plan()
             plan["validation_gates"] = ["python3 -c \"print('ok')\""]
             plan["steps"][0]["validation"] = ["python3 -c \"print('ok')\""]
@@ -1981,7 +1991,7 @@ class AgentflowCliTests(unittest.TestCase):
 
     def _risk_run_fixture(self, cwd: Path) -> None:
         self.assertEqual(run_agentflow(cwd, "init").returncode, 0)
-        self.assertEqual(run_agentflow(cwd, "init-execution").returncode, 0)
+        init_execution_artifacts(cwd)  # library call: the CLI needs a locked plan first (#138)
         plan = valid_plan()
         plan["allowed_files"] = ["fixture.txt", ".agent/"]
         plan["blocked_files"] = ["blocked.txt"]
@@ -2092,7 +2102,7 @@ class AgentflowCliTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             cwd = Path(tmp)
             self.assertEqual(run_agentflow(cwd, "init").returncode, 0)
-            self.assertEqual(run_agentflow(cwd, "init-execution").returncode, 0)
+            init_execution_artifacts(cwd)  # library call: the CLI needs a locked plan first (#138)
             plan = valid_plan()
             plan["locked"] = True
             (cwd / ".agent/plan.lock.json").write_text(
@@ -2114,7 +2124,7 @@ class AgentflowCliTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             cwd = Path(tmp)
             self.assertEqual(run_agentflow(cwd, "init").returncode, 0)
-            self.assertEqual(run_agentflow(cwd, "init-execution").returncode, 0)
+            init_execution_artifacts(cwd)  # library call: the CLI needs a locked plan first (#138)
             plan = valid_plan()
             plan["locked"] = True
             (cwd / ".agent/plan.lock.json").write_text(
@@ -2137,7 +2147,7 @@ class AgentflowCliTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             cwd = Path(tmp)
             self.assertEqual(run_agentflow(cwd, "init").returncode, 0)
-            self.assertEqual(run_agentflow(cwd, "init-execution").returncode, 0)
+            init_execution_artifacts(cwd)  # library call: the CLI needs a locked plan first (#138)
             plan = valid_plan()
             plan["locked"] = True
             (cwd / ".agent/plan.lock.json").write_text(
@@ -2175,7 +2185,7 @@ class AgentflowCliTests(unittest.TestCase):
             step["gates"] = [{"kind": "command", "run": gate}]
         self.assertEqual(run_agentflow(cwd, "init").returncode, 0)
         (cwd / ".agent/plan.lock.json").write_text(json.dumps(plan, indent=2), encoding="utf-8")
-        self.assertEqual(run_agentflow(cwd, "init-execution").returncode, 0)
+        init_execution_artifacts(cwd)  # library call: the CLI needs a locked plan first (#138)
         if timeout_seconds is not None:
             contract_path = cwd / ".agent/execution.contract.json"
             contract = json.loads(contract_path.read_text(encoding="utf-8"))
@@ -2312,7 +2322,7 @@ class AgentflowCliTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             cwd = Path(tmp)
             self.assertEqual(run_agentflow(cwd, "init").returncode, 0)
-            self.assertEqual(run_agentflow(cwd, "init-execution").returncode, 0)
+            init_execution_artifacts(cwd)  # library call: the CLI needs a locked plan first (#138)
             plan = valid_plan()
             plan["locked"] = True
             (cwd / ".agent/plan.lock.json").write_text(
@@ -2352,7 +2362,7 @@ class AgentflowCliTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             cwd = Path(tmp)
             self.assertEqual(run_agentflow(cwd, "init").returncode, 0)
-            self.assertEqual(run_agentflow(cwd, "init-execution").returncode, 0)
+            init_execution_artifacts(cwd)  # library call: the CLI needs a locked plan first (#138)
             plan = valid_plan()
             plan["locked"] = True
             (cwd / ".agent/plan.lock.json").write_text(json.dumps(plan, indent=2), encoding="utf-8")
@@ -2384,7 +2394,7 @@ class AgentflowCliTests(unittest.TestCase):
                 with self.subTest(missing=missing, record=record), tempfile.TemporaryDirectory() as tmp:
                     cwd = Path(tmp)
                     self.assertEqual(run_agentflow(cwd, "init").returncode, 0)
-                    self.assertEqual(run_agentflow(cwd, "init-execution").returncode, 0)
+                    init_execution_artifacts(cwd)  # library call: the CLI needs a locked plan first (#138)
                     plan = valid_plan()
                     plan["locked"] = True
                     (cwd / ".agent/plan.lock.json").write_text(json.dumps(plan), encoding="utf-8")
@@ -2429,7 +2439,7 @@ class AgentDirIgnoreHintTests(unittest.TestCase):
         return cwd
 
     def _doctor_messages(self, cwd: Path) -> list:
-        self.assertEqual(run_agentflow(cwd, "init-execution").returncode, 0)
+        init_execution_artifacts(cwd)  # library call: the CLI needs a locked plan first (#138)
         result = run_agentflow(cwd, "doctor", "--json")
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         payload = json.loads(result.stdout)
@@ -2513,7 +2523,7 @@ class PorcelainCommandTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             cwd = Path(tmp)
             self.assertEqual(run_agentflow(cwd, "init").returncode, 0)
-            self.assertEqual(run_agentflow(cwd, "init-execution").returncode, 0)
+            init_execution_artifacts(cwd)  # library call: the CLI needs a locked plan first (#138)
             (cwd / ".agent/plan.lock.json").write_text(
                 json.dumps(self._driven_plan(), indent=2),
                 encoding="utf-8",
@@ -2547,7 +2557,7 @@ class PorcelainCommandTests(unittest.TestCase):
             cwd = Path(tmp)
             subprocess.run(["git", "init"], cwd=str(cwd), check=True, stdout=subprocess.PIPE)
             self.assertEqual(run_agentflow(cwd, "init").returncode, 0)
-            self.assertEqual(run_agentflow(cwd, "init-execution").returncode, 0)
+            init_execution_artifacts(cwd)  # library call: the CLI needs a locked plan first (#138)
             (cwd / ".agent/plan.lock.json").write_text(
                 json.dumps(self._driven_plan(), indent=2), encoding="utf-8"
             )
@@ -2588,7 +2598,7 @@ class PorcelainCommandTests(unittest.TestCase):
             cwd = Path(tmp)
             subprocess.run(["git", "init"], cwd=str(cwd), check=True, stdout=subprocess.PIPE)
             self.assertEqual(run_agentflow(cwd, "init").returncode, 0)
-            self.assertEqual(run_agentflow(cwd, "init-execution").returncode, 0)
+            init_execution_artifacts(cwd)  # library call: the CLI needs a locked plan first (#138)
             (cwd / ".agent/plan.lock.json").write_text(
                 json.dumps(self._driven_plan(), indent=2), encoding="utf-8"
             )
@@ -2623,7 +2633,7 @@ class PorcelainCommandTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             cwd = Path(tmp)
             self.assertEqual(run_agentflow(cwd, "init").returncode, 0)
-            self.assertEqual(run_agentflow(cwd, "init-execution").returncode, 0)
+            init_execution_artifacts(cwd)  # library call: the CLI needs a locked plan first (#138)
             (cwd / ".agent/plan.lock.json").write_text(
                 json.dumps(self._driven_plan(), indent=2), encoding="utf-8"
             )
@@ -2634,7 +2644,7 @@ class PorcelainCommandTests(unittest.TestCase):
 class EventsCommandTests(unittest.TestCase):
     def _init(self, cwd: Path) -> None:
         self.assertEqual(run_agentflow(cwd, "init").returncode, 0)
-        self.assertEqual(run_agentflow(cwd, "init-execution").returncode, 0)
+        init_execution_artifacts(cwd)  # library call: the CLI needs a locked plan first (#138)
         (cwd / ".agent" / "step-runs.jsonl").write_text(
             json.dumps(
                 {
@@ -3825,7 +3835,7 @@ class LeaseCliTests(unittest.TestCase):
         cwd = Path(tmp)
         subprocess.run(["git", "init"], cwd=str(cwd), check=True, stdout=subprocess.PIPE)
         self.assertEqual(run_agentflow(cwd, "init").returncode, 0)
-        self.assertEqual(run_agentflow(cwd, "init-execution").returncode, 0)
+        init_execution_artifacts(cwd)  # library call: the CLI needs a locked plan first (#138)
         plan = valid_plan()
         plan["allowed_files"] = ["fixture.txt", ".agent/"]
         plan["validation_gates"] = ["python3 -c \"print('ok')\""]

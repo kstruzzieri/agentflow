@@ -167,6 +167,17 @@
         "nargs": 0,
         "required": false,
         "takes_value": false
+      },
+      {
+        "choices": null,
+        "default": ".agent/plan.lock.json",
+        "multiple": false,
+        "names": [
+          "--plan"
+        ],
+        "nargs": null,
+        "required": false,
+        "takes_value": true
       }
     ],
     "amend-step": [

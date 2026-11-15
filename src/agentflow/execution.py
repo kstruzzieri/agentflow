@@ -6,6 +6,7 @@ import hashlib
 import json
 import os
 import shutil
+import uuid
 from contextlib import ExitStack, contextmanager
 from contextvars import ContextVar
 from datetime import datetime, timedelta, timezone
@@ -16,6 +17,7 @@ from .artifacts import (
     append_jsonl,
     dumps_json,
     loads_json_artifact,
+    plan_binding_sha256,
     read_jsonl,
     utc_now,
     verified_bytes,
@@ -220,13 +222,23 @@ def init_execution_artifacts(root: Path, force: bool = False) -> Tuple[List[str]
     return created, skipped
 
 
+def _locked_plan_sha256(root: Path) -> Optional[str]:
+    """The binding hash of the locked plan, or None: an unlocked plan pins nothing."""
+    try:
+        plan = json.loads((root / ".agent/plan.lock.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    if not isinstance(plan, dict) or plan.get("locked") is not True:
+        return None
+    return plan_binding_sha256(plan)
+
+
 def _write_run_anchor(root: Path, starts_run: bool, created: List[str], skipped: List[str]) -> None:
-    """#139: record the commit a fresh run starts from (null before the first commit).
+    """Record what a fresh run starts from: the commit (#139) and the plan (#138).
 
     Only when this call starts the run (it wrote step-runs.jsonl): re-running
-    init-execution must never move an existing run's baseline, and a run that
-    older versions started keeps comparing with HEAD. #138 adds the plan hash
-    to this row, which is why it is a row and not a bare commit id.
+    init-execution must never move an existing run's baseline or plan pin, and
+    a run that older versions started keeps comparing with HEAD.
     """
     relative = EXECUTION_ARTIFACT_PATHS["run-anchors"]
     path = root / relative
@@ -234,18 +246,22 @@ def _write_run_anchor(root: Path, starts_run: bool, created: List[str], skipped:
         if path.exists():
             skipped.append(relative)
         return
-    if not is_git_repo(root):
-        return
     contract = (root / EXECUTION_ARTIFACT_PATHS["execution-contract"]).read_bytes()
     row = {
         "schema_version": RUN_ANCHORS_SCHEMA_VERSION,
         "id": "RA1",
         "anchor": "run_start",
-        "base_commit": head_commit(root),
+        # Outside Git there is no commit to compare with, but the row still
+        # pins the plan (#138).
+        "base_commit": head_commit(root) if is_git_repo(root) else None,
         "recorded_at": utc_now(),
         # Hashed from the bytes on disk: this command's contract snapshot was
         # taken before init-execution wrote the contract.
         "execution_contract_sha256": hashlib.sha256(contract).hexdigest(),
+        # #138: amendments name the run they belong to, so rows a previous run
+        # left in amendments.jsonl cannot account for this run's plan edits.
+        "run_id": uuid.uuid4().hex,
+        "plan_sha256": _locked_plan_sha256(root),
     }
     path.write_text(json.dumps(row, sort_keys=True) + "\n", encoding="utf-8")
     created.append(relative)

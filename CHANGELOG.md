@@ -34,6 +34,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- The locked plan is bound to the run (#138). `init-execution` pins the plan's
+  hash on the run-start row in `.agent/run-anchors.jsonl`, and a plan that
+  differs with no amendment fails `verify-step`, `verify-run`, `audit-drift`,
+  `finish-run`, `build-proof` and `verify-proof` with
+  `plan does not match the accepted plan (expected ..., found ...)`;
+  `next-action` reports `state_invalid`. A run that edited its plan without
+  `amend-plan` and passed before now fails. The order of an amendment changes:
+  edit the plan, `lock-plan`, then `amend-plan`, which records the hash of the
+  plan it replaces and of the plan it accepts and refuses an unlocked or
+  invalid plan; `amend-plan --plan PATH` names a plan elsewhere. An amendment
+  recorded before the edit no longer covers it. Locking again without a change
+  keeps the binding, and `--base-ref` does not affect the check. Aggregation
+  refuses sources whose plan pins differ or whose own binding fails. Runs
+  started by older versions are not pinned and behave as before. Schemas: run
+  anchors 1.1.0 (`run_id`, `plan_sha256`) and amendments 0.3.0 (`run_id`,
+  `previous_plan_sha256`, `plan_sha256`), optional fields only. See
+  `docs/compatibility.md`.
+- `agentflow init-execution` exits 2 and writes nothing when it would start a
+  run and `.agent/plan.lock.json` is not a valid locked plan, `--force`
+  included (#138). Lock the plan first. Re-running it on an existing run is
+  unchanged. It also writes the run-start row outside a Git repository now,
+  naming no commit.
 - Drift checks cover committed work (#139). `init-execution` records the commit
   a run starts from in a new ledger, `.agent/run-anchors.jsonl`, and
   `verify-run`, `audit-drift`, hunk attribution and `next-action` compare

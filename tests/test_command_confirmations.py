@@ -1047,6 +1047,7 @@ class ProofConfirmationTests(unittest.TestCase):
             plan["objective"] = "Amended after the confirmed command ran."
             write_json(path, plan)
             _ok(root, "lock-plan", ".agent/plan.lock.json")
+            _ok(root, "amend-plan", "--id", "AM1", "--reason", "new objective")  # #138
             _ok(root, "audit-drift")
             _ok(root, "build-proof")
             result = _agentflow(root, "verify-proof", "--require", "confirmation=bound")
