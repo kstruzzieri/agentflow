@@ -33,6 +33,51 @@ MCP zipapps through GitHub Releases.
 
 Nothing yet. Items appear here as they merge.
 
+## Next: 1.8.0 (planned)
+
+The aim: close the two gaps left after `claim-step` started requiring
+`init-execution` in 1.7.0. This is a small hardening release; it is a minor
+release rather than a patch because #152 adds an optional field to step-run
+events.
+
+- Deleting the run-start row no longer hides committed work. Step-run events
+  record the run they belong to, so a missing `.agent/run-anchors.jsonl` fails
+  `verify-run`, `audit-drift`, `finish-run` and `build-proof` instead of
+  falling back to uncommitted changes only and dropping the plan binding
+  ([#152](https://github.com/kstruzzieri/agentflow/issues/152)). Step-runs
+  schema `1.1.0` to `1.2.0`.
+- `next-action` stops suggesting a `claim-step` that `claim-step` would refuse,
+  and points at `init-execution` instead. Both use one shared check, so they
+  cannot disagree again ([#153](https://github.com/kstruzzieri/agentflow/issues/153)).
+
+Until #152 ships, `--base-ref` in CI is the defence for committed work, as
+[`docs/security-model.md`](security-model.md) says.
+
+## Then: 1.9.0 (planned)
+
+The aim: Agentflow works with Claude Code, Codex CLI, GitHub Copilot and Golem
+in a user's own repository, installed from PyPI, not only in this source
+checkout. Today the shipped MCP configs assume the source tree, and Copilot is
+not covered.
+
+- Integration configs for an installed package: one docs page with the MCP and
+  hook config for each of the four runtimes, using the installed `agentflow`
+  and `agentflow-mcp` commands, with the same files under `examples/`
+  ([#156](https://github.com/kstruzzieri/agentflow/issues/156)).
+- A CI smoke test that installs the built wheel, applies each runtime's config
+  in a scratch repository, and checks the MCP server and Stop hook start from
+  it, so the configs cannot rot unnoticed ([#157](https://github.com/kstruzzieri/agentflow/issues/157)).
+- `agentflow setup <runtime>` writes or merges a runtime's config into a
+  repository, from the same templates as the docs, and never overwrites an
+  existing entry without `--force` ([#158](https://github.com/kstruzzieri/agentflow/issues/158)).
+- A Claude Code plugin that bundles the MCP server, the Stop hook and the
+  Agentflow task loop as a skill ([#159](https://github.com/kstruzzieri/agentflow/issues/159)).
+
+#156 comes first; the other three build on its config files. Golem's own
+auto-discovery of Agentflow is tracked in Golem's repository
+([go-llm#272](https://github.com/kstruzzieri/go-llm/issues/272)). Items move up
+to "On main, not yet released" as they merge.
+
 ## Shipped
 
 Each release's full notes are in the [changelog](../CHANGELOG.md).
