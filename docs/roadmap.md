@@ -1,8 +1,8 @@
 # Agentflow Roadmap
 
-Last updated: 2026-11-14
+Last updated: 2026-11-16
 
-Agentflow `1.6.0` is a standard-library-only Python CLI for plan-locked,
+Agentflow `1.7.0` is a standard-library-only Python CLI for plan-locked,
 auditable agent work. It supports Python 3.11–3.13 and ships as the
 `agentflow-proof` distribution on PyPI, as source, and as single-file CLI and
 MCP zipapps through GitHub Releases.
@@ -31,35 +31,7 @@ MCP zipapps through GitHub Releases.
 
 ## On main, not yet released
 
-- The README is a short landing page, with a tested
-  [quickstart](quickstart.md), a [CI proof gate guide](ci-proof-gate.md), and
-  a [documentation index](README.md). Reference material moved from the README
-  into `docs/`, and the docs now state two enforcement limits plainly
-  ([#141](https://github.com/kstruzzieri/agentflow/pull/141)).
-- Drift checks cover committed work. A run records its starting commit, so
-  `verify-run` and `audit-drift` compare everything changed since then instead
-  of only uncommitted changes, and both accept `--base-ref` so CI no longer
-  needs to rebuild a baseline by hand ([#139](https://github.com/kstruzzieri/agentflow/issues/139)).
-
-- Plan edits are bound to the run. The run pins its locked plan when it
-  starts, and a change without an amendment recorded after the plan is locked
-  again fails verification instead of passing unnoticed until the proof is
-  built ([#138](https://github.com/kstruzzieri/agentflow/issues/138)).
-
-## Next: 1.7.0 (planned)
-
-The aim: the checks keep holding when the agent being checked does not
-cooperate. The README work that opens this release is already on main.
-
-- Small rough edges from a first-run pass: a hint when `.agent/` is not
-  ignored, a one-line error outside a Git repository, `--require` keys in the
-  help text, a clearer strict-mode label, and stuck-loop counting of refused
-  commands ([#140](https://github.com/kstruzzieri/agentflow/issues/140)).
-- Docs and release polish: follow-ups from the README change
-  ([#142](https://github.com/kstruzzieri/agentflow/issues/142)), and a check of the README on PyPI plus refreshed package
-  metadata before the release is tagged ([#143](https://github.com/kstruzzieri/agentflow/issues/143)).
-
-Items move up to "On main, not yet released" as they merge.
+Nothing yet. Items appear here as they merge.
 
 ## Shipped
 
@@ -67,6 +39,7 @@ Each release's full notes are in the [changelog](../CHANGELOG.md).
 
 | Release | Date | In one line |
 | --- | --- | --- |
+| [1.7.0](../CHANGELOG.md#170---2026-11-16) | 2026-11-16 | Checks hold when the agent does not cooperate: drift covers committed work, the plan is bound to the run, and `claim-step` needs `init-execution` ([#138](https://github.com/kstruzzieri/agentflow/issues/138), [#139](https://github.com/kstruzzieri/agentflow/issues/139), [#148](https://github.com/kstruzzieri/agentflow/issues/148)). |
 | [1.6.0](../CHANGELOG.md#160---2026-11-12) | 2026-11-12 | Bound confirmation for high-risk commands: tied to the exact command, expiring, used once ([#112](https://github.com/kstruzzieri/agentflow/issues/112), phase 1). |
 | [1.5.0](../CHANGELOG.md#150---2026-11-12) | 2026-11-12 | `simulate-risk` previews a stricter risk policy; `verify-proof` judges each source by the bytes it hashed. |
 | [1.4.0](../CHANGELOG.md#140---2026-11-10) | 2026-11-10 | The proof records how each gate was satisfied; `verify-proof --require` lets CI set the minimum policy. |
