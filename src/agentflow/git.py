@@ -235,7 +235,17 @@ def changed_files(root: Path) -> List[str]:
     return sorted({record["path"] for record in changed_file_records(root)})
 
 
+class NotAGitRepositoryError(RuntimeError, ValueError):
+    """Changed files cannot be read outside Git (#140).
+
+    A RuntimeError so callers that treat a Git failure as fail-closed still do;
+    a ValueError so ``cli.main`` prints one line instead of a traceback.
+    """
+
+
 def changed_file_records(root: Path) -> List[Dict[str, str]]:
+    if not is_git_repo(root):
+        raise NotAGitRepositoryError("not a git repository; Agentflow needs Git to read changed files")
     base = comparison_base(root)
     if base["source"] == "head":
         return _status_records(root)

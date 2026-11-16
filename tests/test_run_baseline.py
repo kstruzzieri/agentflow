@@ -21,6 +21,7 @@ from agentflow.receipts import record_command, record_file_change
 from agentflow.validation import audit_drift
 
 ANCHORS = ".agent/run-anchors.jsonl"
+NOT_A_REPO = "not a git repository; Agentflow needs Git to read changed files"
 LINES = "".join(f"line {i}\n" for i in range(1, 21))
 
 
@@ -275,6 +276,25 @@ class RunStartRequiredTests(unittest.TestCase):
             self.assertEqual(out, "")
             self.assertEqual(err, NO_RUN + "\n")
             self.assertFalse((root / ".agent/step-runs.jsonl").exists())
+
+    def test_cli_changed_file_commands_outside_git_are_one_line(self) -> None:
+        # #140 item 2: these read changed files from Git and used to end in a traceback.
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            task_plan = start_run(root)
+            claim_step(root, task_plan, "P1", "agent-a")
+            (root / "src").mkdir()
+            (root / "src/app.txt").write_text("hello\n", encoding="utf-8")
+            for argv in (
+                ["record-file-change", "--step", "P1", "--path", "src/app.txt"],
+                ["verify-run"],
+                ["finish-run"],
+            ):
+                with self.subTest(command=argv[0]):
+                    code, out, err = run_cli(*argv, "--root", str(root))
+                    self.assertEqual(code, 1)
+                    self.assertIn(NOT_A_REPO, out + err)
+                    self.assertNotIn("Traceback", out + err)
 
 
 class CommittedDriftTests(unittest.TestCase):
