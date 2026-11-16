@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.7.0] - 2026-11-16
+
+Agentflow 1.7.0 makes the checks hold when the agent being checked does not
+cooperate. Drift checks now compare everything changed since the run started,
+committed or not, so committing out-of-scope work no longer hides it. The
+locked plan is bound to the run, so a plan edited without an amendment fails
+verification. `claim-step` refuses to start a run that `init-execution` did
+not start. The README is a short landing page with its reference material in
+`docs/`, and a handful of first-run rough edges are fixed. This release writes
+new schema versions, so Agentflow 1.6 and older cannot read its receipts; do
+not go back to them in a worktree 1.7 has used.
+
 ### Added
 
 - `agentflow init` prints a one-line hint, and `agentflow doctor` reports a
@@ -804,7 +816,8 @@ repository, so this heading is intentionally unlinked._
 
 - Existing v0.2 proof artifacts remain valid when no execution contract exists.
 
-[Unreleased]: https://github.com/kstruzzieri/agentflow/compare/v1.6.0...HEAD
+[Unreleased]: https://github.com/kstruzzieri/agentflow/compare/v1.7.0...HEAD
+[1.7.0]: https://github.com/kstruzzieri/agentflow/compare/v1.6.0...v1.7.0
 [1.6.0]: https://github.com/kstruzzieri/agentflow/compare/v1.5.0...v1.6.0
 [1.5.0]: https://github.com/kstruzzieri/agentflow/compare/v1.4.0...v1.5.0
 [1.4.0]: https://github.com/kstruzzieri/agentflow/compare/v1.3.0...v1.4.0
