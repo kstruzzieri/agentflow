@@ -42,6 +42,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (receipt `decision: "blocked"`, for example a high-risk command with no
   bound confirmation) as a failed attempt in `repeated_command_failure`, so
   `verify-run` stops warning that such a command "failed" (#140).
+- Outside a Git repository, `record-file-change`, `verify-run` and
+  `finish-run` now exit 1 with
+  `not a git repository; Agentflow needs Git to read changed files` instead
+  of a Python traceback (#140).
 
 ### Changed
 
