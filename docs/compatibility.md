@@ -73,7 +73,8 @@ change to a released schema fails CI. `PROOF_PACK` 1.1.0, which adds
 `COMMAND_RECEIPTS`, `FILE_RECEIPTS`, `VERIFICATION_RUNS` and `DRIFT_REPORT`
 1.1.0 add `execution_contract_sha256` (#117). A 1.1 reader accepts 1.0 records,
 so a ledger can mix both; Agentflow 1.3 and older reject the 1.1 records in
-working state.
+working state. `STEP_RUNS` 1.2.0 adds `run_id` to the events that open an
+attempt (#152); Agentflow 1.7 and older reject the 1.2 records.
 
 ### Command confirmations (#112)
 

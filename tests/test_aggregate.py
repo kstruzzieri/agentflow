@@ -837,7 +837,7 @@ class HardeningTests(unittest.TestCase):
 class SchemaBumpTests(unittest.TestCase):
     def test_execution_ledger_versions_bumped_for_namespacing(self):
         from agentflow import contracts
-        self.assertEqual(contracts.STEP_RUNS_SCHEMA_VERSION, "1.1.0")
+        self.assertEqual(contracts.STEP_RUNS_SCHEMA_VERSION, "1.2.0")  # #152 run_id
         self.assertEqual(contracts.COMMAND_RECEIPTS_SCHEMA_VERSION, "1.2.0")  # #112 bound fields
         self.assertEqual(contracts.FILE_RECEIPTS_SCHEMA_VERSION, "1.2.0")  # #139 hunk_base_commit
         self.assertEqual(contracts.VERIFICATION_RUNS_SCHEMA_VERSION, "1.2.0")  # #139 baseline

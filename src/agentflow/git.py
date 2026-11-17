@@ -150,12 +150,18 @@ def read_run_anchor(root: Path) -> Optional[Dict[str, Any]]:
     """
     path = root / RUN_ANCHORS_PATH
     if not source_exists(path):
-        if _receipts_name_a_baseline(root):
-            raise BaselineError(
-                f"{RUN_ANCHORS_PATH} is missing, but file receipts were recorded against a run "
-                "baseline; restore it, or check with --base-ref REF",
-                "run-anchor",
-            )
+        # #152: claims name the run too, so a row deleted before the first
+        # file receipt is caught as well. Older ledgers carry neither marker.
+        for ledger, marker, records in (
+            ("file-receipts", "hunk_base_commit", "file receipts"),
+            ("step-runs", "run_id", "step runs"),
+        ):
+            if _ledger_has(root, ledger, marker):
+                raise BaselineError(
+                    f"{RUN_ANCHORS_PATH} is missing, but {records} were recorded against a run "
+                    "baseline; restore it, or check with --base-ref REF",
+                    "run-anchor",
+                )
         return None
     return _read_anchor(path)
 
@@ -192,9 +198,9 @@ def _read_anchor(path: Path) -> Dict[str, Any]:
     return row
 
 
-def _receipts_name_a_baseline(root: Path) -> bool:
-    receipts = root / EXECUTION_ARTIFACT_PATHS["file-receipts"]
-    return any("hunk_base_commit" in row for row in read_jsonl(receipts, objects_only=False) if isinstance(row, dict))
+def _ledger_has(root: Path, ledger: str, key: str) -> bool:
+    rows = read_jsonl(root / EXECUTION_ARTIFACT_PATHS[ledger], objects_only=False)
+    return any(key in row for row in rows if isinstance(row, dict))
 
 
 def _empty_tree(root: Path) -> str:

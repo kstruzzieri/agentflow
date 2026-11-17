@@ -25,7 +25,7 @@ STEP_EVENT = {
     "lease_expires_at": "string|null", "reason": "string|null",
     "reason_code": "string|null", "findings": "array|null",
     "amends_attempt": "string|null", "amends_completed_at": "string|null",
-    "execution_contract_sha256": "string|null",
+    "execution_contract_sha256": "string|null", "run_id": "string|null",
 }
 COMMAND_RECEIPT = {
     "schema_version": "string", "id": "string", "step_id": "string",

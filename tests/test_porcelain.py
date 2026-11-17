@@ -27,6 +27,8 @@ from agentflow.contracts import (
 from agentflow import cli, execution_coverage, mcp_server, porcelain
 from agentflow.receipts import file_receipts
 
+from tests.test_run_baseline import as_legacy_run
+
 
 def _git(root: Path, *args: str) -> None:
     subprocess.run(["git", *args], cwd=root, check=True,
@@ -1163,7 +1165,7 @@ class TestNextActionInflightWork(unittest.TestCase):
                     # Staged-rename classification exists only in runs without a
                     # #139 baseline; an anchored run sees a delete plus an add. A
                     # run 1.6 started has claims and no anchor (#148).
-                    drop_anchor = (root / ".agent/run-anchors.jsonl").unlink if kind == "rename" else None
+                    drop_anchor = (lambda: as_legacy_run(root)) if kind == "rename" else None
                     _attempt(root, "P2", "src/shared.py", edited, after_open=drop_anchor)
                     self.assertEqual(cli.main(["finish-step", "P2", "--root", str(root)]), 0)
                     _attempt(root, "P1", "src/a.py", "a = 1\n")

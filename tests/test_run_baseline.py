@@ -8,20 +8,32 @@ import json
 import subprocess
 import tempfile
 import unittest
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import List, Optional
 
 from agentflow import cli
 from agentflow.artifacts import create_initial_artifacts, read_jsonl, write_json
 from agentflow.contracts import PLAN_SCHEMA_VERSION, RUN_ANCHORS_SCHEMA_VERSION
-from agentflow.execution import claim_step, complete_step, init_execution_artifacts, mark_step_verified
+from agentflow.execution import (
+    amend_step,
+    claim_step,
+    complete_step,
+    init_execution_artifacts,
+    mark_step_verified,
+    reclaim_step,
+)
 from agentflow.execution_coverage import verify_run
-from agentflow.git import comparison_base, comparison_snapshot
+from agentflow.git import BaselineError, comparison_base, comparison_snapshot
 from agentflow.receipts import record_command, record_file_change
 from agentflow.validation import audit_drift
 
 ANCHORS = ".agent/run-anchors.jsonl"
 NOT_A_REPO = "not a git repository; Agentflow needs Git to read changed files"
+STEP_RUNS_MARKED = (
+    f"{ANCHORS} is missing, but step runs were recorded against a run baseline; "
+    "restore it, or check with --base-ref REF"
+)
 LINES = "".join(f"line {i}\n" for i in range(1, 21))
 
 
@@ -139,6 +151,18 @@ def run_cli(*argv: str) -> tuple:
     return code, out.getvalue(), err.getvalue()
 
 
+def as_legacy_run(root: Path) -> None:
+    """Make the run look like one Agentflow 1.7.0 or older left: claims, no run-start row.
+
+    Those versions wrote no run_id on step events (#152), so the claims say
+    nothing about the row either.
+    """
+    (root / ANCHORS).unlink()
+    path = root / ".agent/step-runs.jsonl"
+    rows = [{key: value for key, value in row.items() if key != "run_id"} for row in read_jsonl(path)]
+    path.write_text("".join(json.dumps(row, sort_keys=True) + "\n" for row in rows), encoding="utf-8")
+
+
 class AnchorLedgerTests(unittest.TestCase):
     def test_init_execution_records_head_anchor(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -241,10 +265,12 @@ class RunStartRequiredTests(unittest.TestCase):
             root = seeded_repo(tmp)
             task_plan = start_run(root, plan())
             claim_step(root, task_plan, "P1", "agent-a")
-            (root / ANCHORS).unlink()
+            as_legacy_run(root)
             init_execution_artifacts(root)
             self.assertFalse((root / ANCHORS).exists())
-            self.assertEqual(claim_step(root, task_plan, "P2", "agent-a")["attempt_id"], "A2")
+            event = claim_step(root, task_plan, "P2", "agent-a")
+            self.assertEqual(event["attempt_id"], "A2")
+            self.assertNotIn("run_id", event)
             with comparison_snapshot():
                 self.assertEqual(comparison_base(root)["source"], "head")
 
@@ -433,7 +459,7 @@ class CommittedDriftTests(unittest.TestCase):
             root = seeded_repo(tmp)
             task_plan = start_run(root)
             claim_step(root, task_plan, "P1", "agent-a")
-            (root / ANCHORS).unlink()  # a run started by 1.6 or older: claims, no anchor
+            as_legacy_run(root)  # a run started by 1.6 or older: claims, no anchor
             edit_line(root, "src/app.txt", 1, "RECORDED")
             finish_step(root, "P1", "A1", ["src/app.txt"])
             commit_all(root, "recorded work")
@@ -472,6 +498,34 @@ class FailClosedTests(unittest.TestCase):
             (root / ANCHORS).unlink()
             self.assert_fails_closed(root, task_plan, "run-anchors.jsonl")
 
+    def test_row_deleted_after_claim_fails_closed(self) -> None:
+        # #152: no file receipt names a baseline yet, but the claim names the run.
+        with tempfile.TemporaryDirectory() as tmp:
+            root = seeded_repo(tmp)
+            base = git(root, "rev-parse", "HEAD")
+            task_plan = start_run(root)
+            claim_step(root, task_plan, "P1", "agent-a")
+            (root / ANCHORS).unlink()
+            edit_line(root, "src/app.txt", 1, "EDITED")
+            (root / "outside.txt").write_text("unrecorded\n", encoding="utf-8")
+            commit_all(root, "sneak")
+            self.assert_fails_closed(root, task_plan, STEP_RUNS_MARKED)
+            with self.assertRaises(BaselineError) as caught:
+                record_file_change(root, task_plan, "P1", "A1", "src/app.txt")
+            self.assertIn(STEP_RUNS_MARKED, str(caught.exception))
+            with comparison_snapshot(base_ref=base):
+                drift = audit_drift(root, task_plan)
+                result = verify_run(root, task_plan, record=False)
+            self.assertEqual(drift["baseline"], {"source": "base-ref", "commit": base, "ref": base})
+            self.assertIn("outside.txt", drift["out_of_scope_files"])
+            self.assertIn("out-of-scope changed file: outside.txt", messages(result))
+            for argv in (["verify-run", "--no-record"], ["audit-drift"], ["finish-run"], ["build-proof"]):
+                with self.subTest(command=argv[0]):
+                    code, out, err = run_cli(*argv, "--root", str(root))
+                    self.assertNotEqual(code, 0)
+                    self.assertIn(STEP_RUNS_MARKED, out + err)
+                    self.assertNotIn("Traceback", out + err)
+
     def test_malformed_or_multi_row_anchor_fails_closed(self) -> None:
         for content in ("", "not json\n", None):
             with self.subTest(content=content), tempfile.TemporaryDirectory() as tmp:
@@ -494,6 +548,67 @@ class FailClosedTests(unittest.TestCase):
                     self.assertEqual(code, 1)
                     self.assertNotIn("Traceback", out + err)
                     self.assertIn("run-anchors.jsonl", out + err)
+
+
+class RunMarkerTests(unittest.TestCase):
+    """#152: events that open an attempt name the run they belong to."""
+
+    def test_opening_events_carry_the_run_id(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = seeded_repo(tmp)
+            task_plan = start_run(root)
+            run_id = read_jsonl(root / ANCHORS)[0]["run_id"]
+            claim_step(root, task_plan, "P1", "agent-a", lease_minutes=1,
+                       now=datetime(2020, 1, 1, tzinfo=timezone.utc))
+            reclaim_step(root, task_plan, "P1", "agent-b", "lease expired")
+            edit_line(root, "src/app.txt", 1, "RECORDED")
+            finish_step(root, "P1", "A2", ["src/app.txt"])
+            amend_step(root, task_plan, "P1", "agent-a", "follow-up")
+            events = read_jsonl(root / ".agent/step-runs.jsonl")
+            marked = [(event["event"], event["run_id"]) for event in events if "run_id" in event]
+            self.assertEqual(
+                marked, [("claimed", run_id), ("claimed", run_id), ("amendment_started", run_id)],
+            )
+
+    def test_claim_after_row_deleted_is_refused(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = seeded_repo(tmp)
+            task_plan = start_run(root, plan())
+            claim_step(root, task_plan, "P1", "agent-a")
+            (root / ANCHORS).unlink()
+            before = (root / ".agent/step-runs.jsonl").read_bytes()
+            with self.assertRaises(BaselineError) as caught:
+                claim_step(root, task_plan, "P2", "agent-a")
+            self.assertIn(STEP_RUNS_MARKED, str(caught.exception))
+            self.assertEqual((root / ".agent/step-runs.jsonl").read_bytes(), before)
+            # init-execution does not restore it: the ledger holds claims.
+            init_execution_artifacts(root)
+            self.assertFalse((root / ANCHORS).exists())
+
+    def test_force_restart_marks_events_with_the_new_run(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = seeded_repo(tmp)
+            task_plan = start_run(root)
+            first = claim_step(root, task_plan, "P1", "agent-a")["run_id"]
+            init_execution_artifacts(root, force=True)
+            second = read_jsonl(root / ANCHORS)[0]["run_id"]
+            self.assertNotEqual(second, first)
+            self.assertEqual(claim_step(root, task_plan, "P1", "agent-a")["run_id"], second)
+            self.assertEqual(
+                [event.get("run_id") for event in read_jsonl(root / ".agent/step-runs.jsonl")], [second],
+            )
+
+    def test_unmarked_ledger_without_row_keeps_head_comparison(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = seeded_repo(tmp)
+            task_plan = start_run(root)
+            claim_step(root, task_plan, "P1", "agent-a")
+            as_legacy_run(root)
+            with comparison_snapshot():
+                self.assertEqual(comparison_base(root)["source"], "head")
+            (root / "outside.txt").write_text("unrecorded\n", encoding="utf-8")
+            commit_all(root, "sneak")
+            self.assertEqual(audit_drift(root, task_plan)["baseline"], {"source": "head", "commit": None})
 
 
 class ProvenanceTests(unittest.TestCase):
@@ -521,7 +636,7 @@ class RegistrationTests(unittest.TestCase):
             root = seeded_repo(tmp)
             task_plan = start_run(root)
             claim_step(root, task_plan, "P1", "agent-a")
-            (root / ANCHORS).unlink()  # a run started by an older version
+            as_legacy_run(root)  # a run started by an older version
             action = next_action(root)
             self.assertNotIn("run-anchors", " ".join([action.reason, *action.diagnostics]))
             self.assertEqual(action.step_id, "P1")
@@ -536,7 +651,7 @@ class BaseRefTests(unittest.TestCase):
         base = git(root, "rev-parse", "HEAD")
         task_plan = start_run(root)
         claim_step(root, task_plan, "P1", "agent-a")
-        (root / ANCHORS).unlink()  # a run started by 1.6 or older: claims, no anchor
+        as_legacy_run(root)  # a run started by 1.6 or older: claims, no anchor
         edit_line(root, "src/app.txt", 1, "RECORDED")
         finish_step(root, "P1", "A1", ["src/app.txt"])
         (root / "stray.txt").write_text("unrecorded\n", encoding="utf-8")
