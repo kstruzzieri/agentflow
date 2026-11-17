@@ -34,6 +34,7 @@ from .execution import (
     read_step_state,
     refuse_timed_out_attempt,
     require_lifecycle_owner,
+    run_start_error,
     step_state_from_events,
     timed_out_receipts,
     validate_execution_contract,
@@ -1272,17 +1273,18 @@ def next_action(
                    command=_cmd(args), args=args),
             projection,
         )
-    if not (root / ".agent/execution.contract.json").exists():
-        projection = _diagnose(
-            _base_resumability(plan, agent_id),
-            "execution_contract_missing",
-            "execution contract missing",
-            ".agent/execution.contract.json",
-        )
+    # #153: the check claim-step refuses on, so the claim offered below is one
+    # claim-step accepts. A ledger it cannot read is left to _resumability.
+    try:
+        unstarted = run_start_error(root)
+    except (OSError, ValueError):
+        unstarted = None
+    if unstarted:
+        code, message, artifact = unstarted
         return _attach(
-            Action("execution_uninitialized", "execution contract missing",
+            Action("execution_uninitialized", message,
                    command=_cmd(["init-execution"]), args=["init-execution"]),
-            projection,
+            _diagnose(_base_resumability(plan, agent_id), code, message, artifact),
         )
 
     projection, selection = _resumability(root, plan, agent_id, strict)

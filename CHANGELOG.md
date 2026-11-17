@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- `next-action`, and the MCP `next_action` tool, report
+  `execution_uninitialized` and suggest `agentflow init-execution` whenever
+  `claim-step` would refuse the run as not started (#153). Before, a run with
+  an empty step-runs ledger and no run-start row got `step_unclaimed` with a
+  `claim-step` command that `claim-step` then refused, and a run with no
+  step-runs ledger got `state_invalid`. The reason names what is missing:
+  `execution contract missing`, `step-runs ledger missing`, or
+  `run not started: no run-start row and no claims`. Both commands now use the
+  same check. A run 1.6 started, with claims and no run-start row, still gets
+  its step's next command. No schema change.
+
 ## [1.7.0] - 2026-11-16
 
 Agentflow 1.7.0 makes the checks hold when the agent being checked does not

@@ -484,6 +484,12 @@ semantics.
   uncompleted step, failing drift, unverified run, missing/stale/failing proof,
   complete). It prints a copy-paste `agentflow ...` command; `--json` emits the
   same as a parseable object.
+  `execution_uninitialized` is reported whenever `claim-step` would refuse the
+  run as not started, so the command is always `init-execution` and never a
+  claim that would fail. The reason names what is missing:
+  `execution contract missing`, `step-runs ledger missing`, or
+  `run not started: no run-start row and no claims`. A run with claims and no
+  run-start row (one 1.6 started) is a started run.
   The additive `resumability` object reports locked contract hashes, the
   actionable step and open attempt, owner and evaluated lease state,
   attempt-scoped receipts and gates, structured diagnostics, and the
