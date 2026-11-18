@@ -34,7 +34,7 @@ MCP zipapps through GitHub Releases.
 - `agentflow stop-gate`: the Stop hook answer for an installed package. It runs
   the proof chain and prints `{}` or a block decision, the one format Claude
   Code, Codex CLI and GitHub Copilot all read from a Stop hook
-  ([#ISSUE_NEW](https://github.com/kstruzzieri/agentflow/issues/ISSUE_NEW)).
+  ([#164](https://github.com/kstruzzieri/agentflow/issues/164)).
 
 ## Next: 1.9.0 (planned)
 
