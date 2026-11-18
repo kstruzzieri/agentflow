@@ -62,6 +62,22 @@ class FindRootTests(unittest.TestCase):
     def test_no_locked_plan_is_ungoverned(self):
         self.assertIsNone(stop_gate.find_root(None, {}, self.tmp))
 
+    def test_walk_stops_at_the_repository_boundary(self):
+        parent = _govern(self.tmp / "governed")
+        nested = parent / ".worktrees" / "branch"
+        (nested / "sub").mkdir(parents=True)
+        (nested / ".git").write_text("gitdir: elsewhere\n", encoding="utf-8")
+        self.assertIsNone(stop_gate.find_root(None, {}, nested / "sub"))
+
+    def test_walk_finds_the_plan_at_the_repository_root(self):
+        root = _govern(self.tmp / "repo")
+        (root / ".git").mkdir()
+        (root / "src").mkdir()
+        self.assertEqual(stop_gate.find_root(None, {}, root / "src"), root)
+
+    def test_no_cwd_is_ungoverned_without_a_named_root(self):
+        self.assertIsNone(stop_gate.find_root(None, {}, None))
+
 
 class DecideTests(unittest.TestCase):
     def setUp(self):
@@ -230,6 +246,40 @@ class StopGateCommandTests(unittest.TestCase):
         _ready_repo(self.root)
         payload = '{"hook_event_name": "Stop", "stop_hook_active": true}'
         self._assert_block(self._stop_gate(input=payload))
+
+    def test_deleted_cwd_with_a_named_root_still_blocks(self):
+        _ready_repo(self.root)
+        gone = self.root.parent / (self.root.name + "-gone")
+        gone.mkdir()
+        script = (
+            "import os, sys\n"
+            "from agentflow import cli\n"
+            "os.chdir(sys.argv[1]); os.rmdir(sys.argv[1])\n"
+            "raise SystemExit(cli.main(['stop-gate']))\n"
+        )
+        env = {k: v for k, v in os.environ.items() if k != "AGENTFLOW_ROOT"}
+        env["PYTHONPATH"] = str(REPO_ROOT / "src")
+        env["CLAUDE_PROJECT_DIR"] = str(self.root)
+        result = subprocess.run([sys.executable, "-c", script, str(gone)], env=env,
+                                capture_output=True, text=True, timeout=120,
+                                stdin=subprocess.DEVNULL)
+        self._assert_block(result)
+
+    def test_stdin_left_open_does_not_hang(self):
+        env = {k: v for k, v in os.environ.items()
+               if k not in ("AGENTFLOW_ROOT", "CLAUDE_PROJECT_DIR")}
+        env["PYTHONPATH"] = str(REPO_ROOT / "src")
+        proc = subprocess.Popen([sys.executable, "-m", "agentflow", "stop-gate"],
+                                cwd=self.root, env=env, stdin=subprocess.PIPE,
+                                stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        try:
+            self.assertEqual(proc.wait(timeout=30), 0)
+            self.assertEqual(proc.stdout.read(), b"{}\n")
+        finally:
+            proc.kill()
+            proc.wait()
+            for stream in (proc.stdin, proc.stdout, proc.stderr):
+                stream.close()
 
     def test_stray_fd1_output_goes_to_stderr(self):
         _govern(self.root)

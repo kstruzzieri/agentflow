@@ -1550,13 +1550,10 @@ def command_finish_step(args: argparse.Namespace) -> int:
 def command_stop_gate(args: argparse.Namespace) -> int:
     # A runtime reads this command's stdout as its Stop-hook answer, so stdout
     # carries exactly one JSON object and the exit status is always 0 (a
-    # non-zero exit fails open in Copilot). The hook payload on stdin is read
-    # and ignored: stop_hook_active does not change the answer.
-    if sys.stdin is not None and not sys.stdin.isatty():
-        try:
-            sys.stdin.read()
-        except (OSError, ValueError):
-            pass
+    # non-zero exit fails open in Copilot). The hook payload on stdin is not
+    # read, as hooks/stop-gate.sh never read it: a writer that leaves the pipe
+    # open would hang the hook into the runtime's timeout, which also lets the
+    # agent stop. stop_hook_active does not change the answer anyway.
     # Point fd 1 at stderr while deciding, so output from a gate or a
     # subprocess it starts cannot corrupt the answer; the answer goes to the
     # saved real stdout.
@@ -1564,15 +1561,25 @@ def command_stop_gate(args: argparse.Namespace) -> int:
     saved = os.dup(1)
     os.dup2(2, 1)
     answer: Dict[str, str] = {}
+    root: Optional[Path] = None
     try:
-        root = stop_gate.find_root(args.root, os.environ, Path.cwd())
+        try:
+            cwd: Optional[Path] = Path.cwd()
+        except OSError:  # the session's directory was deleted
+            cwd = None
+        root = stop_gate.find_root(args.root, os.environ, cwd)
         if root is None:
-            print("agentflow stop-gate: no locked plan at .agent/plan.lock.json "
-                  "in this directory or above; nothing to enforce.", file=sys.stderr)
+            print("agentflow stop-gate: no locked plan found (--root, $AGENTFLOW_ROOT, "
+                  "$CLAUDE_PROJECT_DIR, or the current directory up to the repository "
+                  "root); nothing to enforce.", file=sys.stderr)
         else:
             answer = stop_gate.decide(root)
             if not answer:
                 print("agentflow stop-gate: proof chain verified; safe to stop.", file=sys.stderr)
+    except Exception as exc:  # governed: fail closed; ungoverned: never block
+        if root is not None:
+            answer = stop_gate.internal_error(exc)
+        print(f"agentflow stop-gate: internal error: {exc!r}", file=sys.stderr)
     finally:
         sys.stdout.flush()
         os.write(saved, (json.dumps(answer) + "\n").encode("utf-8"))

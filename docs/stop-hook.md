@@ -104,7 +104,9 @@ from a Stop hook:
 - **Root:** `--root PATH`, else `$AGENTFLOW_ROOT`, else `$CLAUDE_PROJECT_DIR`,
   else the current directory. Only the current directory is searched upward
   for the nearest `.agent/plan.lock.json`, because Codex and Copilot run hooks
-  in the session's working directory, which may be a subdirectory.
+  in the session's working directory, which may be a subdirectory. The search
+  stops at the repository root (the first directory holding `.git`), so a
+  repository nested inside a governed one is never held by the outer plan.
 - **Reason:** the `'<gate>' failed` line, at most 20 lines of that gate's
   output, the `next-action` output with any recorded blockers, and the fixed
   operator line last. The runtime gives it to the agent as its next prompt.
@@ -113,8 +115,8 @@ from a Stop hook:
   stdout alone. An internal error while governed is reported as a block.
 - **Stdout holds only the answer.** Gate output, and anything a gate's
   subprocess writes, goes to stderr.
-- **stdin** (the runtime's hook payload) is read and ignored.
-  `stop_hook_active` does not change the answer; see
+- **stdin** (the runtime's hook payload) is not read, as the script never
+  read it. `stop_hook_active` does not change the answer; see
   [Blocked agents](#blocked-agents).
 
 `hooks/stop-gate.sh` stays for source checkouts, CI and git hooks, and
@@ -127,21 +129,13 @@ copy the relevant snippet into your runtime config to turn the gate on.
 
 ### Claude Code
 
-With an installed package, the hook command is `agentflow stop-gate`:
-
-```json
-{
-  "hooks": {
-    "Stop": [
-      {
-        "hooks": [
-          {"type": "command", "command": "agentflow stop-gate", "timeout": 600}
-        ]
-      }
-    ]
-  }
-}
-```
+With an installed package, the hook runs `agentflow stop-gate`. Do not use the
+bare command as the whole hook line: if `agentflow` is not on the hook's PATH
+(for example a virtual environment that is not active when Claude Code
+starts), the shell exits 127, which Claude Code treats as non-blocking, and the
+agent stops. The hook line must fall back to a block while a plan is locked;
+the copy-ready configs for each runtime do this
+([#156](https://github.com/kstruzzieri/agentflow/issues/156)).
 
 In a source checkout of this repository, use the script. Claude Code only
 treats exit code **2** as a blocking Stop error (any other non-zero is surfaced
