@@ -32,9 +32,12 @@ It must print 1.9.0 or later; older versions have no `stop-gate` command.
 
 The Stop hook only acts in a repository that has a locked Agentflow plan
 (`.agent/plan.lock.json`). Anywhere else it lets the agent stop, so the same
-config is safe in every repository. If the hook cannot run Agentflow at all, it
-blocks while a plan is locked and tells the agent to install or upgrade
-`agentflow-proof`.
+config can be copied into any repository. The POSIX hooks and Copilot's
+PowerShell hook use the same root selection if Agentflow cannot run. They
+check `AGENTFLOW_ROOT` first, then `CLAUDE_PROJECT_DIR`. A named root is
+checked directly. With neither set, they look for the nearest plan from the
+working directory up to and including the first directory containing `.git`.
+If they find a plan, they block and ask for an install or upgrade.
 
 ## Claude Code
 
@@ -125,7 +128,7 @@ Windows is best effort ([platform support](stability.md#platform-support)).
 
 ## Checked versions
 
-Checked by hand from the 1.9.0 wheel: the runtime lists the Agentflow tools,
+Checked by hand from a wheel built from the integration branch: the runtime lists the Agentflow tools,
 the Stop hook blocks an unfinished run, and it allows a finished one.
 
 | Runtime | macOS | Windows 11 |

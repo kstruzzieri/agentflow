@@ -165,15 +165,22 @@ def check_mcp(argv: List[str], cwd: Path) -> Optional[str]:
 
 def check_hook(line: str, cwd: Path, expect_block: bool, path: Optional[str] = None) -> Optional[str]:
     result = _run(["sh", "-c", line], cwd, env=_env(path))
+    if result.returncode != 0:
+        return f"hook exited {result.returncode}: {result.stderr[-500:]}"
     try:
         answer = json.loads(result.stdout)
     except json.JSONDecodeError:
         return f"stdout is not one JSON object (exit {result.returncode}): {result.stdout[:200]!r}"
     if result.stdout.count("\n") != 1:
         return f"stdout holds more than one line: {result.stdout[:200]!r}"
-    blocked = answer.get("decision") == "block"
-    if blocked != expect_block:
-        return f"expected {'block' if expect_block else 'allow'}, got {answer}"
+    if expect_block:
+        if not isinstance(answer, dict) or answer.get("decision") != "block":
+            return f"expected a block, got {answer}"
+        reason = answer.get("reason")
+        if not isinstance(reason, str) or not reason.strip():
+            return f"expected a block reason, got {answer}"
+    elif answer != {}:
+        return f"expected an empty allow response, got {answer}"
     return None
 
 
