@@ -1569,9 +1569,8 @@ def complete_step_rechecked(root: Path, step_id: str, attempt_id: Optional[str],
     return complete_step(root, step_id, attempt_id, agent_id=agent_id, recheck=recheck)
 
 
-def finish_run(
-    root: Path, plan_path: Path, strict: bool = False, base_ref: Optional[str] = None
-) -> Dict[str, Any]:
+def run_cli_captured(argv: List[str]) -> Tuple[int, List[str]]:
+    """Run one CLI command in process; return its exit code and non-blank output lines."""
     # Import inside the function: cli.py imports porcelain, so a top-level
     # `from . import cli` here would create a circular import.
     import contextlib
@@ -1579,6 +1578,35 @@ def finish_run(
 
     from . import cli as _cli
 
+    # Capture the command's output so callers never leak gate chatter to
+    # stdout (keeping --json parseable) while still surfacing its real output.
+    out_buffer, err_buffer = io.StringIO(), io.StringIO()
+    with contextlib.redirect_stdout(out_buffer), contextlib.redirect_stderr(err_buffer):
+        code = _cli.main(argv)
+    output = out_buffer.getvalue() + err_buffer.getvalue()
+    return code, [line for line in output.splitlines() if line.strip()]
+
+
+def run_gate_chain(gates: List[Tuple[str, List[str]]]) -> Dict[str, Any]:
+    """Run (name, argv) gates in order, stopping at the first failure."""
+    recorded: List[Dict[str, str]] = []
+    for name, argv in gates:
+        code, lines = run_cli_captured(argv)
+        status = "ok" if code == 0 else "fail"
+        recorded.append({"name": name, "status": status})
+        if code != 0:
+            return {
+                "ok": False,
+                "stopped_at": name,
+                "gates": recorded,
+                "diagnostics": lines or [f"gate {name} failed"],
+            }
+    return {"ok": True, "stopped_at": None, "gates": recorded, "diagnostics": []}
+
+
+def finish_run(
+    root: Path, plan_path: Path, strict: bool = False, base_ref: Optional[str] = None
+) -> Dict[str, Any]:
     root_args = ["--root", str(root)]
     plan_args = ["--plan", str(plan_path)]
     strict_args = ["--strict"] if strict else []
@@ -1590,23 +1618,4 @@ def finish_run(
         ("build-proof", ["build-proof", *root_args, *plan_args, *strict_args]),
         ("verify-proof", ["verify-proof", *root_args, *strict_args]),
     ]
-    recorded: List[Dict[str, str]] = []
-    for name, argv in gates:
-        # Capture each gate's output so finish_run never leaks gate chatter to
-        # stdout (keeping --json parseable) while still surfacing the failing
-        # gate's real output in diagnostics instead of swallowing it.
-        out_buffer, err_buffer = io.StringIO(), io.StringIO()
-        with contextlib.redirect_stdout(out_buffer), contextlib.redirect_stderr(err_buffer):
-            code = _cli.main(argv)
-        status = "ok" if code == 0 else "fail"
-        recorded.append({"name": name, "status": status})
-        if code != 0:
-            output = out_buffer.getvalue() + err_buffer.getvalue()
-            diagnostics = [line for line in output.splitlines() if line.strip()]
-            return {
-                "ok": False,
-                "stopped_at": name,
-                "gates": recorded,
-                "diagnostics": diagnostics or [f"gate {name} failed"],
-            }
-    return {"ok": True, "stopped_at": None, "gates": recorded, "diagnostics": []}
+    return run_gate_chain(gates)
