@@ -29,6 +29,8 @@ Linux and macOS are supported and tested in release-blocking CI on Python 3.11,
 has no release-blocking CI leg and no compatibility guarantee until this support
 tier changes. The POSIX `sh` stop hook (`hooks/stop-gate.sh`) and shell-dependent
 examples are POSIX-only; use a POSIX shell on Windows or do not use those parts.
+`agentflow stop-gate` is the hook command for an installed package; it is Python,
+so it also runs on Windows (best effort, hand-checked for 1.9.0).
 A future supported Windows tier requires Windows CI plus adapted or replaced
 POSIX-only hooks and tests.
 
@@ -45,7 +47,7 @@ The supported command names are:
 `record-command`, `record-file-change`, `verify-step`, `verify-run`,
 `aggregate-ledgers`, `confirm-command`, `detect-stuck`, `simulate-risk`, `export-handoff`,
 `lint-handoff`, `replay-gates`, `runtime-status`, `build-proof`, `verify-proof`, `view-proof`,
-`events`, `next-action`, `finish-step`, `finish-run`, and `status`.
+`events`, `next-action`, `finish-step`, `finish-run`, `stop-gate`, and `status`.
 
 The machine-readable [CLI contract manifest](cli-contract.json) enumerates every
 command path, positional argument, flag, alias, choice, and default as a stable

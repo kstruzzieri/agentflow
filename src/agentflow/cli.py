@@ -59,7 +59,7 @@ from .capabilities import append_capability_receipt, build_capability_receipt
 from .handoff import export_handoff, lint_handoff_text
 from .git import comparison_snapshot
 from .hunks import format_unmapped_hunk
-from . import porcelain
+from . import porcelain, stop_gate
 from .locks import file_lock
 from .plan_binding import accepted_plan
 from .packs import (
@@ -1547,6 +1547,40 @@ def command_finish_step(args: argparse.Namespace) -> int:
     return 0 if result["completed"] else 1
 
 
+def command_stop_gate(args: argparse.Namespace) -> int:
+    # A runtime reads this command's stdout as its Stop-hook answer, so stdout
+    # carries exactly one JSON object and the exit status is always 0 (a
+    # non-zero exit fails open in Copilot). The hook payload on stdin is read
+    # and ignored: stop_hook_active does not change the answer.
+    if sys.stdin is not None and not sys.stdin.isatty():
+        try:
+            sys.stdin.read()
+        except (OSError, ValueError):
+            pass
+    # Point fd 1 at stderr while deciding, so output from a gate or a
+    # subprocess it starts cannot corrupt the answer; the answer goes to the
+    # saved real stdout.
+    sys.stdout.flush()
+    saved = os.dup(1)
+    os.dup2(2, 1)
+    answer: Dict[str, str] = {}
+    try:
+        root = stop_gate.find_root(args.root, os.environ, Path.cwd())
+        if root is None:
+            print("agentflow stop-gate: no locked plan at .agent/plan.lock.json "
+                  "in this directory or above; nothing to enforce.", file=sys.stderr)
+        else:
+            answer = stop_gate.decide(root)
+            if not answer:
+                print("agentflow stop-gate: proof chain verified; safe to stop.", file=sys.stderr)
+    finally:
+        sys.stdout.flush()
+        os.write(saved, (json.dumps(answer) + "\n").encode("utf-8"))
+        os.dup2(saved, 1)
+        os.close(saved)
+    return 0
+
+
 def command_finish_run(args: argparse.Namespace) -> int:
     root = Path(args.root).resolve()
     plan_path = Path(args.plan)
@@ -2409,6 +2443,13 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     finish_run_parser.set_defaults(func=command_finish_run)
+
+    stop_gate_parser = subparsers.add_parser(
+        "stop-gate",
+        help="answer a runtime Stop hook: allow, or block until the proof chain passes",
+    )
+    stop_gate_parser.add_argument("--root", default=None)
+    stop_gate_parser.set_defaults(func=command_stop_gate)
 
     status = subparsers.add_parser("status", help="summarize current workflow state")
     status.add_argument("--root", default=".")

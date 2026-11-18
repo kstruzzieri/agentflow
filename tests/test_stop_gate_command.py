@@ -164,5 +164,79 @@ class DecideTests(unittest.TestCase):
         self.assertEqual(answer["reason"].splitlines()[-1], stop_gate.OPERATOR_LINE)
 
 
+STRAY_FD1 = """
+import os, sys
+from agentflow import cli, porcelain
+
+def fake(argv):
+    os.write(1, b"stray\\n")
+    return 1, ["x"]
+
+porcelain.run_cli_captured = fake
+raise SystemExit(cli.main(["stop-gate", "--root", sys.argv[1]]))
+"""
+
+
+class StopGateCommandTests(unittest.TestCase):
+    def setUp(self):
+        self._tmp = TemporaryDirectory()
+        self.root = Path(self._tmp.name).resolve()
+
+    def tearDown(self):
+        self._tmp.cleanup()
+
+    def _run(self, argv, cwd=None, input=None):
+        env = {k: v for k, v in os.environ.items()
+               if k not in ("AGENTFLOW_ROOT", "CLAUDE_PROJECT_DIR")}
+        env["PYTHONPATH"] = str(REPO_ROOT / "src")
+        return subprocess.run(
+            argv, cwd=cwd or self.root, env=env, capture_output=True, text=True,
+            timeout=120, input=input,
+            stdin=None if input is not None else subprocess.DEVNULL,
+        )
+
+    def _stop_gate(self, *args, cwd=None, input=None):
+        return self._run([sys.executable, "-m", "agentflow", "stop-gate", *args],
+                         cwd=cwd, input=input)
+
+    def _assert_block(self, result):
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout.count("\n"), 1, result.stdout)
+        self.assertEqual(json.loads(result.stdout)["decision"], "block")
+
+    def test_ungoverned_prints_empty_object(self):
+        result = self._stop_gate()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout, "{}\n")
+        self.assertIn("no locked plan", result.stderr)
+
+    def test_unfinished_run_prints_one_block_object(self):
+        _ready_repo(self.root)
+        self._assert_block(self._stop_gate("--root", str(self.root), cwd=REPO_ROOT))
+
+    def test_finished_run_prints_empty_object(self):
+        _completed_step(self.root)
+        result = self._stop_gate("--root", str(self.root))
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout, "{}\n")
+
+    def test_subdirectory_cwd_finds_the_plan(self):
+        _ready_repo(self.root)
+        deep = self.root / "src" / "deep"
+        deep.mkdir(parents=True)
+        self._assert_block(self._stop_gate(cwd=deep))
+
+    def test_hook_payload_on_stdin_does_not_change_the_answer(self):
+        _ready_repo(self.root)
+        payload = '{"hook_event_name": "Stop", "stop_hook_active": true}'
+        self._assert_block(self._stop_gate(input=payload))
+
+    def test_stray_fd1_output_goes_to_stderr(self):
+        _govern(self.root)
+        result = self._run([sys.executable, "-c", STRAY_FD1, str(self.root)])
+        self._assert_block(result)
+        self.assertIn("stray", result.stderr)
+
+
 if __name__ == "__main__":
     unittest.main()
