@@ -617,7 +617,8 @@ class TestResumabilityProjection(unittest.TestCase):
                 item["allowed"] for item in action.resumability["recovery_actions"]
             ))
 
-    def test_missing_execution_ledger_has_diagnostic_and_no_recovery(self):
+    def test_missing_step_runs_ledger_points_at_init_execution(self):
+        # #153: claim-step refuses this run, so next-action offers init-execution.
         with TemporaryDirectory() as d:
             root = Path(d)
             _ready_repo(root)
@@ -625,11 +626,13 @@ class TestResumabilityProjection(unittest.TestCase):
 
             action = porcelain.next_action(root, agent_id="worker")
 
-            self.assertEqual(action.state, "state_invalid")
-            self.assertIsNone(action.command)
+            self.assertEqual(action.state, "execution_uninitialized")
+            self.assertEqual(action.reason, "step-runs ledger missing")
+            self.assertEqual(action.args, ["init-execution"])
             self.assertEqual(
-                action.resumability["diagnostics"][0]["code"],
-                "execution_state_invalid",
+                action.resumability["diagnostics"],
+                [{"code": "step_runs_missing", "message": "step-runs ledger missing",
+                  "artifact": ".agent/step-runs.jsonl"}],
             )
             self.assertFalse(any(
                 item["allowed"] for item in action.resumability["recovery_actions"]

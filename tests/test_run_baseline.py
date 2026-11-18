@@ -17,6 +17,7 @@ from agentflow.contracts import PLAN_SCHEMA_VERSION, RUN_ANCHORS_SCHEMA_VERSION
 from agentflow.execution import claim_step, complete_step, init_execution_artifacts, mark_step_verified
 from agentflow.execution_coverage import verify_run
 from agentflow.git import comparison_base, comparison_snapshot
+from agentflow.porcelain import next_action
 from agentflow.receipts import record_command, record_file_change
 from agentflow.validation import audit_drift
 
@@ -295,6 +296,98 @@ class RunStartRequiredTests(unittest.TestCase):
                     self.assertEqual(code, 1)
                     self.assertIn(NOT_A_REPO, out + err)
                     self.assertNotIn("Traceback", out + err)
+
+
+def _claims_then_no_row(root: Path) -> None:
+    # A run 1.6 started: claims recorded, no run-start row.
+    claim_step(root, plan(), "P1", "agent-a")
+    (root / ANCHORS).unlink()
+
+
+# name: (change to a started two-step run, next-action reason, or None while the run is started)
+RUN_START_STATES = {
+    "started": (lambda root: None, None),
+    "no run-start row, no claims": (
+        lambda root: (root / ANCHORS).unlink(), "run not started: no run-start row and no claims",
+    ),
+    "no step-runs ledger": (
+        lambda root: (root / ".agent/step-runs.jsonl").unlink(), "step-runs ledger missing",
+    ),
+    "no execution contract": (
+        lambda root: (root / ".agent/execution.contract.json").unlink(), "execution contract missing",
+    ),
+    "claims, no run-start row": (_claims_then_no_row, None),
+}
+
+
+class NextActionAgreesWithClaimStepTests(unittest.TestCase):
+    """#153: next-action and claim-step agree on run-start recovery."""
+
+    def test_next_action_and_claim_step_agree_on_every_run_start_state(self) -> None:
+        for name, (change, reason) in RUN_START_STATES.items():
+            with self.subTest(state=name), tempfile.TemporaryDirectory() as tmp:
+                root = seeded_repo(tmp)
+                start_run(root, plan())
+                change(root)
+                action = next_action(root, agent_id="agent-a")
+                code, _out, err = run_cli("claim-step", "P2", "--agent", "agent-a", "--root", str(root))
+                if reason is None:
+                    self.assertNotEqual(action.state, "execution_uninitialized")
+                    self.assertEqual(action.step_id, "P1")  # the step's own next command
+                    self.assertEqual(code, 0, err)
+                    if action.state == "step_unclaimed":
+                        self.assertEqual(run_cli(*action.args, "--root", str(root))[0], 0)
+                    continue
+                self.assertEqual(
+                    (action.state, action.reason, action.args),
+                    ("execution_uninitialized", reason, ["init-execution"]),
+                )
+                self.assertEqual((code, err), (2, NO_RUN + "\n"))
+                # Following the offered command is the recovery: the claim offered next lands.
+                code, _out, err = run_cli(*action.args, "--root", str(root))
+                self.assertEqual(code, 0, err)
+                action = next_action(root, agent_id="agent-a")
+                self.assertEqual(action.args, ["claim-step", "P1", "--agent", "agent-a"])
+                code, _out, err = run_cli(*action.args, "--root", str(root))
+                self.assertEqual(code, 0, err)
+
+    def test_missing_ledger_after_execution_history_requires_restoration(self) -> None:
+        for history in ("claim pointer", "command receipt"):
+            with self.subTest(history=history), tempfile.TemporaryDirectory() as tmp:
+                root = seeded_repo(tmp)
+                task_plan = start_run(root)
+                claim_step(root, task_plan, "P1", "agent-a")
+                if history == "command receipt":
+                    record_command(root, "P1", "A1", ["true"], 0)
+                    (root / ".agent/attempts/P1.current").unlink()
+                anchor = (root / ANCHORS).read_bytes()
+                ledger = root / ".agent/step-runs.jsonl"
+                ledger.unlink()
+
+                action = next_action(root)
+                self.assertEqual(action.state, "state_invalid")
+                self.assertIsNone(action.command)
+                diagnostic, = action.resumability["diagnostics"]
+                self.assertEqual(diagnostic["artifact"], ".agent/step-runs.jsonl")
+                self.assertIn("restore .agent/step-runs.jsonl", diagnostic["message"])
+
+                for command, expected_code in (
+                    (("claim-step", "P1", "--agent", "agent-a"), 2),
+                    (("init-execution",), 1),
+                ):
+                    code, _out, err = run_cli(*command, "--root", str(root))
+                    self.assertEqual(code, expected_code, err)
+                    self.assertIn("restore .agent/step-runs.jsonl", err)
+                self.assertEqual((root / ANCHORS).read_bytes(), anchor)
+                self.assertFalse(ledger.exists())
+
+    def test_unreadable_ledger_without_row_is_reported_not_raised(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = seeded_repo(tmp)
+            start_run(root)
+            (root / ANCHORS).unlink()
+            (root / ".agent/step-runs.jsonl").write_text("not json\n", encoding="utf-8")
+            self.assertEqual(next_action(root).state, "state_invalid")
 
 
 class CommittedDriftTests(unittest.TestCase):
