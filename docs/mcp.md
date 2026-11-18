@@ -102,6 +102,12 @@ The repository ships discovery configs so the server is found automatically:
 - Claude Code reads [`.mcp.json`](../.mcp.json).
 - Codex CLI reads [`.codex/config.toml`](../.codex/config.toml).
 
+These two files are for developing Agentflow in this repository: they run the
+server from `src/` with `PYTHONPATH`. To use Agentflow in your own repository
+after `pip install agentflow-proof`, copy the configs from
+[Integrations](integrations.md) instead; they run the installed `agentflow-mcp`
+command.
+
 ### Streamable HTTP (local LLM front-ends)
 
 ```bash

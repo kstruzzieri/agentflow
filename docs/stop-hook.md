@@ -13,6 +13,9 @@ them before declaring the task done. A Stop hook is the lever that does: most
 agent runtimes fire a configurable command when the agent tries to stop, and a
 non-zero exit keeps the agent working.
 
+For copy-ready hook and MCP configs that use the installed package, see
+[Integrations](integrations.md).
+
 ## Universal contract
 
 The script speaks one runtime-neutral contract:
@@ -141,8 +144,8 @@ bare command as the whole hook line: if `agentflow` is not on the hook's PATH
 (for example a virtual environment that is not active when Claude Code
 starts), the shell exits 127, which Claude Code treats as non-blocking, and the
 agent stops. The hook line must fall back to a block while a plan is locked;
-the copy-ready configs for each runtime do this
-([#156](https://github.com/kstruzzieri/agentflow/issues/156)).
+the copy-ready configs in [Integrations](integrations.md) do this for
+Claude Code, Codex CLI and GitHub Copilot.
 
 In a source checkout of this repository, use the script. Claude Code only
 treats exit code **2** as a blocking Stop error (any other non-zero is surfaced

@@ -31,6 +31,8 @@ New here? Start with the [Quickstart](quickstart.md).
 
 ## Integrations
 
+- [Integrations](integrations.md): turn Agentflow on in your own repository
+  for Claude Code, Codex CLI or GitHub Copilot after `pip install agentflow-proof`.
 - [MCP server](mcp.md): expose the workflow to an agent as MCP tools.
 - [Stop hook](stop-hook.md): block a session from finishing until the proof
   passes.

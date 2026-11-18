@@ -14,6 +14,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `build-proof` and `verify-proof` in process and always exits 0, printing `{}`
   to allow or `{"decision": "block", "reason": ...}` to block
   ([#164](https://github.com/kstruzzieri/agentflow/issues/164)).
+- `docs/integrations.md` and copy-ready configs under `examples/integrations/`
+  for Claude Code, Codex CLI and GitHub Copilot, using the installed
+  `agentflow-mcp` and `agentflow stop-gate` commands
+  ([#156](https://github.com/kstruzzieri/agentflow/issues/156)).
+- CI installs the built wheel and checks every integration config: the MCP
+  server starts and lists its tools, and the Stop hook allows and blocks as
+  documented ([#157](https://github.com/kstruzzieri/agentflow/issues/157)).
 
 ## [1.8.0] - 2026-11-17
 

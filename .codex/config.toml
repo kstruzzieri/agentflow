@@ -1,4 +1,7 @@
 # Codex CLI MCP discovery for Agentflow.
+# This file is for developing Agentflow in this repository (it runs src/ via
+# PYTHONPATH). For your own repository, use examples/integrations/codex/ and
+# docs/integrations.md.
 # Codex merges this with ~/.codex/config.toml when run from the repository root.
 [mcp_servers.agentflow]
 command = "python3"
