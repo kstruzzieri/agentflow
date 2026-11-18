@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `agentflow stop-gate`: answers a Claude Code, Codex CLI or GitHub Copilot
+  Stop hook from an installed package. It runs `verify-run --no-record`,
+  `build-proof` and `verify-proof` in process and always exits 0, printing `{}`
+  to allow or `{"decision": "block", "reason": ...}` to block
+  ([#ISSUE_NEW](https://github.com/kstruzzieri/agentflow/issues/ISSUE_NEW)).
+
 ## [1.8.0] - 2026-11-17
 
 Agentflow 1.8.0 closes the two gaps left after `claim-step` started requiring

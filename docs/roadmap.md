@@ -31,7 +31,10 @@ MCP zipapps through GitHub Releases.
 
 ## On main, not yet released
 
-Nothing yet. Items appear here as they merge.
+- `agentflow stop-gate`: the Stop hook answer for an installed package. It runs
+  the proof chain and prints `{}` or a block decision, the one format Claude
+  Code, Codex CLI and GitHub Copilot all read from a Stop hook
+  ([#ISSUE_NEW](https://github.com/kstruzzieri/agentflow/issues/ISSUE_NEW)).
 
 ## Next: 1.9.0 (planned)
 
@@ -47,16 +50,22 @@ not covered.
 - A CI smoke test that installs the built wheel, applies each runtime's config
   in a scratch repository, and checks the MCP server and Stop hook start from
   it, so the configs cannot rot unnoticed ([#157](https://github.com/kstruzzieri/agentflow/issues/157)).
-- `agentflow setup <runtime>` writes or merges a runtime's config into a
-  repository, from the same templates as the docs, and never overwrites an
-  existing entry without `--force` ([#158](https://github.com/kstruzzieri/agentflow/issues/158)).
-- A Claude Code plugin that bundles the MCP server, the Stop hook and the
-  Agentflow task loop as a skill ([#159](https://github.com/kstruzzieri/agentflow/issues/159)).
 
-#156 comes first; the other three build on its config files. Golem's own
+`agentflow stop-gate` came first, so every runtime's Stop hook can run from the
+installed package; #156 and #157 land together. Golem's own
 auto-discovery of Agentflow is tracked in Golem's repository
 ([go-llm#272](https://github.com/kstruzzieri/go-llm/issues/272)). Items move up
 to "On main, not yet released" as they merge.
+
+## Then: 1.10.0 (planned)
+
+- `agentflow setup <runtime>` writes or merges a runtime's config into a
+  repository, from the same templates as the docs, and never overwrites an
+  existing entry without `--force`. The templates move into the package, since
+  an installed `setup` cannot read `examples/`
+  ([#158](https://github.com/kstruzzieri/agentflow/issues/158)).
+- A Claude Code plugin that bundles the MCP server, the Stop hook and the
+  Agentflow task loop as a skill ([#159](https://github.com/kstruzzieri/agentflow/issues/159)).
 
 ## Shipped
 
