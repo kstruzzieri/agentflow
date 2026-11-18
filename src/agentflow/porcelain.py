@@ -1273,18 +1273,21 @@ def next_action(
                    command=_cmd(args), args=args),
             projection,
         )
-    # #153: the check claim-step refuses on, so the claim offered below is one
-    # claim-step accepts. A ledger it cannot read is left to _resumability.
+    # #153: use the same run-start check as claim-step. Unreadable ledgers
+    # are diagnosed by _resumability.
     try:
-        unstarted = run_start_error(root)
+        start_error = run_start_error(root)
     except (OSError, ValueError):
-        unstarted = None
-    if unstarted:
-        code, message, artifact = unstarted
+        start_error = None
+    if start_error:
+        code, message, artifact = start_error
+        projection = _diagnose(_base_resumability(plan, agent_id), code, message, artifact)
+        if code == "step_runs_lost":
+            return _invalid_action(projection)
         return _attach(
             Action("execution_uninitialized", message,
                    command=_cmd(["init-execution"]), args=["init-execution"]),
-            _diagnose(_base_resumability(plan, agent_id), code, message, artifact),
+            projection,
         )
 
     projection, selection = _resumability(root, plan, agent_id, strict)

@@ -198,6 +198,8 @@ def _default_execution_contract(root: str) -> Dict[str, Any]:
 
 
 def init_execution_artifacts(root: Path, force: bool = False) -> Tuple[List[str], List[str]]:
+    if not force and (lost_ledger := _lost_step_runs(root)):
+        raise ValueError(lost_ledger[1])
     files = {
         ".agent/execution.contract.json": dumps_json(default_execution_contract(".")),
         ".agent/step-runs.jsonl": "",
@@ -794,6 +796,24 @@ def resolve_attempt(root: Path, step_id: str, attempt_id: Optional[str]) -> str:
     raise ValueError(f"{step_id} has no open attempt; run claim-step first")
 
 
+def _lost_step_runs(root: Path) -> Optional[Tuple[str, str, str]]:
+    ledger = EXECUTION_ARTIFACT_PATHS["step-runs"]
+    if (root / ledger).exists():
+        return None
+    # An anchor is also present before the first claim, so it cannot identify lost history.
+    attempts = root / ".agent/attempts"
+    if (attempts.exists() and any(path.suffix == ".current" for path in attempts.iterdir())) or any(
+        read_jsonl(root / EXECUTION_ARTIFACT_PATHS[name])
+        for name in ("command-receipts", "file-receipts", "verification-runs")
+    ):
+        return (
+            "step_runs_lost",
+            f"step-runs ledger missing after recorded work; restore {ledger} from a backup",
+            ledger,
+        )
+    return None
+
+
 def run_start_error(root: Path) -> Optional[Tuple[str, str, str]]:
     """#148: init-execution is the one place a run starts. Returns
     (code, message, artifact) for what is missing, or None for a started run.
@@ -801,9 +821,12 @@ def run_start_error(root: Path) -> Optional[Tuple[str, str, str]]:
     Without the ledger or contract, claim-step would start a run itself; with
     an empty ledger and no run-start row, drift checks would fall back to
     HEAD and miss committed work. A ledger with events and no row is a run an
-    older version started, and keeps working. claim-step refuses and
-    next-action points at init-execution on the same answer (#153).
+    older version started, and keeps working. claim-step and next-action
+    use the same check to distinguish runs that need initialization from
+    runs whose missing ledger needs restoration (#153).
     """
+    if lost_ledger := _lost_step_runs(root):
+        return lost_ledger
     contract = EXECUTION_ARTIFACT_PATHS["execution-contract"]
     if not (root / contract).exists():
         return "execution_contract_missing", "execution contract missing", contract
@@ -817,7 +840,10 @@ def run_start_error(root: Path) -> Optional[Tuple[str, str, str]]:
 
 
 def _refuse_unstarted_run(root: Path) -> None:
-    if run_start_error(root):
+    if problem := run_start_error(root):
+        code, message, _artifact = problem
+        if code == "step_runs_lost":
+            raise ValueError(f"{message}; nothing was recorded")
         raise ValueError("no run started; run agentflow init-execution first; nothing was recorded")
 
 

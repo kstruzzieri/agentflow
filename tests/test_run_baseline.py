@@ -321,7 +321,7 @@ RUN_START_STATES = {
 
 
 class NextActionAgreesWithClaimStepTests(unittest.TestCase):
-    """#153: next-action offers init-execution exactly when claim-step refuses."""
+    """#153: next-action and claim-step agree on run-start recovery."""
 
     def test_next_action_and_claim_step_agree_on_every_run_start_state(self) -> None:
         for name, (change, reason) in RUN_START_STATES.items():
@@ -350,6 +350,36 @@ class NextActionAgreesWithClaimStepTests(unittest.TestCase):
                 self.assertEqual(action.args, ["claim-step", "P1", "--agent", "agent-a"])
                 code, _out, err = run_cli(*action.args, "--root", str(root))
                 self.assertEqual(code, 0, err)
+
+    def test_missing_ledger_after_execution_history_requires_restoration(self) -> None:
+        for history in ("claim pointer", "command receipt"):
+            with self.subTest(history=history), tempfile.TemporaryDirectory() as tmp:
+                root = seeded_repo(tmp)
+                task_plan = start_run(root)
+                claim_step(root, task_plan, "P1", "agent-a")
+                if history == "command receipt":
+                    record_command(root, "P1", "A1", ["true"], 0)
+                    (root / ".agent/attempts/P1.current").unlink()
+                anchor = (root / ANCHORS).read_bytes()
+                ledger = root / ".agent/step-runs.jsonl"
+                ledger.unlink()
+
+                action = next_action(root)
+                self.assertEqual(action.state, "state_invalid")
+                self.assertIsNone(action.command)
+                diagnostic, = action.resumability["diagnostics"]
+                self.assertEqual(diagnostic["artifact"], ".agent/step-runs.jsonl")
+                self.assertIn("restore .agent/step-runs.jsonl", diagnostic["message"])
+
+                for command, expected_code in (
+                    (("claim-step", "P1", "--agent", "agent-a"), 2),
+                    (("init-execution",), 1),
+                ):
+                    code, _out, err = run_cli(*command, "--root", str(root))
+                    self.assertEqual(code, expected_code, err)
+                    self.assertIn("restore .agent/step-runs.jsonl", err)
+                self.assertEqual((root / ANCHORS).read_bytes(), anchor)
+                self.assertFalse(ledger.exists())
 
     def test_unreadable_ledger_without_row_is_reported_not_raised(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
