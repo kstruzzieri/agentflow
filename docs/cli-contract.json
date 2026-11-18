@@ -2491,6 +2491,19 @@
         "takes_value": true
       }
     ],
+    "stop-gate": [
+      {
+        "choices": null,
+        "default": null,
+        "multiple": false,
+        "names": [
+          "--root"
+        ],
+        "nargs": null,
+        "required": false,
+        "takes_value": true
+      }
+    ],
     "validate-plan": [
       {
         "choices": null,

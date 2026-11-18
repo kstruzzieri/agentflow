@@ -67,12 +67,18 @@ tree: the gate keeps failing until a replacement attempt completes. In
 non-strict mode, a blocked amendment that left no edit does not hold the gate.
 
 Operator interruption is the supported way out (Esc in Claude Code). The
-operator then completes or re-plans the step, or disables the hook.
+operator then completes or re-plans the step, or disables the hook. By default,
+Claude Code allows eight consecutive Stop-hook continuations and ends the turn
+on the next block. Each tool call resets the counter. Operators can raise the
+cap with `CLAUDE_CODE_STOP_HOOK_BLOCK_CAP`. See the
+[Claude Code Stop hook reference](https://code.claude.com/docs/en/hooks#stop).
+GitHub Copilot also caps consecutive continuations at eight. In Codex CLI,
+interrupt the session if the run cannot finish.
 
-On a refusal, stderr shows the failing gate's output and the `'<gate>' failed`
-line. Then comes `agentflow next-action`: the next action plus one
-`recorded blocker:` line per current blocker. The last line is the fixed
-operator line, quoted verbatim:
+On a refusal, the shell script writes the failing gate's output and the
+`'<gate>' failed` line to stderr. Then `agentflow next-action` prints the
+next action and one `recorded blocker:` line per current blocker. The last
+line is the fixed operator message:
 
 ```
 agentflow stop-gate: a recorded blocker does not satisfy this gate. If the work is genuinely blocked, an operator must interrupt the session (see docs/stop-hook.md).
@@ -85,6 +91,44 @@ Retry, time or cost budgets and operator-approved pauses belong in the host (for
 example Golem), where approval and budget state live outside the agent's write
 access.
 
+## Installed package: `agentflow stop-gate`
+
+The script above lives in this repository and is not part of the published
+package. After `pip install agentflow-proof`, point the runtime's Stop hook at
+the `agentflow stop-gate` command instead. It runs the same chain, in process,
+and answers in the one format Claude Code, Codex CLI and GitHub Copilot all read
+from a Stop hook:
+
+| Outcome | Exit | Stdout |
+| --- | --- | --- |
+| proof satisfied, or repo not under Agentflow governance | `0` | `{}` |
+| root lookup error or failed proof gate | `0` | `{"decision": "block", "reason": "..."}` |
+
+- **Root:** `--root PATH`, else `$AGENTFLOW_ROOT`, else `$CLAUDE_PROJECT_DIR`,
+  else the current directory. Only the current directory is searched upward
+  for the nearest `.agent/plan.lock.json`, because Codex and Copilot run hooks
+  in the session's working directory, which may be a subdirectory. The search
+  stops at the repository root (the first directory holding `.git`), so a
+  repository nested inside a governed one is never held by the outer plan.
+  A permission or I/O error while checking the plan or repository boundary
+  blocks completion and puts the error in the reason.
+- **Reason:** the `'<gate>' failed` line, at most 20 lines of that gate's
+  output, the `next-action` output with any recorded blockers, and the fixed
+  operator line last. The runtime gives it to the agent as its next prompt.
+- **Always exit 0.** A non-zero exit is not a block in every runtime (Copilot
+  treats it as a warning and lets the agent stop), so the answer is carried by
+  stdout alone. An internal error while governed is reported as a block.
+- **Stdout holds one JSON answer.** On failure, the command captures the
+  gate's Python output and includes its diagnostics in the JSON reason.
+  Hook status messages and output written directly to file descriptor 1 by
+  a gate or its subprocess go to stderr.
+- **stdin** (the runtime's hook payload) is not read, as the script never
+  read it. `stop_hook_active` does not change the answer; see
+  [Blocked agents](#blocked-agents).
+
+`hooks/stop-gate.sh` stays for source checkouts, CI and git hooks, and
+`agentflow finish-run` remains the exit-status gate for CI.
+
 ## Per-runtime wiring
 
 All deliverables here are **examples**. None auto-activate in this repository;
@@ -92,9 +136,18 @@ copy the relevant snippet into your runtime config to turn the gate on.
 
 ### Claude Code
 
-Claude Code only treats exit code **2** as a blocking Stop error (any other
-non-zero is surfaced as a non-blocking warning). Wrap the script so a failure
-maps to exit 2. Add to `.claude/settings.json`:
+With an installed package, the hook runs `agentflow stop-gate`. Do not use the
+bare command as the whole hook line: if `agentflow` is not on the hook's PATH
+(for example a virtual environment that is not active when Claude Code
+starts), the shell exits 127, which Claude Code treats as non-blocking, and the
+agent stops. The hook line must fall back to a block while a plan is locked;
+the copy-ready configs for each runtime do this
+([#156](https://github.com/kstruzzieri/agentflow/issues/156)).
+
+In a source checkout of this repository, use the script. Claude Code only
+treats exit code **2** as a blocking Stop error (any other non-zero is surfaced
+as a non-blocking warning). Wrap the script so a failure maps to exit 2. Add to
+`.claude/settings.json`:
 
 ```json
 {
