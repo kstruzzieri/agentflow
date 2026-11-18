@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.8.0] - 2026-11-17
+
+Agentflow 1.8.0 closes the two gaps left after `claim-step` started requiring
+`init-execution` in 1.7.0. Each step claim now records the run it belongs to,
+so deleting the run-start row after work has begun fails the checks instead of
+quietly dropping the run's baseline and plan binding. `next-action` no longer
+suggests a `claim-step` that `claim-step` would refuse. Step-run records move
+to schema 1.2.0, so Agentflow 1.7 and older cannot read a run 1.8 has worked
+in.
+
 ### Fixed
 
 - Deleting `.agent/run-anchors.jsonl` after the first claim no longer drops
@@ -845,7 +855,8 @@ repository, so this heading is intentionally unlinked._
 
 - Existing v0.2 proof artifacts remain valid when no execution contract exists.
 
-[Unreleased]: https://github.com/kstruzzieri/agentflow/compare/v1.7.0...HEAD
+[Unreleased]: https://github.com/kstruzzieri/agentflow/compare/v1.8.0...HEAD
+[1.8.0]: https://github.com/kstruzzieri/agentflow/compare/v1.7.0...v1.8.0
 [1.7.0]: https://github.com/kstruzzieri/agentflow/compare/v1.6.0...v1.7.0
 [1.6.0]: https://github.com/kstruzzieri/agentflow/compare/v1.5.0...v1.6.0
 [1.5.0]: https://github.com/kstruzzieri/agentflow/compare/v1.4.0...v1.5.0

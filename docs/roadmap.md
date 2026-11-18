@@ -1,8 +1,8 @@
 # Agentflow Roadmap
 
-Last updated: 2026-11-16
+Last updated: 2026-11-17
 
-Agentflow `1.7.0` is a standard-library-only Python CLI for plan-locked,
+Agentflow `1.8.0` is a standard-library-only Python CLI for plan-locked,
 auditable agent work. It supports Python 3.11–3.13 and ships as the
 `agentflow-proof` distribution on PyPI, as source, and as single-file CLI and
 MCP zipapps through GitHub Releases.
@@ -33,27 +33,7 @@ MCP zipapps through GitHub Releases.
 
 Nothing yet. Items appear here as they merge.
 
-## Next: 1.8.0 (planned)
-
-The aim: close the two gaps left after `claim-step` started requiring
-`init-execution` in 1.7.0. This is a small hardening release; it is a minor
-release rather than a patch because #152 adds an optional field to step-run
-events.
-
-- Deleting the run-start row no longer hides committed work. Step-run events
-  record the run they belong to, so a missing `.agent/run-anchors.jsonl` fails
-  `verify-run`, `audit-drift`, `finish-run` and `build-proof` instead of
-  falling back to uncommitted changes only and dropping the plan binding
-  ([#152](https://github.com/kstruzzieri/agentflow/issues/152)). Step-runs
-  schema `1.1.0` to `1.2.0`.
-- `next-action` stops suggesting a `claim-step` that `claim-step` would refuse,
-  and points at `init-execution` instead. Both use one shared check, so they
-  cannot disagree again ([#153](https://github.com/kstruzzieri/agentflow/issues/153)).
-
-Until #152 ships, `--base-ref` in CI is the defence for committed work, as
-[`docs/security-model.md`](security-model.md) says.
-
-## Then: 1.9.0 (planned)
+## Next: 1.9.0 (planned)
 
 The aim: Agentflow works with Claude Code, Codex CLI, GitHub Copilot and Golem
 in a user's own repository, installed from PyPI, not only in this source
@@ -84,6 +64,7 @@ Each release's full notes are in the [changelog](../CHANGELOG.md).
 
 | Release | Date | In one line |
 | --- | --- | --- |
+| [1.8.0](../CHANGELOG.md#180---2026-11-17) | 2026-11-17 | Deleting the run-start row after work begins fails the checks, and `next-action` points an unstarted run at `init-execution` ([#152](https://github.com/kstruzzieri/agentflow/issues/152), [#153](https://github.com/kstruzzieri/agentflow/issues/153)). |
 | [1.7.0](../CHANGELOG.md#170---2026-11-16) | 2026-11-16 | Checks hold when the agent does not cooperate: drift covers committed work, the plan is bound to the run, and `claim-step` needs `init-execution` ([#138](https://github.com/kstruzzieri/agentflow/issues/138), [#139](https://github.com/kstruzzieri/agentflow/issues/139), [#148](https://github.com/kstruzzieri/agentflow/issues/148)). |
 | [1.6.0](../CHANGELOG.md#160---2026-11-12) | 2026-11-12 | Bound confirmation for high-risk commands: tied to the exact command, expiring, used once ([#112](https://github.com/kstruzzieri/agentflow/issues/112), phase 1). |
 | [1.5.0](../CHANGELOG.md#150---2026-11-12) | 2026-11-12 | `simulate-risk` previews a stricter risk policy; `verify-proof` judges each source by the bytes it hashed. |
