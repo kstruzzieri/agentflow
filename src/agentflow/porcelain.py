@@ -34,6 +34,7 @@ from .execution import (
     read_step_state,
     refuse_timed_out_attempt,
     require_lifecycle_owner,
+    run_start_error,
     step_state_from_events,
     timed_out_receipts,
     validate_execution_contract,
@@ -1272,15 +1273,19 @@ def next_action(
                    command=_cmd(args), args=args),
             projection,
         )
-    if not (root / ".agent/execution.contract.json").exists():
-        projection = _diagnose(
-            _base_resumability(plan, agent_id),
-            "execution_contract_missing",
-            "execution contract missing",
-            ".agent/execution.contract.json",
-        )
+    # #153: use the same run-start check as claim-step. Unreadable ledgers
+    # are diagnosed by _resumability.
+    try:
+        start_error = run_start_error(root)
+    except (OSError, ValueError):
+        start_error = None
+    if start_error:
+        code, message, artifact = start_error
+        projection = _diagnose(_base_resumability(plan, agent_id), code, message, artifact)
+        if code == "step_runs_lost":
+            return _invalid_action(projection)
         return _attach(
-            Action("execution_uninitialized", "execution contract missing",
+            Action("execution_uninitialized", message,
                    command=_cmd(["init-execution"]), args=["init-execution"]),
             projection,
         )

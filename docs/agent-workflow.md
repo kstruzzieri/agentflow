@@ -484,6 +484,15 @@ semantics.
   uncompleted step, failing drift, unverified run, missing/stale/failing proof,
   complete). It prints a copy-paste `agentflow ...` command; `--json` emits the
   same as a parseable object.
+  `execution_uninitialized` suggests `init-execution` when a run has no
+  execution contract, no step-runs ledger, or neither a run-start row nor
+  step events. If the step-runs ledger is missing and an attempt pointer,
+  receipt, or verification record survives, `next-action` reports
+  `state_invalid` and tells you to restore the ledger from backup.
+  `claim-step` and ordinary `init-execution` also refuse in that case.
+  A run started by 1.6 can continue with claims and no run-start row.
+  If a step event carries a `run_id` and the row is missing, `next-action`
+  reports `state_invalid` and asks for the run-start row to be restored.
   The additive `resumability` object reports locked contract hashes, the
   actionable step and open attempt, owner and evaluated lease state,
   attempt-scoped receipts and gates, structured diagnostics, and the
