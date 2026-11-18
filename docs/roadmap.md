@@ -64,7 +64,7 @@ Each release's full notes are in the [changelog](../CHANGELOG.md).
 
 | Release | Date | In one line |
 | --- | --- | --- |
-| [1.8.0](../CHANGELOG.md#180---2026-11-17) | 2026-11-17 | Deleting the run-start row after work begins fails the checks, and `next-action` points an unstarted run at `init-execution` ([#152](https://github.com/kstruzzieri/agentflow/issues/152), [#153](https://github.com/kstruzzieri/agentflow/issues/153)). |
+| [1.8.0](../CHANGELOG.md#180---2026-11-17) | 2026-11-17 | Once a step claim records the run ID, the checks detect a missing run-start row, and `next-action` points an unstarted run at `init-execution` ([#152](https://github.com/kstruzzieri/agentflow/issues/152), [#153](https://github.com/kstruzzieri/agentflow/issues/153)). |
 | [1.7.0](../CHANGELOG.md#170---2026-11-16) | 2026-11-16 | Checks hold when the agent does not cooperate: drift covers committed work, the plan is bound to the run, and `claim-step` needs `init-execution` ([#138](https://github.com/kstruzzieri/agentflow/issues/138), [#139](https://github.com/kstruzzieri/agentflow/issues/139), [#148](https://github.com/kstruzzieri/agentflow/issues/148)). |
 | [1.6.0](../CHANGELOG.md#160---2026-11-12) | 2026-11-12 | Bound confirmation for high-risk commands: tied to the exact command, expiring, used once ([#112](https://github.com/kstruzzieri/agentflow/issues/112), phase 1). |
 | [1.5.0](../CHANGELOG.md#150---2026-11-12) | 2026-11-12 | `simulate-risk` previews a stricter risk policy; `verify-proof` judges each source by the bytes it hashed. |
