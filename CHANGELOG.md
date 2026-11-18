@@ -7,20 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.8.0] - 2026-11-17
+
+Agentflow 1.8.0 closes the two gaps left after `claim-step` started requiring
+`init-execution` in 1.7.0. Once a step claim records the run ID,
+the checks detect a missing run-start row and report it before relying on
+the run's baseline or plan binding. `next-action` no longer
+suggests a `claim-step` that `claim-step` would refuse. Step-run records move
+to schema 1.2.0, so Agentflow 1.7 and older cannot read a run 1.8 has worked
+in.
+
 ### Fixed
 
-- Deleting `.agent/run-anchors.jsonl` after the first claim no longer drops
-  the run's baseline and plan binding (#152). `claim-step`, `reclaim-step` and
-  `amend-step`, and their MCP tools, record the run-start row's `run_id` on the
-  step event they write, and include it in their JSON output. When the row is missing and any step event carries a
+- When a run-start row has a `run_id`, `claim-step`, `reclaim-step` and
+  `amend-step`, and their MCP tools, copy it to the step event and include it
+  in their JSON output (#152). If the row is missing and any step event carries a
   `run_id`, `verify-run`, `audit-drift`, `finish-run`, `build-proof`,
   `claim-step` and `record-file-change` fail with `.agent/run-anchors.jsonl is
   missing, but step runs were recorded against a run baseline; restore it, or
   check with --base-ref REF` instead of comparing only uncommitted changes.
   Step-run records move to schema 1.2.0, which adds the optional `run_id`;
-  Agentflow 1.7 and older cannot read them. A run whose claims were recorded
-  before upgrading carries no `run_id` and keeps the old behaviour until it
-  finishes.
+  Agentflow 1.7 and older cannot read them. Claims recorded before upgrading have no
+  `run_id`. A later claim can record the ID if the run-start row still has one.
 
 - `next-action`, and the MCP `next_action` tool, report
   `execution_uninitialized` and suggest `agentflow init-execution` when a run
@@ -845,7 +853,8 @@ repository, so this heading is intentionally unlinked._
 
 - Existing v0.2 proof artifacts remain valid when no execution contract exists.
 
-[Unreleased]: https://github.com/kstruzzieri/agentflow/compare/v1.7.0...HEAD
+[Unreleased]: https://github.com/kstruzzieri/agentflow/compare/v1.8.0...HEAD
+[1.8.0]: https://github.com/kstruzzieri/agentflow/compare/v1.7.0...v1.8.0
 [1.7.0]: https://github.com/kstruzzieri/agentflow/compare/v1.6.0...v1.7.0
 [1.6.0]: https://github.com/kstruzzieri/agentflow/compare/v1.5.0...v1.6.0
 [1.5.0]: https://github.com/kstruzzieri/agentflow/compare/v1.4.0...v1.5.0
