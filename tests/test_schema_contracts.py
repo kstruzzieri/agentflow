@@ -769,7 +769,15 @@ class LeaseSchemaContractTests(unittest.TestCase):
     def test_lease_schema_versions_bumped(self) -> None:
         self.assertEqual(PROOF_PACK_SCHEMA_VERSION, "1.2.0")
         self.assertEqual(DRIFT_REPORT_SCHEMA_VERSION, "1.2.0")  # #139 baseline
-        self.assertEqual(STEP_RUNS_SCHEMA_VERSION, "1.1.0")
+        self.assertEqual(STEP_RUNS_SCHEMA_VERSION, "1.2.0")  # #152 run_id
+
+    def test_step_runs_schema_documents_run_id(self) -> None:
+        # #152: optional, so rows older versions wrote still validate.
+        schema = load_schema("step-runs.schema.json")
+        self.assertEqual(schema["properties"]["run_id"], {"type": "string", "minLength": 1})
+        self.assertNotIn("run_id", schema["required"])
+        for version in ("1.0.0", "1.1.0", STEP_RUNS_SCHEMA_VERSION):
+            self.assertRegex(version, schema["properties"]["schema_version"]["pattern"])
 
     def test_proof_pattern_accepts_lease_version(self) -> None:
         schema = load_schema("proof-pack.schema.json")

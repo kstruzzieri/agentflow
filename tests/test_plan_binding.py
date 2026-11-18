@@ -384,6 +384,19 @@ class FailClosedAndLegacyTests(unittest.TestCase):
             widen(root)
             self.assertIsNone(plan_binding_error(root, current(root)))
 
+    def test_row_deleted_after_claim_keeps_the_plan_bound(self) -> None:
+        # #152: the claim names the run, so losing the row is reported, not unbound.
+        with tempfile.TemporaryDirectory() as tmp:
+            root = seeded_repo(tmp)
+            task_plan = bound_run(root)
+            claim_step(root, task_plan, "P1", "agent-a")
+            (root / ANCHORS).unlink()
+            widen(root)
+            relock(root)
+            problem = plan_binding_error(root, current(root))
+            self.assertIn("step runs were recorded against a run baseline", problem)
+            self.assertIn(problem, messages(verify_run(root, current(root), record=False)))
+
     def test_malformed_pin_fails_closed(self) -> None:
         for bad in ("not-a-hash", 7, ""):
             with self.subTest(bad=bad), tempfile.TemporaryDirectory() as tmp:

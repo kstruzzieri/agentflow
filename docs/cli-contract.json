@@ -2892,6 +2892,7 @@
           "reason": "string|null",
           "reason_code": "string|null",
           "recorded_at": "string",
+          "run_id": "string|null",
           "schema_version": "string",
           "step_id": "string"
         },
@@ -2912,6 +2913,7 @@
           "reason": "string|null",
           "reason_code": "string|null",
           "recorded_at": "string",
+          "run_id": "string|null",
           "schema_version": "string",
           "step_id": "string"
         },
@@ -2932,6 +2934,7 @@
           "reason": "string|null",
           "reason_code": "string|null",
           "recorded_at": "string",
+          "run_id": "string|null",
           "schema_version": "string",
           "step_id": "string"
         },
@@ -2952,6 +2955,7 @@
           "reason": "string|null",
           "reason_code": "string|null",
           "recorded_at": "string",
+          "run_id": "string|null",
           "schema_version": "string",
           "step_id": "string"
         },
@@ -3046,6 +3050,7 @@
           "reason": "string|null",
           "reason_code": "string|null",
           "recorded_at": "string",
+          "run_id": "string|null",
           "schema_version": "string",
           "step_id": "string"
         },
@@ -3290,6 +3295,7 @@
           "reason": "string|null",
           "reason_code": "string|null",
           "recorded_at": "string",
+          "run_id": "string|null",
           "schema_version": "string",
           "step_id": "string"
         },
@@ -3402,6 +3408,7 @@
           "reason": "string|null",
           "reason_code": "string|null",
           "recorded_at": "string",
+          "run_id": "string|null",
           "schema_version": "string",
           "step_id": "string"
         },

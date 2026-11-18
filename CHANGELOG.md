@@ -9,6 +9,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Deleting `.agent/run-anchors.jsonl` after the first claim no longer drops
+  the run's baseline and plan binding (#152). `claim-step`, `reclaim-step` and
+  `amend-step`, and their MCP tools, record the run-start row's `run_id` on the
+  step event they write, and include it in their JSON output. When the row is missing and any step event carries a
+  `run_id`, `verify-run`, `audit-drift`, `finish-run`, `build-proof`,
+  `claim-step` and `record-file-change` fail with `.agent/run-anchors.jsonl is
+  missing, but step runs were recorded against a run baseline; restore it, or
+  check with --base-ref REF` instead of comparing only uncommitted changes.
+  Step-run records move to schema 1.2.0, which adds the optional `run_id`;
+  Agentflow 1.7 and older cannot read them. A run whose claims were recorded
+  before upgrading carries no `run_id` and keeps the old behaviour until it
+  finishes.
+
 - `next-action`, and the MCP `next_action` tool, report
   `execution_uninitialized` and suggest `agentflow init-execution` when a run
   has not started (#153). Before, a run with an empty step-runs ledger and no

@@ -490,7 +490,9 @@ semantics.
   receipt, or verification record survives, `next-action` reports
   `state_invalid` and tells you to restore the ledger from backup.
   `claim-step` and ordinary `init-execution` also refuse in that case.
-  A run with claims and no run-start row (one 1.6 started) is a started run.
+  A run started by 1.6 can continue with claims and no run-start row.
+  If a step event carries a `run_id` and the row is missing, `next-action`
+  reports `state_invalid` and asks for the run-start row to be restored.
   The additive `resumability` object reports locked contract hashes, the
   actionable step and open attempt, owner and evaluated lease state,
   attempt-scoped receipts and gates, structured diagnostics, and the

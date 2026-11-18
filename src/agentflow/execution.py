@@ -37,7 +37,7 @@ from .contracts import (
     RUN_ANCHORS_SCHEMA_VERSION,
     STEP_RUNS_SCHEMA_VERSION,
 )
-from .git import head_commit, is_git_repo, run_git
+from .git import head_commit, is_git_repo, read_run_anchor, run_git
 from .locks import file_lock
 from .versioning import parse_schema_version, validate_schema_version_policy
 
@@ -676,6 +676,19 @@ def _append_step_event(root: Path, event: Dict[str, Any]) -> Dict[str, Any]:
     return event
 
 
+def _run_marker(root: Path) -> Dict[str, str]:
+    """#152: the run an attempt-opening event belongs to, as event fields.
+
+    Once a claim names the run, deleting the run-start row makes drift checks
+    fail instead of comparing with HEAD (``git.read_run_anchor``). Empty for a
+    run older versions started, which has no row or a row without a run_id.
+    Raises BaselineError when the row is gone but earlier claims named it.
+    """
+    anchor = read_run_anchor(root)
+    run_id = anchor.get("run_id") if anchor else None
+    return {"run_id": run_id} if run_id else {}
+
+
 def read_step_events(root: Path) -> List[Dict[str, Any]]:
     return read_jsonl(_step_runs_path(root))
 
@@ -820,10 +833,10 @@ def run_start_error(root: Path) -> Optional[Tuple[str, str, str]]:
 
     Without the ledger or contract, claim-step would start a run itself; with
     an empty ledger and no run-start row, drift checks would fall back to
-    HEAD and miss committed work. A ledger with events and no row is a run an
-    older version started, and keeps working. claim-step and next-action
-    use the same check to distinguish runs that need initialization from
-    runs whose missing ledger needs restoration (#153).
+    HEAD and miss committed work. Existing events establish that a run started.
+    read_run_anchor checks whether that run requires a row (#152).
+    claim-step and next-action use this check to distinguish runs that need
+    initialization from runs whose missing ledger needs restoration (#153).
     """
     if lost_ledger := _lost_step_runs(root):
         return lost_ledger
@@ -894,6 +907,7 @@ def claim_step(
             "attempt_id": attempt_id,
             "agent_id": agent_id,
             "lease_expires_at": _utc_plus_minutes(minutes, now) if minutes is not None else None,
+            **_run_marker(root),
         }
         recorded = _append_step_event(root, event)
         pointer = _attempt_pointer(root, step_id)
@@ -939,6 +953,7 @@ def reclaim_step(
                 f"until {old.get('lease_expires_at')}; wait or coordinate"
             )
         with completion_lock(root, old_id, action="reclaiming"):
+            marker = _run_marker(root)  # before the abandon, so a refusal records nothing
             minutes = _lease_minutes_or_default(lease_minutes, lease_ttl_minutes(root))
             new_id = _next_attempt_id(read_step_events(root))
             _append_step_event(root, {
@@ -948,6 +963,7 @@ def reclaim_step(
             recorded = _append_step_event(root, {
                 "event": "claimed", "step_id": step_id, "attempt_id": new_id,
                 "agent_id": agent_id, "lease_expires_at": _utc_plus_minutes(minutes, now),
+                **marker,
             })
             pointer = _attempt_pointer(root, step_id)
             pointer.parent.mkdir(parents=True, exist_ok=True)
@@ -1226,6 +1242,7 @@ def amend_step(
             "amends_completed_at": completed_event.get("recorded_at"),
             "agent_id": agent_id,
             "reason": reason,
+            **_run_marker(root),
         }
         if reason_code is not None:
             event["reason_code"] = reason_code

@@ -178,6 +178,7 @@ class StabilityPolicyTests(unittest.TestCase):
             ("next-action", Action("attempt_timed_out", "x", step_id="P1").to_dict()),
             ("next-action", Action("step_amendment_needed", "x", step_id="P1").to_dict()),
             ("claim-step", rows("step-runs.jsonl")[0]),
+            ("claim-step", {**rows("step-runs.jsonl")[0], "run_id": "0" * 32}),  # #152
             ("run", rows("command-receipts.jsonl")[0]),
             ("record-file-change", [rows("file-receipts.jsonl")[0]]),
             ("verify-run", rows("verification-runs.jsonl")[0]),

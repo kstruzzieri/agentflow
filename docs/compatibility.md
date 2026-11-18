@@ -73,7 +73,8 @@ change to a released schema fails CI. `PROOF_PACK` 1.1.0, which adds
 `COMMAND_RECEIPTS`, `FILE_RECEIPTS`, `VERIFICATION_RUNS` and `DRIFT_REPORT`
 1.1.0 add `execution_contract_sha256` (#117). A 1.1 reader accepts 1.0 records,
 so a ledger can mix both; Agentflow 1.3 and older reject the 1.1 records in
-working state.
+working state. `STEP_RUNS` 1.2.0 adds `run_id` to the events that open an
+attempt (#152); Agentflow 1.7 and older reject the 1.2 records.
 
 ### Command confirmations (#112)
 
@@ -106,12 +107,13 @@ and verification runs 1.2.0 add optional `baseline` (`source`, `commit`, and
 `ref` for `--base-ref`). The execution contract and proof pack are unchanged,
 and a proof built without the ledger keeps its hashes.
 
-A run with no `run-anchors.jsonl` and no receipt carrying `hunk_base_commit`
-keeps the earlier behaviour: changed files come from `git status`. Agentflow
-1.6 and older ignore the new ledger but reject the 1.2.0 receipts and records,
-so a run this version has worked in cannot go back to them. A receipt an older
-version writes into an anchored run carries no hunk base; its hunks were cut
-from HEAD, so they may not match and fail closed.
+When `run-anchors.jsonl` is missing, a file receipt with `hunk_base_commit`
+or a step event with `run_id` makes drift checks report the missing anchor.
+An older run with neither marker still uses `git status` by default.
+Agentflow 1.6 and older ignore the new ledger but reject the 1.2.0 receipts
+and records, so a run this version has worked in cannot go back to them. A
+receipt an older version writes into an anchored run carries no hunk base.
+Its hunks were cut from HEAD, so they may not match and fail closed.
 
 ### Plan binding (#138)
 
@@ -122,9 +124,12 @@ Git too, with `base_commit: null`. Amendments 0.3.0 add optional `run_id`,
 run. Drift reports, verification runs and the proof pack are unchanged; `run_id`
 is left out of the proof's normalized execution hash, as timestamps are.
 
-A run whose anchor has no `plan_sha256`, or that has no anchor, is not pinned
-and behaves as before, so runs in flight are unaffected. Two behaviours change
-for new runs: `agentflow init-execution` exits 2 when the plan is not valid and
+A run whose anchor has no `plan_sha256` remains unpinned. An older run with
+no anchor and neither baseline marker also remains unpinned. If either marker
+is present and the anchor is missing, plan binding fails until the anchor is
+restored. Passing `--base-ref` supplies a Git comparison base only.
+
+For new runs, `agentflow init-execution` exits 2 when the plan is not valid and
 locked, and a plan edited after the run starts must be locked again and then
 recorded with `amend-plan`, in that order. An amendment recorded before the
 edit no longer accounts for it. Agentflow 1.6 and older ignore the new fields.
