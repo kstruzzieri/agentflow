@@ -76,7 +76,13 @@ class FindRootTests(unittest.TestCase):
         self.assertEqual(stop_gate.find_root(None, {}, root / "src"), root)
 
     def test_no_cwd_is_ungoverned_without_a_named_root(self):
-        self.assertIsNone(stop_gate.find_root(None, {}, None))
+        with mock.patch.object(Path, "cwd", side_effect=FileNotFoundError):
+            self.assertIsNone(stop_gate.find_root(None, {}))
+
+    def test_repository_boundary_lookup_error_propagates(self):
+        with mock.patch.object(Path, "lstat", side_effect=OSError("unreadable boundary")):
+            with self.assertRaisesRegex(OSError, "unreadable boundary"):
+                stop_gate.find_root(None, {}, self.tmp)
 
 
 class DecideTests(unittest.TestCase):
@@ -155,6 +161,16 @@ class DecideTests(unittest.TestCase):
         self.assertNotIn("line 20", lines)
         self.assertIn("30 more lines", reason)
 
+    def test_all_next_action_blockers_reach_the_reason(self):
+        blockers = [f"  recorded blocker: P{i}/A{i} blocked" for i in range(1, 22)]
+        next_lines = ["next-action step_unclaimed: claim a step", *blockers]
+        with mock.patch.object(porcelain, "run_cli_captured", side_effect=[
+            (1, ["verify-run failed"]), (0, next_lines),
+        ]):
+            answer = stop_gate.decide(self.root)
+        self.assertEqual(answer["decision"], "block")
+        self.assertEqual(answer["reason"].splitlines()[2:], [*next_lines, stop_gate.OPERATOR_LINE])
+
     def test_internal_error_blocks(self):
         _govern(self.root)
         _, fake = self._fake(raise_on=("verify-run", RuntimeError("boom")))
@@ -229,6 +245,20 @@ class StopGateCommandTests(unittest.TestCase):
     def test_unfinished_run_prints_one_block_object(self):
         _ready_repo(self.root)
         self._assert_block(self._stop_gate("--root", str(self.root), cwd=REPO_ROOT))
+
+    def test_plan_lookup_error_returns_one_block_object(self):
+        # Inject the error so the test also covers privileged users and Windows.
+        script = """
+import sys
+from pathlib import Path
+from unittest.mock import patch
+from agentflow import cli
+with patch.object(Path, "stat", side_effect=PermissionError("plan lookup denied")):
+    raise SystemExit(cli.main(["stop-gate", "--root", sys.argv[1]]))
+"""
+        result = self._run([sys.executable, "-c", script, str(self.root)])
+        self._assert_block(result)
+        self.assertIn("plan lookup denied", json.loads(result.stdout)["reason"])
 
     def test_finished_run_prints_empty_object(self):
         _completed_step(self.root)

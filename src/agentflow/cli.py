@@ -1561,13 +1561,8 @@ def command_stop_gate(args: argparse.Namespace) -> int:
     saved = os.dup(1)
     os.dup2(2, 1)
     answer: Dict[str, str] = {}
-    root: Optional[Path] = None
     try:
-        try:
-            cwd: Optional[Path] = Path.cwd()
-        except OSError:  # the session's directory was deleted
-            cwd = None
-        root = stop_gate.find_root(args.root, os.environ, cwd)
+        root = stop_gate.find_root(args.root, os.environ)
         if root is None:
             print("agentflow stop-gate: no locked plan found (--root, $AGENTFLOW_ROOT, "
                   "$CLAUDE_PROJECT_DIR, or the current directory up to the repository "
@@ -1576,9 +1571,8 @@ def command_stop_gate(args: argparse.Namespace) -> int:
             answer = stop_gate.decide(root)
             if not answer:
                 print("agentflow stop-gate: proof chain verified; safe to stop.", file=sys.stderr)
-    except Exception as exc:  # governed: fail closed; ungoverned: never block
-        if root is not None:
-            answer = stop_gate.internal_error(exc)
+    except Exception as exc:
+        answer = stop_gate.internal_error(exc)
         print(f"agentflow stop-gate: internal error: {exc!r}", file=sys.stderr)
     finally:
         sys.stdout.flush()
@@ -2468,6 +2462,10 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv: Optional[List[str]] = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
+    if args.func is command_stop_gate:
+        # Discovery errors must reach the hook's JSON handler. Each proof gate
+        # takes its own contract snapshot when the hook invokes it.
+        return command_stop_gate(args)
     try:
         # #117: one read of the execution contract for the whole command, taken
         # before it does any work, so a gate it replays or runs before the

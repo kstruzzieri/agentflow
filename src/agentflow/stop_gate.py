@@ -11,7 +11,7 @@ fails open in most runtimes, so an internal error while governed is a block.
 
 from __future__ import annotations
 
-import os
+import stat
 from pathlib import Path
 from typing import Dict, List, Mapping, Optional
 
@@ -27,13 +27,14 @@ PLAN = Path(".agent/plan.lock.json")
 
 
 def find_root(
-    explicit: Optional[str], environ: Mapping[str, str], cwd: Optional[Path]
+    explicit: Optional[str], environ: Mapping[str, str], cwd: Optional[Path] = None
 ) -> Optional[Path]:
     """The governed root, or None when no locked plan is found.
 
     The first source wins: ``--root``, ``$AGENTFLOW_ROOT``,
-    ``$CLAUDE_PROJECT_DIR``, then the current directory (None when it cannot
-    be read, for example after it was deleted). Only the current directory is
+    ``$CLAUDE_PROJECT_DIR``, then the current directory. If the working
+    directory was deleted, only a named root can supply a plan. Other lookup
+    errors propagate so the hook can block. Only the current directory is
     walked upward, because Codex and Copilot run hooks in the session's working
     directory, which may be a subdirectory. The walk stops at the repository
     boundary (the first directory holding ``.git``, a directory or a worktree
@@ -42,22 +43,30 @@ def find_root(
     """
     for given in (explicit, environ.get("AGENTFLOW_ROOT"), environ.get("CLAUDE_PROJECT_DIR")):
         if given:
-            directory = Path(given).resolve()
-            return directory if _has_plan(directory) else None
+            directory = Path(given)
+            return directory.resolve(strict=True) if _has_plan(directory) else None
     if cwd is None:
-        return None
-    for directory in [cwd.resolve(), *cwd.resolve().parents]:
+        try:
+            cwd = Path.cwd()
+        except FileNotFoundError:
+            return None
+    else:
+        cwd = cwd.resolve(strict=True)
+    for directory in (cwd, *cwd.parents):
         if _has_plan(directory):
             return directory
-        if os.path.lexists(directory / ".git"):
-            return None
+        try:
+            (directory / ".git").lstat()
+        except (FileNotFoundError, NotADirectoryError):
+            continue
+        return None
     return None
 
 
 def _has_plan(directory: Path) -> bool:
     try:
-        return (directory / PLAN).is_file()
-    except OSError:  # unreadable: not evidence of governance
+        return stat.S_ISREG((directory / PLAN).stat().st_mode)
+    except (FileNotFoundError, NotADirectoryError):
         return False
 
 
@@ -66,7 +75,7 @@ def _block(lines: List[str]) -> Dict[str, str]:
 
 
 def internal_error(exc: BaseException) -> Dict[str, str]:
-    """The block answer for an error while a governed root is known."""
+    """The block answer when discovery or proof verification fails."""
     return _block([f"agentflow stop-gate: internal error: {type(exc).__name__}: {exc}"])
 
 
@@ -98,7 +107,7 @@ def decide(root: Path) -> Dict[str, str]:
         )
     try:
         _, next_lines = porcelain.run_cli_captured(["next-action", "--root", str(root)])
-        lines.extend(next_lines[:MAX_GATE_LINES])
+        lines.extend(next_lines)
     except (Exception, SystemExit):
         pass  # the refusal stands without the suggestion, as in the shell hook
     return _block(lines)

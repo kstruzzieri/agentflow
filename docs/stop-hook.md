@@ -67,15 +67,18 @@ tree: the gate keeps failing until a replacement attempt completes. In
 non-strict mode, a blocked amendment that left no edit does not hold the gate.
 
 Operator interruption is the supported way out (Esc in Claude Code). The
-operator then completes or re-plans the step, or disables the hook. Claude Code
-and GitHub Copilot end the turn on their own after 8 consecutive blocks; Codex
-CLI documents no such limit, so under Codex a run that cannot finish keeps
-going until the operator presses Esc.
+operator then completes or re-plans the step, or disables the hook. By default,
+Claude Code allows eight consecutive Stop-hook continuations and ends the turn
+on the next block. Each tool call resets the counter. Operators can raise the
+cap with `CLAUDE_CODE_STOP_HOOK_BLOCK_CAP`. See the
+[Claude Code Stop hook reference](https://code.claude.com/docs/en/hooks#stop).
+GitHub Copilot also caps consecutive continuations at eight. In Codex CLI,
+interrupt the session if the run cannot finish.
 
-On a refusal, stderr shows the failing gate's output and the `'<gate>' failed`
-line. Then comes `agentflow next-action`: the next action plus one
-`recorded blocker:` line per current blocker. The last line is the fixed
-operator line, quoted verbatim:
+On a refusal, the shell script writes the failing gate's output and the
+`'<gate>' failed` line to stderr. Then `agentflow next-action` prints the
+next action and one `recorded blocker:` line per current blocker. The last
+line is the fixed operator message:
 
 ```
 agentflow stop-gate: a recorded blocker does not satisfy this gate. If the work is genuinely blocked, an operator must interrupt the session (see docs/stop-hook.md).
@@ -99,7 +102,7 @@ from a Stop hook:
 | Outcome | Exit | Stdout |
 | --- | --- | --- |
 | proof satisfied, or repo not under Agentflow governance | `0` | `{}` |
-| a proof gate failed | `0` | `{"decision": "block", "reason": "..."}` |
+| root lookup error or failed proof gate | `0` | `{"decision": "block", "reason": "..."}` |
 
 - **Root:** `--root PATH`, else `$AGENTFLOW_ROOT`, else `$CLAUDE_PROJECT_DIR`,
   else the current directory. Only the current directory is searched upward
@@ -107,14 +110,18 @@ from a Stop hook:
   in the session's working directory, which may be a subdirectory. The search
   stops at the repository root (the first directory holding `.git`), so a
   repository nested inside a governed one is never held by the outer plan.
+  A permission or I/O error while checking the plan or repository boundary
+  blocks completion and puts the error in the reason.
 - **Reason:** the `'<gate>' failed` line, at most 20 lines of that gate's
   output, the `next-action` output with any recorded blockers, and the fixed
   operator line last. The runtime gives it to the agent as its next prompt.
 - **Always exit 0.** A non-zero exit is not a block in every runtime (Copilot
   treats it as a warning and lets the agent stop), so the answer is carried by
   stdout alone. An internal error while governed is reported as a block.
-- **Stdout holds only the answer.** Gate output, and anything a gate's
-  subprocess writes, goes to stderr.
+- **Stdout holds one JSON answer.** On failure, the command captures the
+  gate's Python output and includes its diagnostics in the JSON reason.
+  Hook status messages and output written directly to file descriptor 1 by
+  a gate or its subprocess go to stderr.
 - **stdin** (the runtime's hook payload) is not read, as the script never
   read it. `stop_hook_active` does not change the answer; see
   [Blocked agents](#blocked-agents).
