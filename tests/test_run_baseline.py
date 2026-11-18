@@ -553,6 +553,21 @@ class FailClosedTests(unittest.TestCase):
 class RunMarkerTests(unittest.TestCase):
     """#152: events that open an attempt name the run they belong to."""
 
+    def test_claim_refuses_an_invalid_run_id_in_the_ledger(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = seeded_repo(tmp)
+            task_plan = start_run(root, plan())
+            event = claim_step(root, task_plan, "P1", "agent-a")
+            ledger = root / ".agent/step-runs.jsonl"
+            for value in (None, "", 12):
+                with self.subTest(run_id=value):
+                    content = json.dumps({**event, "run_id": value}) + "\n"
+                    ledger.write_text(content, encoding="utf-8")
+                    code, out, err = run_cli("claim-step", "P2", "--agent", "agent-b", "--root", str(root))
+                    self.assertNotEqual(code, 0)
+                    self.assertIn("step-runs.jsonl:1: run_id must be a non-empty string", out + err)
+                    self.assertEqual(ledger.read_text(encoding="utf-8"), content)
+
     def test_opening_events_carry_the_run_id(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = seeded_repo(tmp)

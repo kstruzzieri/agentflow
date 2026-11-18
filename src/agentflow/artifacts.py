@@ -28,8 +28,8 @@ from .versioning import validate_schema_version_policy
 
 
 SCHEMA_VERSION = PLAN_SCHEMA_VERSION
-_VALIDATE_ARTIFACT_VERSIONS = ContextVar(
-    "agentflow_validate_artifact_versions", default=True
+_VALIDATE_WORKING_STATE = ContextVar(
+    "agentflow_validate_working_state", default=True
 )
 
 
@@ -216,10 +216,10 @@ def _artifact_name(path: Path) -> Optional[str]:
     )
 
 
-def _validate_artifact_version(
+def _validate_working_artifact(
     path: Path, data: Any, line_number: Optional[int] = None
 ) -> None:
-    if not _VALIDATE_ARTIFACT_VERSIONS.get():
+    if not _VALIDATE_WORKING_STATE.get():
         return
     artifact = _artifact_name(path)
     reader_gated = set(ARTIFACT_COMPATIBILITY_POLICIES) - {
@@ -242,6 +242,10 @@ def _validate_artifact_version(
         artifact,
         ARTIFACT_COMPATIBILITY_POLICIES[artifact],
     )
+    if artifact == "step-runs" and "run_id" in data:
+        run_id = data["run_id"]
+        if not isinstance(run_id, str) or not run_id:
+            errors.append("run_id must be a non-empty string")
     if errors:
         location = f"{path}:{line_number}" if line_number is not None else str(path)
         raise ValueError(f"{location}: {errors[0]}")
@@ -250,11 +254,11 @@ def _validate_artifact_version(
 @contextmanager
 def historical_proof_reads() -> Iterable[None]:
     """Let verify-proof read its hash-bound historical source artifacts."""
-    token = _VALIDATE_ARTIFACT_VERSIONS.set(False)
+    token = _VALIDATE_WORKING_STATE.set(False)
     try:
         yield
     finally:
-        _VALIDATE_ARTIFACT_VERSIONS.reset(token)
+        _VALIDATE_WORKING_STATE.reset(token)
 
 
 class UnverifiedSourceError(ValueError):
@@ -309,14 +313,14 @@ def read_json(path: Path) -> Dict[str, Any]:
         return loads_json_artifact(path, data)
     with path.open("r", encoding="utf-8") as handle:
         data = json.load(handle)
-    _validate_artifact_version(path, data)
+    _validate_working_artifact(path, data)
     return data
 
 
 def loads_json_artifact(path: Path, data: bytes) -> Any:
     """``read_json`` for bytes already read from ``path`` (#117)."""
     parsed = json.loads(data.decode("utf-8"))
-    _validate_artifact_version(path, parsed)
+    _validate_working_artifact(path, parsed)
     return parsed
 
 
@@ -382,7 +386,7 @@ def read_jsonl(path: Path, *, objects_only: bool = True) -> List[Dict[str, Any]]
                     raise ValueError(
                         f"{path}:{line_number}: ledger entry must be a JSON object"
                     )
-                _validate_artifact_version(path, item, line_number)
+                _validate_working_artifact(path, item, line_number)
                 items.append(item)
             except json.JSONDecodeError as exc:
                 raise ValueError(f"{path}:{line_number}: invalid JSONL: {exc}") from exc
