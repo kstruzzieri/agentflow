@@ -14,6 +14,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `build-proof` and `verify-proof` in process and always exits 0, printing `{}`
   to allow or `{"decision": "block", "reason": ...}` to block
   ([#164](https://github.com/kstruzzieri/agentflow/issues/164)).
+- `scripts/check_pypi_releases.py` and an hourly `PyPI watch` workflow compare
+  every file PyPI serves for `agentflow-proof` with the `SHA256SUMS` of the
+  matching GitHub release, and fail on a version or file that no release
+  recorded ([#172](https://github.com/kstruzzieri/agentflow/issues/172)).
 - `docs/integrations.md` and copy-ready configs under `examples/integrations/`
   for Claude Code, Codex CLI and GitHub Copilot, using the installed
   `agentflow-mcp` and `agentflow stop-gate` commands
