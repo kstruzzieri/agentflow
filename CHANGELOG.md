@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.9.0] - 2026-11-19
+
+Agentflow 1.9.0 works with Claude Code, Codex CLI and GitHub Copilot in your
+own repository after `pip install agentflow-proof`, not only in this source
+checkout. A new `agentflow stop-gate` command answers each runtime's Stop hook
+from the installed package, and copy-ready configs with a guide show how to
+turn it on. A CI job checks every config from a clean install of the built
+wheel.
+
 ### Added
 
 - `agentflow stop-gate`: answers a Claude Code, Codex CLI or GitHub Copilot
@@ -868,7 +877,8 @@ repository, so this heading is intentionally unlinked._
 
 - Existing v0.2 proof artifacts remain valid when no execution contract exists.
 
-[Unreleased]: https://github.com/kstruzzieri/agentflow/compare/v1.8.0...HEAD
+[Unreleased]: https://github.com/kstruzzieri/agentflow/compare/v1.9.0...HEAD
+[1.9.0]: https://github.com/kstruzzieri/agentflow/compare/v1.8.0...v1.9.0
 [1.8.0]: https://github.com/kstruzzieri/agentflow/compare/v1.7.0...v1.8.0
 [1.7.0]: https://github.com/kstruzzieri/agentflow/compare/v1.6.0...v1.7.0
 [1.6.0]: https://github.com/kstruzzieri/agentflow/compare/v1.5.0...v1.6.0

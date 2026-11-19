@@ -1,8 +1,8 @@
 # Agentflow Roadmap
 
-Last updated: 2026-11-17
+Last updated: 2026-11-19
 
-Agentflow `1.8.0` is a standard-library-only Python CLI for plan-locked,
+Agentflow `1.9.0` is a standard-library-only Python CLI for plan-locked,
 auditable agent work. It supports Python 3.11–3.13 and ships as the
 `agentflow-proof` distribution on PyPI, as source, and as single-file CLI and
 MCP zipapps through GitHub Releases.
@@ -31,33 +31,9 @@ MCP zipapps through GitHub Releases.
 
 ## On main, not yet released
 
-- `agentflow stop-gate`: the Stop hook answer for an installed package. It runs
-  the proof chain and prints `{}` or a block decision, the one format Claude
-  Code, Codex CLI and GitHub Copilot all read from a Stop hook
-  ([#164](https://github.com/kstruzzieri/agentflow/issues/164)).
+Nothing yet. Items appear here as they merge.
 
-## Next: 1.9.0 (planned)
-
-The aim: Agentflow works with Claude Code, Codex CLI, GitHub Copilot and Golem
-in a user's own repository, installed from PyPI, not only in this source
-checkout. Today the shipped MCP configs assume the source tree, and Copilot is
-not covered.
-
-- Integration configs for an installed package: one docs page with the MCP and
-  hook config for each of the four runtimes, using the installed `agentflow`
-  and `agentflow-mcp` commands, with the same files under `examples/`
-  ([#156](https://github.com/kstruzzieri/agentflow/issues/156)).
-- A CI smoke test that installs the built wheel, applies each runtime's config
-  in a scratch repository, and checks the MCP server and Stop hook start from
-  it, so the configs cannot rot unnoticed ([#157](https://github.com/kstruzzieri/agentflow/issues/157)).
-
-`agentflow stop-gate` came first, so every runtime's Stop hook can run from the
-installed package; #156 and #157 land together. Golem's own
-auto-discovery of Agentflow is tracked in Golem's repository
-([go-llm#272](https://github.com/kstruzzieri/go-llm/issues/272)). Items move up
-to "On main, not yet released" as they merge.
-
-## Then: 1.10.0 (planned)
+## Next: 1.10.0 (planned)
 
 - `agentflow setup <runtime>` writes or merges a runtime's config into a
   repository, from the same templates as the docs, and never overwrites an
@@ -73,6 +49,7 @@ Each release's full notes are in the [changelog](../CHANGELOG.md).
 
 | Release | Date | In one line |
 | --- | --- | --- |
+| [1.9.0](../CHANGELOG.md#190---2026-11-19) | 2026-11-19 | Works from an installed package with Claude Code, Codex CLI and GitHub Copilot: `agentflow stop-gate`, copy-ready configs and a guide, checked in CI from the built wheel ([#164](https://github.com/kstruzzieri/agentflow/issues/164), [#156](https://github.com/kstruzzieri/agentflow/issues/156), [#157](https://github.com/kstruzzieri/agentflow/issues/157)). |
 | [1.8.0](../CHANGELOG.md#180---2026-11-17) | 2026-11-17 | Once a step claim records the run ID, the checks detect a missing run-start row, and `next-action` points an unstarted run at `init-execution` ([#152](https://github.com/kstruzzieri/agentflow/issues/152), [#153](https://github.com/kstruzzieri/agentflow/issues/153)). |
 | [1.7.0](../CHANGELOG.md#170---2026-11-16) | 2026-11-16 | Checks hold when the agent does not cooperate: drift covers committed work, the plan is bound to the run, and `claim-step` needs `init-execution` ([#138](https://github.com/kstruzzieri/agentflow/issues/138), [#139](https://github.com/kstruzzieri/agentflow/issues/139), [#148](https://github.com/kstruzzieri/agentflow/issues/148)). |
 | [1.6.0](../CHANGELOG.md#160---2026-11-12) | 2026-11-12 | Bound confirmation for high-risk commands: tied to the exact command, expiring, used once ([#112](https://github.com/kstruzzieri/agentflow/issues/112), phase 1). |

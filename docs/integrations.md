@@ -128,15 +128,15 @@ Windows is best effort ([platform support](stability.md#platform-support)).
 
 ## Checked versions
 
-Checked by hand from a wheel built from the integration branch: the runtime lists the Agentflow tools,
+Checked by hand on 2026-11-18 from a wheel of the 1.9.0 code: the runtime lists the Agentflow tools,
 the Stop hook blocks an unfinished run, and it allows a finished one.
 
 | Runtime | macOS | Windows 11 |
 | --- | --- | --- |
 | Claude Code | 2.1.319: tools, block and allow checked | not checked on Windows |
-| Codex CLI | not checked yet | not checked on Windows |
+| Codex CLI | 0.166.0: tools, block and allow checked | not checked on Windows |
 | Copilot CLI | 1.0.106: tools, block and allow checked | not checked on Windows |
-| VS Code Copilot | not checked yet | not checked on Windows |
+| VS Code Copilot | 1.147.0: tools, block and allow checked | not checked on Windows |
 | Copilot cloud agent | not checked | not checked |
 
 A runtime marked "MCP tools only; Stop hook not enforcing" lists the tools but
