@@ -1,0 +1,15 @@
+{
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "agentflow stop-gate || { r=${AGENTFLOW_ROOT:-${CLAUDE_PROJECT_DIR:-}}; if [ -z \"$r\" ]; then r=$(pwd -P); while [ -n \"$r\" ] && [ \"$r\" != / ] && [ ! -f \"$r/.agent/plan.lock.json\" ] && [ ! -e \"$r/.git\" ] && [ ! -L \"$r/.git\" ]; do r=${r%/*}; r=${r:-/}; done; fi; if [ -f \"$r/.agent/plan.lock.json\" ]; then printf '%s\\n' '{\"decision\":\"block\",\"reason\":\"agentflow stop-gate could not run. Install or upgrade agentflow-proof to 1.9.0 or later so the agentflow command is on PATH, then try to stop again.\"}'; else printf '{}\\n'; fi; }",
+            "timeout": 600
+          }
+        ]
+      }
+    ]
+  }
+}

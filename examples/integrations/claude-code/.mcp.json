@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "agentflow": {
+      "type": "stdio",
+      "command": "agentflow-mcp",
+      "args": []
+    }
+  }
+}
