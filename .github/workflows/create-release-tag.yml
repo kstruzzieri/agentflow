@@ -1,0 +1,47 @@
+name: Create release tag
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Release tag matching the version on main (vX.Y.Z)
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  create-tag:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment: release-tag
+    env:
+      RELEASE_TAG: ${{ inputs.tag }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.11"
+
+      - name: Validate the release at the dispatched main commit
+        run: python3 scripts/check_release.py --tag "$RELEASE_TAG"
+
+      - name: Get a token for the tag creator
+        id: tag-token
+        uses: actions/create-github-app-token@f418cff399f7aef4c2f0ad47e25ca7a6abbdd6fc # v3.4.0
+        with:
+          client-id: ${{ vars.RELEASE_TAG_APP_CLIENT_ID }}
+          private-key: ${{ secrets.RELEASE_TAG_APP_PRIVATE_KEY }}
+          permission-contents: write
+
+      - name: Create the tag at the validated commit
+        env:
+          GH_TOKEN: ${{ steps.tag-token.outputs.token }}
+        run: |
+          gh api --method POST "repos/$GITHUB_REPOSITORY/git/refs" \
+            -f ref="refs/tags/$RELEASE_TAG" -f sha="$GITHUB_SHA"

@@ -533,6 +533,27 @@ class RepositoryReleaseDisciplineTests(unittest.TestCase):
         self.assertLess(wheel.index(compare), wheel.index("python -m venv"))
         self.assertNotIn("pip install", wheel[: wheel.index(compare)])
 
+    def test_tag_creator_validates_and_tags_the_same_main_commit(self) -> None:
+        workflow = (REPO_ROOT / ".github/workflows/create-release-tag.yml").read_text(
+            encoding="utf-8"
+        )
+        job = _workflow_job(workflow, "create-tag")
+        self.assertIn("workflow_dispatch:", workflow)
+        self.assertIn("permissions:\n  contents: read", workflow)
+        self.assertIn("if: github.ref == 'refs/heads/main'", job)
+        self.assertIn("environment: release-tag", job)
+        self.assertIn("ref: ${{ github.sha }}", job)
+        self.assertIn("persist-credentials: false", job)
+        self.assertIn("RELEASE_TAG: ${{ inputs.tag }}", job)
+        validate = job.index('scripts/check_release.py --tag "$RELEASE_TAG"')
+        self.assertEqual(len(_action_pins(job, "actions/create-github-app-token")), 1)
+        mint = job.index("uses: actions/create-github-app-token@")
+        create = job.index('gh api --method POST "repos/$GITHUB_REPOSITORY/git/refs"')
+        self.assertLess(validate, mint)
+        self.assertLess(mint, create)
+        self.assertIn("GH_TOKEN: ${{ steps.tag-token.outputs.token }}", job)
+        self.assertIn('-f ref="refs/tags/$RELEASE_TAG" -f sha="$GITHUB_SHA"', job[create:])
+
     def test_packaging_docs_name_release_order_and_python_floor(self) -> None:
         text = (REPO_ROOT / "docs" / "packaging.md").read_text(
             encoding="utf-8"
@@ -543,8 +564,7 @@ class RepositoryReleaseDisciplineTests(unittest.TestCase):
             "src/agentflow/__init__.py",
             "Unreleased",
             "python3 scripts/check_release.py --tag vX.Y.Z",
-            "git tag vX.Y.Z",
-            "git push origin vX.Y.Z",
+            "gh workflow run create-release-tag.yml --ref main -f tag=vX.Y.Z",
         ]
         positions = [text.index(value) for value in ordered]
         self.assertEqual(positions, sorted(positions))

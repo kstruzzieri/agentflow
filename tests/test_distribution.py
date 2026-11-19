@@ -366,6 +366,16 @@ class DistributionInspectorTests(unittest.TestCase):
         self.assertEqual(result.returncode, 1)
         self.assertIn("RECORD", result.stderr)
 
+    def test_python_sources_are_not_wheel_metadata(self) -> None:
+        dist_info = f"{NORMALIZED_NAME}-{VERSION}.dist-info"
+        for leaf in ("extra.py", "licenses/example.PY"):
+            member = f"{dist_info}/{leaf}"
+            with self.subTest(member=member):
+                self.write_wheel(extra={member: b"# example\n"})
+                result = self.run_inspector()
+                self.assertEqual(result.returncode, 1)
+                self.assertIn(f"unexpected wheel path: {member}", result.stderr)
+
     def test_rejects_wrong_or_missing_requires_python_metadata(self) -> None:
         for artifact in ("wheel", "sdist"):
             for value in (">=3.12", None):

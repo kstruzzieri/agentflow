@@ -357,7 +357,7 @@ def _inspect_wheel(
                         )
                 elif member not in sources:
                     raise DistributionCheckError(f"unexpected wheel path: {member}")
-            elif not member.startswith(f"{dist_info}/"):
+            elif not member.startswith(f"{dist_info}/") or member.lower().endswith(".py"):
                 raise DistributionCheckError(f"unexpected wheel path: {member}")
         _metadata(
             _read_zip_text(archive, metadata_path, "wheel"),
