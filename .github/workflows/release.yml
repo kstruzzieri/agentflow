@@ -35,8 +35,14 @@ jobs:
       - name: Set build timestamp from the tagged commit
         run: echo "SOURCE_DATE_EPOCH=$(git show -s --format=%ct HEAD)" >> "$GITHUB_ENV"
 
-      - name: Install pinned build tools
-        run: python -m pip install build==1.5.0 twine==6.2.0
+      # Every package installed in this job is pinned by hash. The build file
+      # includes the backend from pyproject.toml, and --no-isolation makes the
+      # build use it, so the build fetches nothing by itself.
+      # Block scalar on purpose: ":all: -r" has a colon followed by a space,
+      # which a single-line YAML value cannot contain.
+      - name: Install hash-pinned build tools
+        run: |
+          python -m pip install --require-hashes --only-binary=:all: -r requirements/release-build.txt
 
       - name: Run unit tests
         run: PYTHONPATH=src python -m unittest discover -s tests
@@ -44,12 +50,10 @@ jobs:
       - name: Build release artifacts once
         run: |
           python scripts/build_zipapp.py --output-dir dist
-          python -m build --sdist --wheel --outdir dist
+          python -m build --no-isolation --sdist --wheel --outdir dist
 
       - name: Inspect Python distributions
-        run: |
-          python scripts/check_distribution.py --dist-dir dist
-          python -m twine check dist/*.whl dist/*.tar.gz
+        run: python scripts/check_distribution.py --dist-dir dist
 
       - name: Smoke test zipapps
         run: |
@@ -67,6 +71,13 @@ jobs:
             dist/*.whl
             dist/*.tar.gz
           if-no-files-found: error
+
+      # twine brings about 30 packages. They are installed only now, after the
+      # artifacts have left this job, so none of them runs during the build.
+      - name: Check PyPI metadata rendering
+        run: |
+          python -m pip install --require-hashes --only-binary=:all: -r requirements/release-check.txt
+          python -m twine check dist/*.whl dist/*.tar.gz
 
   clean-install-wheel:
     name: Clean-install wheel on Python ${{ matrix.python-version }}
@@ -125,7 +136,7 @@ jobs:
           shopt -s nullglob
           sdists=(dist/*.tar.gz)
           test "${#sdists[@]}" -eq 1
-          # Preinstall the backend the sdist itself pins, so pyproject.toml stays the only copy.
+          # Read the backend pin from the sdist being tested.
           backend="$(tar -xzOf "${sdists[0]}" "$(basename "${sdists[0]}" .tar.gz)/pyproject.toml" \
             | python -c 'import sys, tomllib; print(*tomllib.load(sys.stdin.buffer)["build-system"]["requires"])')"
           test -n "$backend"

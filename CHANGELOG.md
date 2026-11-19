@@ -22,6 +22,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   server starts and lists its tools, and the Stop hook allows and blocks as
   documented ([#157](https://github.com/kstruzzieri/agentflow/issues/157)).
 
+### Changed
+
+- The release workflow installs its build tools from hash-pinned requirements
+  files under `requirements/`, builds with the pinned backend instead of
+  fetching one, and runs `twine check` only after the artifacts are handed to
+  the later jobs. CI builds its wheel with the same pins. The wheel built from
+  a commit is unchanged
+  ([#168](https://github.com/kstruzzieri/agentflow/issues/168)).
+
 ## [1.8.0] - 2026-11-17
 
 Agentflow 1.8.0 closes the two gaps left after `claim-step` started requiring
