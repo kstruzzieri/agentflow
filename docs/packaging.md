@@ -53,7 +53,11 @@ only the wheel and sdist; the zipapps remain release assets.
 
 ### Release inputs that are not pinned by content
 
-Two things the release workflow runs are not pinned to exact bytes:
+Check the build job in the revision being released. Revisions that install
+`build` and `twine` by version also resolve build dependencies without hash
+checks. [PR #169](https://github.com/kstruzzieri/agentflow/pull/169) pins the
+build and metadata-check tools by hash. These two inputs remain outside those
+hash checks:
 
 - `clean-install-sdist` installs the build backend by version, which it reads
   from the sdist under test. The job runs after the artifacts are uploaded for
