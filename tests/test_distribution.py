@@ -17,6 +17,7 @@ import zlib
 from collections.abc import Sequence
 from pathlib import Path
 
+from scripts import build_zipapp as zipapp_builder
 from scripts import check_distribution as distribution_check
 
 
@@ -64,6 +65,7 @@ class DistributionInspectorTests(unittest.TestCase):
         )
         self.write_wheel()
         self.write_sdist()
+        self.write_zipapps()
 
     def tearDown(self) -> None:
         self._tmp.cleanup()
@@ -160,6 +162,7 @@ class DistributionInspectorTests(unittest.TestCase):
         metadata_requires_python: str | None = REQUIRES_PYTHON,
         pyproject: bytes | None = None,
         setup_cfg: bytes | None = None,
+        replace: dict[str, bytes] | None = None,
         extra_member: tarfile.TarInfo | None = None,
         extra_members: Sequence[tarfile.TarInfo] = (),
     ) -> Path:
@@ -193,6 +196,7 @@ class DistributionInspectorTests(unittest.TestCase):
         )
         if setup_cfg is not None:
             entries["setup.cfg"] = setup_cfg
+        entries.update(replace or {})
         if omit is not None:
             entries.pop(omit)
         with tarfile.open(self.sdist_path, "w:gz") as archive:
@@ -205,6 +209,33 @@ class DistributionInspectorTests(unittest.TestCase):
             for member in extra_members:
                 archive.addfile(member)
         return self.sdist_path
+
+    def write_zipapp(
+        self,
+        name: str,
+        *,
+        replace: dict[str, bytes] | None = None,
+        shebang: bytes = b"#!/usr/bin/env python3\n",
+    ) -> Path:
+        entries = {
+            f"agentflow/{source}": f"# {source}\n".encode()
+            for source in PACKAGE_FILES
+        }
+        entries["__main__.py"] = zipapp_builder.MAIN_TEMPLATE.format(
+            module=zipapp_builder.TARGETS[name]
+        ).encode()
+        entries.update(replace or {})
+        path = self.dist / f"{name}.pyz"
+        with path.open("wb") as handle:
+            handle.write(shebang)
+            with zipfile.ZipFile(handle, "w", zipfile.ZIP_DEFLATED) as archive:
+                for member, body in entries.items():
+                    archive.writestr(member, body)
+        return path
+
+    def write_zipapps(self) -> None:
+        for name in zipapp_builder.TARGETS:
+            self.write_zipapp(name)
 
     @staticmethod
     def _entry_points(values: dict[str, str] | None) -> str:
@@ -221,6 +252,73 @@ class DistributionInspectorTests(unittest.TestCase):
 
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("distribution artifacts passed", result.stdout)
+
+    def test_rejects_packaged_source_that_differs_from_the_checkout(self) -> None:
+        changed = b"# cli.py\nimport os\n"
+        tampered = {
+            "wheel": lambda: self.write_wheel(extra={"agentflow/cli.py": changed}),
+            "sdist": lambda: self.write_sdist(
+                replace={"src/agentflow/cli.py": changed}
+            ),
+            "zipapp": lambda: self.write_zipapp(
+                "agentflow", replace={"agentflow/cli.py": changed}
+            ),
+        }
+        for artifact, tamper in tampered.items():
+            with self.subTest(artifact=artifact):
+                self.write_wheel()
+                self.write_sdist()
+                self.write_zipapps()
+                tamper()
+
+                result = self.run_inspector()
+
+                self.assertEqual(result.returncode, 1)
+                self.assertIn("differs from the checkout", result.stderr)
+                self.assertIn("agentflow/cli.py", result.stderr)
+
+    def test_rejects_zipapp_with_a_changed_or_added_member(self) -> None:
+        for replace, message in (
+            ({"__main__.py": b"import os\n"}, "__main__.py"),
+            ({"sitecustomize.py": b"import os\n"}, "sitecustomize.py"),
+        ):
+            with self.subTest(member=message):
+                self.write_zipapps()
+                self.write_zipapp("agentflow-mcp", replace=replace)
+
+                result = self.run_inspector()
+
+                self.assertEqual(result.returncode, 1)
+                self.assertIn("agentflow-mcp.pyz", result.stderr)
+                self.assertIn(message, result.stderr)
+
+    def test_rejects_zipapp_without_the_expected_interpreter_line(self) -> None:
+        self.write_zipapp("agentflow", shebang=b"#!/bin/sh\n")
+
+        result = self.run_inspector()
+
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("interpreter line", result.stderr)
+
+    def test_requires_both_zipapps(self) -> None:
+        (self.dist / "agentflow-mcp.pyz").unlink()
+
+        result = self.run_inspector()
+
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("agentflow-mcp.pyz", result.stderr)
+
+    def test_zipapps_built_from_this_checkout_pass(self) -> None:
+        # The real builder and the real sources: the check must accept what a
+        # release actually ships.
+        _, _, _, sources, _ = distribution_check._project_contract(REPO_ROOT)
+        for name, module in zipapp_builder.TARGETS.items():
+            with self.subTest(zipapp=name):
+                built = zipapp_builder.build_target(name, module, self.dist)
+
+                distribution_check._inspect_zipapp(
+                    built, module, REPO_ROOT, sources
+                )
 
     def test_requires_exactly_one_wheel_and_sdist(self) -> None:
         self.write_wheel("extra-0.4.0-py3-none-any.whl")
@@ -267,6 +365,16 @@ class DistributionInspectorTests(unittest.TestCase):
 
         self.assertEqual(result.returncode, 1)
         self.assertIn("RECORD", result.stderr)
+
+    def test_python_sources_are_not_wheel_metadata(self) -> None:
+        dist_info = f"{NORMALIZED_NAME}-{VERSION}.dist-info"
+        for leaf in ("extra.py", "licenses/example.PY"):
+            member = f"{dist_info}/{leaf}"
+            with self.subTest(member=member):
+                self.write_wheel(extra={member: b"# example\n"})
+                result = self.run_inspector()
+                self.assertEqual(result.returncode, 1)
+                self.assertIn(f"unexpected wheel path: {member}", result.stderr)
 
     def test_rejects_wrong_or_missing_requires_python_metadata(self) -> None:
         for artifact in ("wheel", "sdist"):

@@ -396,12 +396,20 @@ class RepositoryReleaseDisciplineTests(unittest.TestCase):
 
         for command in (
             "scripts/build_zipapp.py",
-            "python -m build --sdist --wheel --outdir dist",
+            "python -m build --no-isolation --sdist --wheel --outdir dist",
         ):
             self.assertEqual(text.count(command), 1)
             self.assertEqual(build.count(command), 1)
-        self.assertIn("build==1.5.0", build)
-        self.assertIn("twine==6.2.0", build)
+        # Wheels keep pip from resolving a tool's own build dependencies.
+        # --no-isolation reuses the pinned backend for Agentflow (#168).
+        installs = [line for line in build.splitlines() if "pip install" in line]
+        self.assertEqual(
+            [line.split("pip install ", 1)[1] for line in installs],
+            [
+                "--require-hashes --only-binary=:all: -r requirements/release-build.txt",
+                "--require-hashes --only-binary=:all: -r requirements/release-check.txt",
+            ],
+        )
         self.assertIn(
             'SOURCE_DATE_EPOCH=$(git show -s --format=%ct HEAD)', build
         )
@@ -413,6 +421,16 @@ class RepositoryReleaseDisciplineTests(unittest.TestCase):
         upload = "actions/upload-artifact"
         self.assertEqual(text.count(f"{upload}@"), 1)
         self.assertEqual(len(_action_pins(build, upload)), 1)
+        # twine's dependency tree is installed only after the artifacts have
+        # left the job, so none of it runs while they are built.
+        self.assertLess(
+            build.index("requirements/release-build.txt"),
+            build.index("python -m build"),
+        )
+        self.assertLess(
+            build.index(f"{upload}@"),
+            build.index("requirements/release-check.txt"),
+        )
         self.assertIn("name: release-distributions", build)
         for path in (
             "dist/agentflow.pyz",
@@ -422,6 +440,66 @@ class RepositoryReleaseDisciplineTests(unittest.TestCase):
         ):
             self.assertIn(path, build)
         self.assertIn("if-no-files-found: error", build)
+
+    def test_ci_wheel_job_uses_the_release_pins(self) -> None:
+        text = (REPO_ROOT / ".github" / "workflows" / "ci.yml").read_text(
+            encoding="utf-8"
+        )
+        job = _workflow_job(text, "integrations")
+
+        # Every pull request exercises both pinned files on Linux and macOS,
+        # so a bad hash fails here and not on a release tag.
+        for name in ("release-build", "release-check"):
+            self.assertIn(
+                "pip install --require-hashes --only-binary=:all: "
+                f"-r requirements/{name}.txt",
+                job,
+            )
+        self.assertIn("python -m build --no-isolation --wheel --outdir dist", job)
+        self.assertIn("python -m twine check dist/*.whl", job)
+        self.assertNotIn("build==", text)
+
+    def test_single_line_run_commands_are_plain_yaml_scalars(self) -> None:
+        # A plain YAML scalar cannot contain ": " or " #". A command that has
+        # either, such as "--only-binary=:all: -r", needs a block scalar, or
+        # the whole workflow file is rejected when a tag is pushed.
+        workflows = sorted((REPO_ROOT / ".github" / "workflows").glob("*.yml"))
+        self.assertTrue(workflows)
+        for workflow in workflows:
+            lines = workflow.read_text(encoding="utf-8").splitlines()
+            for number, line in enumerate(lines, 1):
+                match = re.fullmatch(r"\s+(?:- )?run: ([^|>\"'].*)", line)
+                if match:
+                    for marker in (": ", " #"):
+                        self.assertNotIn(
+                            marker, match.group(1), f"{workflow.name}:{number}"
+                        )
+
+    def test_pinned_requirements_match_their_inputs_and_the_backend(self) -> None:
+        import tomllib
+
+        requirements = REPO_ROOT / "requirements"
+        inputs = {}
+        for name in ("release-build", "release-check"):
+            lines = (requirements / f"{name}.in").read_text(encoding="utf-8")
+            pins = [
+                line
+                for line in lines.splitlines()
+                if line and not line.startswith("#")
+            ]
+            compiled = (requirements / f"{name}.txt").read_text(encoding="utf-8")
+            self.assertTrue(pins)
+            for pin in pins:
+                self.assertRegex(pin, r"^[a-z0-9-]+==[0-9.]+$")
+                # An edited .in file must be recompiled.
+                self.assertIn(f"\n{pin} \\\n", compiled)
+            inputs[name] = pins
+        # pyproject.toml stays the source of the backend pin; the build file
+        # repeats it so --no-isolation finds exactly that backend.
+        backend = tomllib.loads(
+            (REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8")
+        )["build-system"]["requires"]
+        self.assertTrue(set(backend) <= set(inputs["release-build"]))
 
     def test_release_workflow_clean_installs_exact_artifacts(self) -> None:
         text = (
@@ -514,6 +592,46 @@ class RepositoryReleaseDisciplineTests(unittest.TestCase):
         self.assertIn("attestations: false", publish)
         self.assertNotRegex(publish, r"(?m)^\s+(?:password|token):")
 
+    def test_release_workflow_checks_the_tag_and_the_artifact_contents(self) -> None:
+        text = (
+            REPO_ROOT / ".github" / "workflows" / "release.yml"
+        ).read_text(encoding="utf-8")
+        guard = _workflow_job(text, "guard")
+        wheel = _workflow_job(text, "clean-install-wheel")
+
+        # The tag must point at a commit on main (#171); that needs history.
+        self.assertIn("fetch-depth: 0", guard)
+        self.assertIn("git fetch --no-tags origin main", guard)
+        self.assertIn("git merge-base --is-ancestor HEAD FETCH_HEAD", guard)
+        # The comparison with the source runs a second time from a fresh
+        # checkout, before that job installs anything.
+        compare = "python scripts/check_distribution.py --dist-dir dist"
+        self.assertEqual(text.count(compare), 2)
+        self.assertLess(wheel.index("actions/checkout@"), wheel.index(compare))
+        self.assertLess(wheel.index(compare), wheel.index("python -m venv"))
+        self.assertNotIn("pip install", wheel[: wheel.index(compare)])
+
+    def test_tag_creator_validates_and_tags_the_same_main_commit(self) -> None:
+        workflow = (REPO_ROOT / ".github/workflows/create-release-tag.yml").read_text(
+            encoding="utf-8"
+        )
+        job = _workflow_job(workflow, "create-tag")
+        self.assertIn("workflow_dispatch:", workflow)
+        self.assertIn("permissions:\n  contents: read", workflow)
+        self.assertIn("if: github.ref == 'refs/heads/main'", job)
+        self.assertIn("environment: release-tag", job)
+        self.assertIn("ref: ${{ github.sha }}", job)
+        self.assertIn("persist-credentials: false", job)
+        self.assertIn("RELEASE_TAG: ${{ inputs.tag }}", job)
+        validate = job.index('scripts/check_release.py --tag "$RELEASE_TAG"')
+        self.assertEqual(len(_action_pins(job, "actions/create-github-app-token")), 1)
+        mint = job.index("uses: actions/create-github-app-token@")
+        create = job.index('gh api --method POST "repos/$GITHUB_REPOSITORY/git/refs"')
+        self.assertLess(validate, mint)
+        self.assertLess(mint, create)
+        self.assertIn("GH_TOKEN: ${{ steps.tag-token.outputs.token }}", job)
+        self.assertIn('-f ref="refs/tags/$RELEASE_TAG" -f sha="$GITHUB_SHA"', job[create:])
+
     def test_packaging_docs_name_release_order_and_python_floor(self) -> None:
         text = (REPO_ROOT / "docs" / "packaging.md").read_text(
             encoding="utf-8"
@@ -524,8 +642,7 @@ class RepositoryReleaseDisciplineTests(unittest.TestCase):
             "src/agentflow/__init__.py",
             "Unreleased",
             "python3 scripts/check_release.py --tag vX.Y.Z",
-            "git tag vX.Y.Z",
-            "git push origin vX.Y.Z",
+            "gh workflow run create-release-tag.yml --ref main -f tag=vX.Y.Z",
         ]
         positions = [text.index(value) for value in ordered]
         self.assertEqual(positions, sorted(positions))

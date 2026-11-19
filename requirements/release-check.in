@@ -1,0 +1,3 @@
+# twine, for `twine check` once the artifacts are built and handed off.
+# Compiled to release-check.txt with hashes (docs/packaging.md).
+twine==6.2.0

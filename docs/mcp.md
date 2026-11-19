@@ -108,6 +108,10 @@ after `pip install agentflow-proof`, copy the configs from
 [Integrations](integrations.md) instead; they run the installed `agentflow-mcp`
 command.
 
+`agentflow-mcp` is a command in the `agentflow-proof` package, not a package of
+its own. With uv, run it as `uvx --from agentflow-proof agentflow-mcp`, never as
+`uvx agentflow-mcp`.
+
 ### Streamable HTTP (local LLM front-ends)
 
 ```bash

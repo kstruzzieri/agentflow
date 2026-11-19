@@ -15,17 +15,56 @@ authorized) PyPI stage:
 - `dist/agentflow_proof-*.tar.gz` — provisional `agentflow-proof` sdist
 
 ```bash
-python3 -m pip install build==1.5.0 twine==6.2.0
+python3 -m pip install --require-hashes --only-binary=:all: -r requirements/release-build.txt
 python3 scripts/build_zipapp.py --output-dir dist
-python3 -m build --sdist --wheel --outdir dist
+python3 -m build --no-isolation --sdist --wheel --outdir dist
 python3 scripts/check_distribution.py --dist-dir dist
+python3 -m pip install --require-hashes --only-binary=:all: -r requirements/release-check.txt
 python3 -m twine check dist/*.whl dist/*.tar.gz
 ```
+
+### Pinned build tools
+
+Install the release tools and their dependencies from hash-pinned wheels.
+If a compatible wheel is unavailable, pip stops. This keeps pip from fetching
+additional build dependencies for a tool distributed as source.
+
+- `requirements/release-build.txt` holds `build`, its dependencies and the
+  `setuptools` backend. `--no-isolation` makes the build use that backend
+  instead of fetching one. The backend pin still lives in `pyproject.toml`
+  `[build-system].requires`; `requirements/release-build.in` repeats it, a test
+  keeps the two equal, and the build stops if they differ.
+- `requirements/release-check.txt` holds `twine` and its dependencies. Install
+  it only after the artifacts are built, as above. The release workflow installs
+  it after it has uploaded the artifacts for the later jobs.
+
+To change a pin, edit the `.in` file (and `pyproject.toml` for the backend),
+then recompile both files. Set `--exclude-newer` to a date about a week back,
+so a release published in the last few days is not picked up:
+
+```bash
+uv pip compile --universal --generate-hashes --python-version 3.11 \
+  --exclude-newer YYYY-MM-DD requirements/release-build.in -o requirements/release-build.txt
+uv pip compile --universal --generate-hashes --python-version 3.11 \
+  --exclude-newer YYYY-MM-DD requirements/release-check.in -o requirements/release-check.txt
+```
+
+CI builds its wheel and runs `twine check` with the same two files on every pull
+request, so a bad pin fails there and not on a release tag.
 
 `check_distribution.py` verifies the wheel/sdist metadata, files, and console
 scripts. The release workflow uploads this one-artifact handoff and creates
 `SHA256SUMS` for all four artifacts; consumers verify it with
 `sha256sum -c SHA256SUMS`.
+
+`check_distribution.py` also compares every packaged Python file, in the wheel,
+the sdist and both zipapps, with the checkout byte for byte, so all four
+artifacts must be in `dist/` when it runs. The release workflow runs it twice:
+in the build job, and again from a fresh checkout of the tag before anything is
+installed, where a file that changed during the build cannot match. The
+tag-triggered workflow also checks that the tagged commit is on `main`.
+GitHub loads that workflow from the tag itself. The tag-creation policy below
+also covers commits that predate the check.
 
 The wheel clean-installs on Python 3.11, 3.12, and 3.13. The sdist clean-installs
 on Python 3.11 with the pinned backend. The installed wheel must also preserve
@@ -37,7 +76,10 @@ agentflow verify-proof --root tests/fixtures/compatibility/released-v0.4.0
 
 ### Python 3.11 sdist seam
 
-Installing an sdist still builds it. `--no-build-isolation` reuses the preinstalled pinned backend and, with `--no-index`, avoids isolated-build dependency resolution/index fallback. The backend pin lives only in `pyproject.toml` `[build-system].requires`; the commands read it from there:
+Installing an sdist still builds it. `--no-build-isolation` reuses the preinstalled pinned backend
+and, with `--no-index`, avoids isolated-build dependency resolution/index fallback.
+The local smoke test reads `[build-system].requires` from the checkout’s
+`pyproject.toml`. The release workflow reads it from the sdist being tested.
 
 ```bash
 python3.11 -m venv /tmp/agentflow-sdist
@@ -50,6 +92,22 @@ python3.11 -m venv /tmp/agentflow-sdist
 a required reviewer approves the protected `pypi` environment; the Issue #5
 `if: false` gate was removed after the 1.0.0 schema freeze completed. It stages
 only the wheel and sdist; the zipapps remain release assets.
+
+### Release inputs that are not pinned by content
+
+Check the build job in the revision being released. Revisions that install
+`build` and `twine` by version also resolve build dependencies without hash
+checks. [PR #169](https://github.com/kstruzzieri/agentflow/pull/169) pins the
+build and metadata-check tools by hash. These two inputs remain outside those
+hash checks:
+
+- `clean-install-sdist` installs the build backend by version, which it reads
+  from the sdist under test. The job runs after the artifacts are uploaded for
+  the later jobs and holds no publishing permission.
+- `pypa/gh-action-pypi-publish` is pinned to a commit, but that commit runs a
+  container image chosen by a registry tag named after the commit. Whoever
+  controls the registry namespace can repoint a tag, so the image contents are
+  trusted to the PyPA project.
 
 ## Single-file builds (zipapp)
 
@@ -91,6 +149,25 @@ Python >= 3.11 before importing anything, and archives it with the stdlib
   error message instead of a traceback.
 - The artifact is a snapshot: rebuild after pulling changes.
 - Builds are not byte-for-byte reproducible (zip entries carry file mtimes).
+
+## Release tag permissions
+
+Configure these GitHub settings before using **Create release tag**:
+
+- Install a dedicated GitHub App on this repository with **Contents: write**.
+  The App creates the tag and its push triggers the existing Release workflow.
+- Create the `release-tag` environment. Under **Selected branches and tags**,
+  add a **branch** rule for the exact name `main` and allow no tags. Set
+  **Required reviewers** to the maintainers authorized to create release tags.
+  Store the App client ID in the environment variable `RELEASE_TAG_APP_CLIENT_ID` and
+  its private key in the environment secret `RELEASE_TAG_APP_PRIVATE_KEY`.
+  Keep the private key scoped to this environment. Protect `main` against
+  force pushes and require review of changes to its workflows.
+- In the active `release-tags-admin-create` ruleset for `v*`, replace the
+  administrator bypass with the dedicated App as the **only** bypass actor
+  for **Restrict creations**. Keep the separate update/deletion rule active
+  with an empty bypass list. While administrators can create tags directly,
+  an off-main tag can still select a historical release workflow.
 
 ## Release checklist
 
@@ -147,11 +224,13 @@ The release guard requires Python 3.11 or newer because it reads
    python3 scripts/check_release.py --tag vX.Y.Z
    ```
 
-8. Create and push the exact validated tag:
+8. Dispatch **Create release tag** on `main`. It validates the version and
+   changelog at the exact commit selected by GitHub for this run, then creates
+   the tag at that same SHA. An existing tag causes the create request to
+   fail. In that case, inspect the existing tag and its Release run.
 
    ```bash
-   git tag vX.Y.Z
-   git push origin vX.Y.Z
+   gh workflow run create-release-tag.yml --ref main -f tag=vX.Y.Z
    ```
 
 9. The `Release` workflow validates the tag, both version declarations, and
@@ -165,7 +244,13 @@ The release guard requires Python 3.11 or newer because it reads
 11. After a reviewer approves the `pypi` environment and the upload finishes,
     open https://pypi.org/project/agentflow-proof/ and confirm that the
     project page shows the new version with the logo, badges and working links
-    seen in step 5.
+    seen in step 5. Then run `python3 scripts/check_pypi_releases.py`. It
+    compares the hash of every file PyPI serves, for every version, with the
+    `SHA256SUMS` asset of the matching GitHub release. The `PyPI watch` workflow
+    runs the same check every hour and fails if PyPI ever serves a file that no
+    release recorded. Exit 1 means the scan confirmed a discrepancy. If a
+    different release could not be checked, the output includes both results.
+    Exit 2 means the scan was incomplete and found no confirmed discrepancy.
 
 > **Do not bump the version ahead of a release.** Ordinary CI checks only that
 > the version declarations agree and permits `## [Unreleased]` to contain

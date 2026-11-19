@@ -23,13 +23,34 @@ wheel.
   `build-proof` and `verify-proof` in process and always exits 0, printing `{}`
   to allow or `{"decision": "block", "reason": ...}` to block
   ([#164](https://github.com/kstruzzieri/agentflow/issues/164)).
+- `scripts/check_pypi_releases.py` and an hourly `PyPI watch` workflow compare
+  every file PyPI serves for `agentflow-proof` with the `SHA256SUMS` of the
+  matching GitHub release, and fail on a version or file that no release
+  recorded ([#172](https://github.com/kstruzzieri/agentflow/issues/172)).
 - `docs/integrations.md` and copy-ready configs under `examples/integrations/`
   for Claude Code, Codex CLI and GitHub Copilot, using the installed
   `agentflow-mcp` and `agentflow stop-gate` commands
   ([#156](https://github.com/kstruzzieri/agentflow/issues/156)).
+- The `Create release tag` workflow validates a release on `main` and creates
+  its tag at that commit using a dedicated GitHub App. See the tag permissions
+  in `docs/packaging.md` for the required environment and repository rules.
+  The release workflow also checks the tag's ancestry.
+  `scripts/check_distribution.py` now also compares every packaged Python file
+  in the wheel, the sdist and both zipapps with the checkout, and the workflow
+  runs that comparison a second time from a fresh checkout
+  ([#171](https://github.com/kstruzzieri/agentflow/issues/171)).
 - CI installs the built wheel and checks every integration config: the MCP
   server starts and lists its tools, and the Stop hook allows and blocks as
   documented ([#157](https://github.com/kstruzzieri/agentflow/issues/157)).
+
+### Changed
+
+- The release workflow installs its build tools from hash-pinned requirements
+  files under `requirements/`, builds with the pinned backend instead of
+  fetching one, and runs `twine check` only after the artifacts are handed to
+  the later jobs. CI builds its wheel with the same pins. The wheel built from
+  a commit is unchanged
+  ([#168](https://github.com/kstruzzieri/agentflow/issues/168)).
 
 ## [1.8.0] - 2026-11-17
 
