@@ -72,11 +72,11 @@ Supported platforms are listed in
    from contributor work.
 
    ```bash
-   python3 -m pip install --require-hashes -r requirements/release-build.txt
+   python3 -m pip install --require-hashes --only-binary=:all: -r requirements/release-build.txt
    python3 scripts/build_zipapp.py --output-dir dist
    python3 -m build --no-isolation --sdist --wheel --outdir dist
    python3 scripts/check_distribution.py --dist-dir dist
-   python3 -m pip install --require-hashes -r requirements/release-check.txt
+   python3 -m pip install --require-hashes --only-binary=:all: -r requirements/release-check.txt
    python3 -m twine check dist/*.whl dist/*.tar.gz
    python3 -m venv /tmp/agentflow-wheel
    /tmp/agentflow-wheel/bin/python -m pip install --no-index dist/agentflow_proof-*.whl

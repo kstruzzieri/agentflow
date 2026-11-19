@@ -39,7 +39,7 @@ jobs:
       # includes the backend from pyproject.toml, and --no-isolation makes the
       # build use it, so the build fetches nothing by itself.
       - name: Install hash-pinned build tools
-        run: python -m pip install --require-hashes -r requirements/release-build.txt
+        run: python -m pip install --require-hashes --only-binary=:all: -r requirements/release-build.txt
 
       - name: Run unit tests
         run: PYTHONPATH=src python -m unittest discover -s tests
@@ -73,7 +73,7 @@ jobs:
       # artifacts have left this job, so none of them runs during the build.
       - name: Check PyPI metadata rendering
         run: |
-          python -m pip install --require-hashes -r requirements/release-check.txt
+          python -m pip install --require-hashes --only-binary=:all: -r requirements/release-check.txt
           python -m twine check dist/*.whl dist/*.tar.gz
 
   clean-install-wheel:
@@ -133,7 +133,7 @@ jobs:
           shopt -s nullglob
           sdists=(dist/*.tar.gz)
           test "${#sdists[@]}" -eq 1
-          # Preinstall the backend the sdist itself pins, so pyproject.toml stays the only copy.
+          # Read the backend pin from the sdist being tested.
           backend="$(tar -xzOf "${sdists[0]}" "$(basename "${sdists[0]}" .tar.gz)/pyproject.toml" \
             | python -c 'import sys, tomllib; print(*tomllib.load(sys.stdin.buffer)["build-system"]["requires"])')"
           test -n "$backend"

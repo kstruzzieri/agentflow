@@ -400,14 +400,14 @@ class RepositoryReleaseDisciplineTests(unittest.TestCase):
         ):
             self.assertEqual(text.count(command), 1)
             self.assertEqual(build.count(command), 1)
-        # Every package this job installs is hash-pinned, and --no-isolation
-        # keeps the build from fetching the backend on its own (#168).
+        # Wheels keep pip from resolving a tool's own build dependencies.
+        # --no-isolation reuses the pinned backend for Agentflow (#168).
         installs = [line for line in build.splitlines() if "pip install" in line]
         self.assertEqual(
             [line.split("pip install ", 1)[1] for line in installs],
             [
-                "--require-hashes -r requirements/release-build.txt",
-                "--require-hashes -r requirements/release-check.txt",
+                "--require-hashes --only-binary=:all: -r requirements/release-build.txt",
+                "--require-hashes --only-binary=:all: -r requirements/release-check.txt",
             ],
         )
         self.assertIn(
@@ -449,13 +449,13 @@ class RepositoryReleaseDisciplineTests(unittest.TestCase):
 
         # Every pull request exercises both pinned files on Linux and macOS,
         # so a bad hash fails here and not on a release tag.
-        self.assertIn(
-            "pip install --require-hashes -r requirements/release-build.txt", job
-        )
+        for name in ("release-build", "release-check"):
+            self.assertIn(
+                "pip install --require-hashes --only-binary=:all: "
+                f"-r requirements/{name}.txt",
+                job,
+            )
         self.assertIn("python -m build --no-isolation --wheel --outdir dist", job)
-        self.assertIn(
-            "pip install --require-hashes -r requirements/release-check.txt", job
-        )
         self.assertIn("python -m twine check dist/*.whl", job)
         self.assertNotIn("build==", text)
 

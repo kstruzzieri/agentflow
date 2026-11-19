@@ -15,19 +15,19 @@ authorized) PyPI stage:
 - `dist/agentflow_proof-*.tar.gz` — provisional `agentflow-proof` sdist
 
 ```bash
-python3 -m pip install --require-hashes -r requirements/release-build.txt
+python3 -m pip install --require-hashes --only-binary=:all: -r requirements/release-build.txt
 python3 scripts/build_zipapp.py --output-dir dist
 python3 -m build --no-isolation --sdist --wheel --outdir dist
 python3 scripts/check_distribution.py --dist-dir dist
-python3 -m pip install --require-hashes -r requirements/release-check.txt
+python3 -m pip install --require-hashes --only-binary=:all: -r requirements/release-check.txt
 python3 -m twine check dist/*.whl dist/*.tar.gz
 ```
 
 ### Pinned build tools
 
-Everything installed to build or check a release is pinned by hash, so a newly
-published version of a build tool or of one of its dependencies cannot enter a
-release by itself.
+Install the release tools and their dependencies from hash-pinned wheels.
+If a compatible wheel is unavailable, pip stops. This keeps pip from fetching
+additional build dependencies for a tool distributed as source.
 
 - `requirements/release-build.txt` holds `build`, its dependencies and the
   `setuptools` backend. `--no-isolation` makes the build use that backend
@@ -67,7 +67,10 @@ agentflow verify-proof --root tests/fixtures/compatibility/released-v0.4.0
 
 ### Python 3.11 sdist seam
 
-Installing an sdist still builds it. `--no-build-isolation` reuses the preinstalled pinned backend and, with `--no-index`, avoids isolated-build dependency resolution/index fallback. The backend pin lives only in `pyproject.toml` `[build-system].requires`; the commands read it from there:
+Installing an sdist still builds it. `--no-build-isolation` reuses the preinstalled pinned backend
+and, with `--no-index`, avoids isolated-build dependency resolution/index fallback.
+The local smoke test reads `[build-system].requires` from the checkout’s
+`pyproject.toml`. The release workflow reads it from the sdist being tested.
 
 ```bash
 python3.11 -m venv /tmp/agentflow-sdist
