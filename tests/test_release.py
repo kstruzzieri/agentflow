@@ -396,12 +396,20 @@ class RepositoryReleaseDisciplineTests(unittest.TestCase):
 
         for command in (
             "scripts/build_zipapp.py",
-            "python -m build --sdist --wheel --outdir dist",
+            "python -m build --no-isolation --sdist --wheel --outdir dist",
         ):
             self.assertEqual(text.count(command), 1)
             self.assertEqual(build.count(command), 1)
-        self.assertIn("build==1.5.0", build)
-        self.assertIn("twine==6.2.0", build)
+        # Every package this job installs is hash-pinned, and --no-isolation
+        # keeps the build from fetching the backend on its own (#168).
+        installs = [line for line in build.splitlines() if "pip install" in line]
+        self.assertEqual(
+            [line.split("pip install ", 1)[1] for line in installs],
+            [
+                "--require-hashes -r requirements/release-build.txt",
+                "--require-hashes -r requirements/release-check.txt",
+            ],
+        )
         self.assertIn(
             'SOURCE_DATE_EPOCH=$(git show -s --format=%ct HEAD)', build
         )
@@ -413,6 +421,16 @@ class RepositoryReleaseDisciplineTests(unittest.TestCase):
         upload = "actions/upload-artifact"
         self.assertEqual(text.count(f"{upload}@"), 1)
         self.assertEqual(len(_action_pins(build, upload)), 1)
+        # twine's dependency tree is installed only after the artifacts have
+        # left the job, so none of it runs while they are built.
+        self.assertLess(
+            build.index("requirements/release-build.txt"),
+            build.index("python -m build"),
+        )
+        self.assertLess(
+            build.index(f"{upload}@"),
+            build.index("requirements/release-check.txt"),
+        )
         self.assertIn("name: release-distributions", build)
         for path in (
             "dist/agentflow.pyz",
@@ -422,6 +440,50 @@ class RepositoryReleaseDisciplineTests(unittest.TestCase):
         ):
             self.assertIn(path, build)
         self.assertIn("if-no-files-found: error", build)
+
+    def test_ci_wheel_job_uses_the_release_pins(self) -> None:
+        text = (REPO_ROOT / ".github" / "workflows" / "ci.yml").read_text(
+            encoding="utf-8"
+        )
+        job = _workflow_job(text, "integrations")
+
+        # Every pull request exercises both pinned files on Linux and macOS,
+        # so a bad hash fails here and not on a release tag.
+        self.assertIn(
+            "pip install --require-hashes -r requirements/release-build.txt", job
+        )
+        self.assertIn("python -m build --no-isolation --wheel --outdir dist", job)
+        self.assertIn(
+            "pip install --require-hashes -r requirements/release-check.txt", job
+        )
+        self.assertIn("python -m twine check dist/*.whl", job)
+        self.assertNotIn("build==", text)
+
+    def test_pinned_requirements_match_their_inputs_and_the_backend(self) -> None:
+        import tomllib
+
+        requirements = REPO_ROOT / "requirements"
+        inputs = {}
+        for name in ("release-build", "release-check"):
+            lines = (requirements / f"{name}.in").read_text(encoding="utf-8")
+            pins = [
+                line
+                for line in lines.splitlines()
+                if line and not line.startswith("#")
+            ]
+            compiled = (requirements / f"{name}.txt").read_text(encoding="utf-8")
+            self.assertTrue(pins)
+            for pin in pins:
+                self.assertRegex(pin, r"^[a-z0-9-]+==[0-9.]+$")
+                # An edited .in file must be recompiled.
+                self.assertIn(f"\n{pin} \\\n", compiled)
+            inputs[name] = pins
+        # pyproject.toml stays the source of the backend pin; the build file
+        # repeats it so --no-isolation finds exactly that backend.
+        backend = tomllib.loads(
+            (REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8")
+        )["build-system"]["requires"]
+        self.assertTrue(set(backend) <= set(inputs["release-build"]))
 
     def test_release_workflow_clean_installs_exact_artifacts(self) -> None:
         text = (

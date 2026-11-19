@@ -1,0 +1,5 @@
+# Tools that build the release artifacts. Compiled to release-build.txt with
+# hashes (docs/packaging.md, "Pinned build tools"). The setuptools pin repeats
+# pyproject.toml [build-system].requires; tests/test_release.py keeps them equal.
+build==1.5.0
+setuptools==84.1.0

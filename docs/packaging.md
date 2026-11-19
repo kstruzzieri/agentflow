@@ -15,12 +15,42 @@ authorized) PyPI stage:
 - `dist/agentflow_proof-*.tar.gz` — provisional `agentflow-proof` sdist
 
 ```bash
-python3 -m pip install build==1.5.0 twine==6.2.0
+python3 -m pip install --require-hashes -r requirements/release-build.txt
 python3 scripts/build_zipapp.py --output-dir dist
-python3 -m build --sdist --wheel --outdir dist
+python3 -m build --no-isolation --sdist --wheel --outdir dist
 python3 scripts/check_distribution.py --dist-dir dist
+python3 -m pip install --require-hashes -r requirements/release-check.txt
 python3 -m twine check dist/*.whl dist/*.tar.gz
 ```
+
+### Pinned build tools
+
+Everything installed to build or check a release is pinned by hash, so a newly
+published version of a build tool or of one of its dependencies cannot enter a
+release by itself.
+
+- `requirements/release-build.txt` holds `build`, its dependencies and the
+  `setuptools` backend. `--no-isolation` makes the build use that backend
+  instead of fetching one. The backend pin still lives in `pyproject.toml`
+  `[build-system].requires`; `requirements/release-build.in` repeats it, a test
+  keeps the two equal, and the build stops if they differ.
+- `requirements/release-check.txt` holds `twine` and its dependencies. Install
+  it only after the artifacts are built, as above. The release workflow installs
+  it after it has uploaded the artifacts for the later jobs.
+
+To change a pin, edit the `.in` file (and `pyproject.toml` for the backend),
+then recompile both files. Set `--exclude-newer` to a date about a week back,
+so a release published in the last few days is not picked up:
+
+```bash
+uv pip compile --universal --generate-hashes --python-version 3.11 \
+  --exclude-newer YYYY-MM-DD requirements/release-build.in -o requirements/release-build.txt
+uv pip compile --universal --generate-hashes --python-version 3.11 \
+  --exclude-newer YYYY-MM-DD requirements/release-check.in -o requirements/release-check.txt
+```
+
+CI builds its wheel and runs `twine check` with the same two files on every pull
+request, so a bad pin fails there and not on a release tag.
 
 `check_distribution.py` verifies the wheel/sdist metadata, files, and console
 scripts. The release workflow uploads this one-artifact handoff and creates
