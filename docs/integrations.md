@@ -30,6 +30,19 @@ agentflow --version
 
 It must print 1.9.0 or later; older versions have no `stop-gate` command.
 
+The package is `agentflow-proof`. `agentflow` and `agentflow-mcp` are the
+commands it installs, not package names: this project publishes no
+`agentflow-mcp` package, and the `agentflow` package on PyPI is an unrelated
+project. Do not run `uvx agentflow-mcp` or `pip install agentflow-mcp`. To run
+the MCP server once without installing it, name the package:
+
+```bash
+uvx --from agentflow-proof agentflow-mcp
+```
+
+The copy-ready configs below call `agentflow-mcp` and `agentflow stop-gate` from
+PATH, so they need the install above.
+
 The Stop hook only acts in a repository that has a locked Agentflow plan
 (`.agent/plan.lock.json`). Anywhere else it lets the agent stop, so the same
 config can be copied into any repository. The POSIX hooks and Copilot's

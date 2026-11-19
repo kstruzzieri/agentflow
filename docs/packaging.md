@@ -84,6 +84,22 @@ a required reviewer approves the protected `pypi` environment; the Issue #5
 `if: false` gate was removed after the 1.0.0 schema freeze completed. It stages
 only the wheel and sdist; the zipapps remain release assets.
 
+### Release inputs that are not pinned by content
+
+Check the build job in the revision being released. Revisions that install
+`build` and `twine` by version also resolve build dependencies without hash
+checks. [PR #169](https://github.com/kstruzzieri/agentflow/pull/169) pins the
+build and metadata-check tools by hash. These two inputs remain outside those
+hash checks:
+
+- `clean-install-sdist` installs the build backend by version, which it reads
+  from the sdist under test. The job runs after the artifacts are uploaded for
+  the later jobs and holds no publishing permission.
+- `pypa/gh-action-pypi-publish` is pinned to a commit, but that commit runs a
+  container image chosen by a registry tag named after the commit. Whoever
+  controls the registry namespace can repoint a tag, so the image contents are
+  trusted to the PyPA project.
+
 ## Single-file builds (zipapp)
 
 Build both artifacts from a checkout:
