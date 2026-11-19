@@ -57,6 +57,15 @@ scripts. The release workflow uploads this one-artifact handoff and creates
 `SHA256SUMS` for all four artifacts; consumers verify it with
 `sha256sum -c SHA256SUMS`.
 
+`check_distribution.py` also compares every packaged Python file, in the wheel,
+the sdist and both zipapps, with the checkout byte for byte, so all four
+artifacts must be in `dist/` when it runs. The release workflow runs it twice:
+in the build job, and again from a fresh checkout of the tag before anything is
+installed, where a file that changed during the build cannot match. The
+tag-triggered workflow also checks that the tagged commit is on `main`.
+GitHub loads that workflow from the tag itself. The tag-creation policy below
+also covers commits that predate the check.
+
 The wheel clean-installs on Python 3.11, 3.12, and 3.13. The sdist clean-installs
 on Python 3.11 with the pinned backend. The installed wheel must also preserve
 the released-v0.4.0 proof contract:
@@ -141,6 +150,25 @@ Python >= 3.11 before importing anything, and archives it with the stdlib
 - The artifact is a snapshot: rebuild after pulling changes.
 - Builds are not byte-for-byte reproducible (zip entries carry file mtimes).
 
+## Release tag permissions
+
+Configure these GitHub settings before using **Create release tag**:
+
+- Install a dedicated GitHub App on this repository with **Contents: write**.
+  The App creates the tag and its push triggers the existing Release workflow.
+- Create the `release-tag` environment. Under **Selected branches and tags**,
+  add a **branch** rule for the exact name `main` and allow no tags. Set
+  **Required reviewers** to the maintainers authorized to create release tags.
+  Store the App client ID in the environment variable `RELEASE_TAG_APP_CLIENT_ID` and
+  its private key in the environment secret `RELEASE_TAG_APP_PRIVATE_KEY`.
+  Keep the private key scoped to this environment. Protect `main` against
+  force pushes and require review of changes to its workflows.
+- In the active `release-tags-admin-create` ruleset for `v*`, replace the
+  administrator bypass with the dedicated App as the **only** bypass actor
+  for **Restrict creations**. Keep the separate update/deletion rule active
+  with an empty bypass list. While administrators can create tags directly,
+  an off-main tag can still select a historical release workflow.
+
 ## Release checklist
 
 The release guard requires Python 3.11 or newer because it reads
@@ -196,11 +224,13 @@ The release guard requires Python 3.11 or newer because it reads
    python3 scripts/check_release.py --tag vX.Y.Z
    ```
 
-8. Create and push the exact validated tag:
+8. Dispatch **Create release tag** on `main`. It validates the version and
+   changelog at the exact commit selected by GitHub for this run, then creates
+   the tag at that same SHA. An existing tag causes the create request to
+   fail. In that case, inspect the existing tag and its Release run.
 
    ```bash
-   git tag vX.Y.Z
-   git push origin vX.Y.Z
+   gh workflow run create-release-tag.yml --ref main -f tag=vX.Y.Z
    ```
 
 9. The `Release` workflow validates the tag, both version declarations, and

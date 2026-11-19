@@ -592,6 +592,46 @@ class RepositoryReleaseDisciplineTests(unittest.TestCase):
         self.assertIn("attestations: false", publish)
         self.assertNotRegex(publish, r"(?m)^\s+(?:password|token):")
 
+    def test_release_workflow_checks_the_tag_and_the_artifact_contents(self) -> None:
+        text = (
+            REPO_ROOT / ".github" / "workflows" / "release.yml"
+        ).read_text(encoding="utf-8")
+        guard = _workflow_job(text, "guard")
+        wheel = _workflow_job(text, "clean-install-wheel")
+
+        # The tag must point at a commit on main (#171); that needs history.
+        self.assertIn("fetch-depth: 0", guard)
+        self.assertIn("git fetch --no-tags origin main", guard)
+        self.assertIn("git merge-base --is-ancestor HEAD FETCH_HEAD", guard)
+        # The comparison with the source runs a second time from a fresh
+        # checkout, before that job installs anything.
+        compare = "python scripts/check_distribution.py --dist-dir dist"
+        self.assertEqual(text.count(compare), 2)
+        self.assertLess(wheel.index("actions/checkout@"), wheel.index(compare))
+        self.assertLess(wheel.index(compare), wheel.index("python -m venv"))
+        self.assertNotIn("pip install", wheel[: wheel.index(compare)])
+
+    def test_tag_creator_validates_and_tags_the_same_main_commit(self) -> None:
+        workflow = (REPO_ROOT / ".github/workflows/create-release-tag.yml").read_text(
+            encoding="utf-8"
+        )
+        job = _workflow_job(workflow, "create-tag")
+        self.assertIn("workflow_dispatch:", workflow)
+        self.assertIn("permissions:\n  contents: read", workflow)
+        self.assertIn("if: github.ref == 'refs/heads/main'", job)
+        self.assertIn("environment: release-tag", job)
+        self.assertIn("ref: ${{ github.sha }}", job)
+        self.assertIn("persist-credentials: false", job)
+        self.assertIn("RELEASE_TAG: ${{ inputs.tag }}", job)
+        validate = job.index('scripts/check_release.py --tag "$RELEASE_TAG"')
+        self.assertEqual(len(_action_pins(job, "actions/create-github-app-token")), 1)
+        mint = job.index("uses: actions/create-github-app-token@")
+        create = job.index('gh api --method POST "repos/$GITHUB_REPOSITORY/git/refs"')
+        self.assertLess(validate, mint)
+        self.assertLess(mint, create)
+        self.assertIn("GH_TOKEN: ${{ steps.tag-token.outputs.token }}", job)
+        self.assertIn('-f ref="refs/tags/$RELEASE_TAG" -f sha="$GITHUB_SHA"', job[create:])
+
     def test_packaging_docs_name_release_order_and_python_floor(self) -> None:
         text = (REPO_ROOT / "docs" / "packaging.md").read_text(
             encoding="utf-8"
@@ -602,8 +642,7 @@ class RepositoryReleaseDisciplineTests(unittest.TestCase):
             "src/agentflow/__init__.py",
             "Unreleased",
             "python3 scripts/check_release.py --tag vX.Y.Z",
-            "git tag vX.Y.Z",
-            "git push origin vX.Y.Z",
+            "gh workflow run create-release-tag.yml --ref main -f tag=vX.Y.Z",
         ]
         positions = [text.index(value) for value in ordered]
         self.assertEqual(positions, sorted(positions))

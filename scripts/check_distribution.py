@@ -1,11 +1,17 @@
 #!/usr/bin/env python3
-"""Inspect Agentflow wheel and sdist contents before release handoff."""
+"""Inspect the Agentflow wheel, sdist and zipapps before release handoff.
+
+Checks names and metadata, then compares every packaged Python file with
+the checkout byte for byte. Run it from a fresh checkout of the tagged
+commit to catch a file that changed during the build.
+"""
 
 from __future__ import annotations
 
 import argparse
 import configparser
 import gzip
+import importlib.util
 import io
 import re
 import sys
@@ -36,6 +42,7 @@ MAX_ARCHIVE_MEMBERS = 1_024
 MAX_UNCOMPRESSED_BYTES = 64 * 1024 * 1024
 MAX_INSPECTED_MEMBER_BYTES = 1024 * 1024
 SUPPORTED_WHEEL_COMPRESSION = {zipfile.ZIP_STORED, zipfile.ZIP_DEFLATED}
+ZIPAPP_INTERPRETER_LINE = b"#!/usr/bin/env python3\n"
 
 
 class DistributionCheckError(ValueError):
@@ -187,9 +194,9 @@ def _open_bounded_tar(path: Path) -> tarfile.TarFile:
     return tarfile.open(fileobj=io.BytesIO(body), mode="r:")
 
 
-def _read_zip_text(
+def _read_zip_bytes(
     archive: zipfile.ZipFile, name: str, label: str
-) -> str:
+) -> bytes:
     info = archive.getinfo(name)
     if info.file_size > MAX_INSPECTED_MEMBER_BYTES:
         raise DistributionCheckError(
@@ -201,12 +208,18 @@ def _read_zip_text(
         raise DistributionCheckError(
             f"{label} member is too large to inspect: {name}"
         )
-    return body.decode("utf-8")
+    return body
 
 
-def _read_tar_text(
-    archive: tarfile.TarFile, member: tarfile.TarInfo, label: str
+def _read_zip_text(
+    archive: zipfile.ZipFile, name: str, label: str
 ) -> str:
+    return _read_zip_bytes(archive, name, label).decode("utf-8")
+
+
+def _read_tar_bytes(
+    archive: tarfile.TarFile, member: tarfile.TarInfo, label: str
+) -> bytes:
     if member.size > MAX_INSPECTED_MEMBER_BYTES:
         raise DistributionCheckError(
             f"{label} member is too large to inspect: {member.name}"
@@ -219,7 +232,23 @@ def _read_tar_text(
         raise DistributionCheckError(
             f"{label} member is too large to inspect: {member.name}"
         )
-    return body.decode("utf-8")
+    return body
+
+
+def _read_tar_text(
+    archive: tarfile.TarFile, member: tarfile.TarInfo, label: str
+) -> str:
+    return _read_tar_bytes(archive, member, label).decode("utf-8")
+
+
+def _require_checkout_bytes(
+    packaged: bytes, checkout_file: Path, label: str, member: str
+) -> None:
+    """Fail unless a packaged file is byte-identical to the checkout's copy."""
+    if packaged != checkout_file.read_bytes():
+        raise DistributionCheckError(
+            f"{label} file differs from the checkout: {member}"
+        )
 
 
 def _allowed_sdist_members(
@@ -271,6 +300,7 @@ def _validate_generated_setup_cfg(text: str) -> None:
 
 def _inspect_wheel(
     path: Path,
+    root: Path,
     name: str,
     version: str,
     requires_python: str,
@@ -327,7 +357,7 @@ def _inspect_wheel(
                         )
                 elif member not in sources:
                     raise DistributionCheckError(f"unexpected wheel path: {member}")
-            elif not member.startswith(f"{dist_info}/"):
+            elif not member.startswith(f"{dist_info}/") or member.lower().endswith(".py"):
                 raise DistributionCheckError(f"unexpected wheel path: {member}")
         _metadata(
             _read_zip_text(archive, metadata_path, "wheel"),
@@ -341,6 +371,13 @@ def _inspect_wheel(
             raise DistributionCheckError(
                 f"wheel console entry points expected {EXPECTED_SCRIPTS!r}; "
                 f"found {scripts!r}"
+            )
+        for source in sorted(sources):
+            _require_checkout_bytes(
+                _read_zip_bytes(archive, source, "wheel"),
+                root / "src" / source,
+                "wheel",
+                source,
             )
 
 
@@ -435,16 +472,76 @@ def _inspect_sdist(
             _validate_generated_setup_cfg(
                 _read_tar_text(archive, files[setup_cfg_path], "sdist")
             )
+        for member_name in sorted(files):
+            if member_name.endswith(".py"):
+                _require_checkout_bytes(
+                    _read_tar_bytes(archive, files[member_name], "sdist"),
+                    root / member_name[len(prefix) + 1 :],
+                    "sdist",
+                    member_name,
+                )
 
 
-def inspect_distribution(root: Path, dist_dir: Path) -> tuple[Path, Path]:
-    """Validate and return the sole wheel and sdist in ``dist_dir``."""
+def _zipapp_builder():
+    """Load the sibling build script: it owns the targets and ``__main__``."""
+    spec = importlib.util.spec_from_file_location(
+        "agentflow_build_zipapp", Path(__file__).with_name("build_zipapp.py")
+    )
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def _inspect_zipapp(
+    path: Path, module: str, root: Path, sources: set[str]
+) -> None:
+    label = path.name
+    if not path.is_file():
+        raise DistributionCheckError(f"missing zipapp: {label}")
+    _check_archive_size(path, label)
+    with path.open("rb") as handle:
+        if handle.read(len(ZIPAPP_INTERPRETER_LINE)) != ZIPAPP_INTERPRETER_LINE:
+            raise DistributionCheckError(
+                f"{label} does not start with the expected interpreter line"
+            )
+    main = _zipapp_builder().MAIN_TEMPLATE.format(module=module).encode("utf-8")
+    with zipfile.ZipFile(path) as archive:
+        infos = archive.infolist()
+        _check_member_limits([info.file_size for info in infos], label)
+        names = [info.filename for info in infos]
+        _safe_archive_names(names, label)
+        for member in names:
+            if member.endswith("/"):
+                if not any(source.startswith(member) for source in sources):
+                    raise DistributionCheckError(
+                        f"unexpected {label} path: {member}"
+                    )
+            elif member != "__main__.py" and member not in sources:
+                raise DistributionCheckError(f"unexpected {label} path: {member}")
+        for required in sorted(sources | {"__main__.py"}):
+            if required not in names:
+                raise DistributionCheckError(f"{label} is missing {required}")
+        if _read_zip_bytes(archive, "__main__.py", label) != main:
+            raise DistributionCheckError(
+                f"{label} file differs from the build script: __main__.py"
+            )
+        for source in sorted(sources):
+            _require_checkout_bytes(
+                _read_zip_bytes(archive, source, label),
+                root / "src" / source,
+                label,
+                source,
+            )
+
+
+def inspect_distribution(root: Path, dist_dir: Path) -> list[Path]:
+    """Validate and return the wheel, the sdist and both zipapps in ``dist_dir``."""
     name, version, requires_python, sources, packaging_config = _project_contract(
         root
     )
     wheel = _sole_artifact(dist_dir, "*.whl", "wheel")
     sdist = _sole_artifact(dist_dir, "*.tar.gz", "sdist")
-    _inspect_wheel(wheel, name, version, requires_python, sources)
+    _inspect_wheel(wheel, root, name, version, requires_python, sources)
     _inspect_sdist(
         sdist,
         root,
@@ -454,7 +551,12 @@ def inspect_distribution(root: Path, dist_dir: Path) -> tuple[Path, Path]:
         sources,
         packaging_config,
     )
-    return wheel, sdist
+    zipapps = []
+    for target, module in sorted(_zipapp_builder().TARGETS.items()):
+        zipapp_path = dist_dir / f"{target}.pyz"
+        _inspect_zipapp(zipapp_path, module, root, sources)
+        zipapps.append(zipapp_path)
+    return [wheel, sdist, *zipapps]
 
 
 def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
@@ -468,7 +570,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = _parse_args(argv)
     dist_dir = args.dist_dir or args.root / "dist"
     try:
-        wheel, sdist = inspect_distribution(args.root, dist_dir)
+        artifacts = inspect_distribution(args.root, dist_dir)
     except (
         DistributionCheckError,
         EOFError,
@@ -479,7 +581,10 @@ def main(argv: Sequence[str] | None = None) -> int:
     ) as exc:
         sys.stderr.write(f"distribution check failed: {exc}\n")
         return 1
-    print(f"distribution artifacts passed: {wheel.name}, {sdist.name}")
+    print(
+        "distribution artifacts passed: "
+        + ", ".join(artifact.name for artifact in artifacts)
+    )
     return 0
 
 
