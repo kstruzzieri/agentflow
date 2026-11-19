@@ -165,7 +165,11 @@ The release guard requires Python 3.11 or newer because it reads
 11. After a reviewer approves the `pypi` environment and the upload finishes,
     open https://pypi.org/project/agentflow-proof/ and confirm that the
     project page shows the new version with the logo, badges and working links
-    seen in step 5.
+    seen in step 5. Then run `python3 scripts/check_pypi_releases.py`. It
+    compares the hash of every file PyPI serves, for every version, with the
+    `SHA256SUMS` asset of the matching GitHub release. The `PyPI watch` workflow
+    runs the same check every hour and fails if PyPI ever serves a file that no
+    release recorded.
 
 > **Do not bump the version ahead of a release.** Ordinary CI checks only that
 > the version declarations agree and permits `## [Unreleased]` to contain
