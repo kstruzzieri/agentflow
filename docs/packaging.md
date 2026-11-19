@@ -27,6 +27,13 @@ scripts. The release workflow uploads this one-artifact handoff and creates
 `SHA256SUMS` for all four artifacts; consumers verify it with
 `sha256sum -c SHA256SUMS`.
 
+`check_distribution.py` also compares every packaged Python file, in the wheel,
+the sdist and both zipapps, with the checkout byte for byte, so all four
+artifacts must be in `dist/` when it runs. The release workflow runs it twice:
+in the build job, and again from a fresh checkout of the tag before anything is
+installed, where a file that changed during the build cannot match. The
+workflow also stops at the start unless the tagged commit is on `main`.
+
 The wheel clean-installs on Python 3.11, 3.12, and 3.13. The sdist clean-installs
 on Python 3.11 with the pinned backend. The installed wheel must also preserve
 the released-v0.4.0 proof contract:
@@ -147,7 +154,13 @@ The release guard requires Python 3.11 or newer because it reads
    python3 scripts/check_release.py --tag vX.Y.Z
    ```
 
-8. Create and push the exact validated tag:
+8. Create and push the exact validated tag, on the `main` commit from step 7.
+   The workflow stops for a tag whose commit is not on `main`. Repository
+   rulesets let only an admin create a `v*` tag and let nobody move or delete
+   one. If a run fails before the release is published, an admin can switch
+   the `release-tags-no-move-or-delete` ruleset off to delete the tag; a
+   published release is immutable, so after that the fix is a new patch
+   version:
 
    ```bash
    git tag vX.Y.Z

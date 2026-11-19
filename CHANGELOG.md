@@ -18,6 +18,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   for Claude Code, Codex CLI and GitHub Copilot, using the installed
   `agentflow-mcp` and `agentflow stop-gate` commands
   ([#156](https://github.com/kstruzzieri/agentflow/issues/156)).
+- The release workflow stops unless the tagged commit is on `main`.
+  `scripts/check_distribution.py` now also compares every packaged Python file
+  in the wheel, the sdist and both zipapps with the checkout, and the workflow
+  runs that comparison a second time from a fresh checkout
+  ([#171](https://github.com/kstruzzieri/agentflow/issues/171)).
 - CI installs the built wheel and checks every integration config: the MCP
   server starts and lists its tools, and the Stop hook allows and blocks as
   documented ([#157](https://github.com/kstruzzieri/agentflow/issues/157)).

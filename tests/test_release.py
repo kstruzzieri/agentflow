@@ -514,6 +514,25 @@ class RepositoryReleaseDisciplineTests(unittest.TestCase):
         self.assertIn("attestations: false", publish)
         self.assertNotRegex(publish, r"(?m)^\s+(?:password|token):")
 
+    def test_release_workflow_checks_the_tag_and_the_artifact_contents(self) -> None:
+        text = (
+            REPO_ROOT / ".github" / "workflows" / "release.yml"
+        ).read_text(encoding="utf-8")
+        guard = _workflow_job(text, "guard")
+        wheel = _workflow_job(text, "clean-install-wheel")
+
+        # The tag must point at a commit on main (#171); that needs history.
+        self.assertIn("fetch-depth: 0", guard)
+        self.assertIn("git fetch --no-tags origin main", guard)
+        self.assertIn("git merge-base --is-ancestor HEAD FETCH_HEAD", guard)
+        # The comparison with the source runs a second time from a fresh
+        # checkout, before that job installs anything.
+        compare = "python scripts/check_distribution.py --dist-dir dist"
+        self.assertEqual(text.count(compare), 2)
+        self.assertLess(wheel.index("actions/checkout@"), wheel.index(compare))
+        self.assertLess(wheel.index(compare), wheel.index("python -m venv"))
+        self.assertNotIn("pip install", wheel[: wheel.index(compare)])
+
     def test_packaging_docs_name_release_order_and_python_floor(self) -> None:
         text = (REPO_ROOT / "docs" / "packaging.md").read_text(
             encoding="utf-8"
