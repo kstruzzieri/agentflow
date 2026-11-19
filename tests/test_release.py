@@ -459,6 +459,22 @@ class RepositoryReleaseDisciplineTests(unittest.TestCase):
         self.assertIn("python -m twine check dist/*.whl", job)
         self.assertNotIn("build==", text)
 
+    def test_single_line_run_commands_are_plain_yaml_scalars(self) -> None:
+        # A plain YAML scalar cannot contain ": " or " #". A command that has
+        # either, such as "--only-binary=:all: -r", needs a block scalar, or
+        # the whole workflow file is rejected when a tag is pushed.
+        workflows = sorted((REPO_ROOT / ".github" / "workflows").glob("*.yml"))
+        self.assertTrue(workflows)
+        for workflow in workflows:
+            lines = workflow.read_text(encoding="utf-8").splitlines()
+            for number, line in enumerate(lines, 1):
+                match = re.fullmatch(r"\s+(?:- )?run: ([^|>\"'].*)", line)
+                if match:
+                    for marker in (": ", " #"):
+                        self.assertNotIn(
+                            marker, match.group(1), f"{workflow.name}:{number}"
+                        )
+
     def test_pinned_requirements_match_their_inputs_and_the_backend(self) -> None:
         import tomllib
 
