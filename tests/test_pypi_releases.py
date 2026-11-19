@@ -131,6 +131,41 @@ class PyPIReleaseWatchTests(unittest.TestCase):
             self.assertEqual(watch.main([]), 2)
         self.assertIn("could not check", err.getvalue())
 
+    def test_malformed_inventory_is_an_incomplete_scan(self) -> None:
+        for inventory in (
+            [], {}, {"releases": []}, {"releases": {"1.0.0": None}},
+            {"releases": {"1.0.0": {}}}, {"releases": {"1.0.0": [None]}},
+            {"releases": {"1.0.0": [{"filename": WHEEL, "digests": {}}]}},
+            {"releases": {"1.0.0": [{"filename": "", "digests": {"sha256": GOOD}}]}},
+        ):
+            with self.subTest(inventory=inventory):
+                out, err = io.StringIO(), io.StringIO()
+                pages = {PYPI: json.dumps(inventory).encode()}
+                with mock.patch.object(watch, "_fetch", pages.get):
+                    with redirect_stdout(out), redirect_stderr(err):
+                        self.assertEqual(watch.main([]), 2)
+                self.assertIn("could not check", err.getvalue())
+                self.assertEqual(out.getvalue(), "")
+
+    def test_discrepancies_survive_an_incomplete_scan_in_either_order(self) -> None:
+        files = {WHEEL: GOOD}
+        inventory = _pypi({"1.0.0": files, "2.0.0": files})
+        for offline, missing in (("1.0.0", "2.0.0"), ("2.0.0", "1.0.0")):
+            with self.subTest(offline=offline):
+                def fetch(url: str) -> bytes | None:
+                    if url == PYPI:
+                        return inventory
+                    if url == _sums_url(offline):
+                        raise TimeoutError("timed out")
+                    self.assertEqual(url, _sums_url(missing))
+                    return None
+
+                err = io.StringIO()
+                with mock.patch.object(watch, "_fetch", fetch), redirect_stderr(err):
+                    self.assertEqual(watch.main([]), 1)
+                self.assertIn(f"{offline}: timed out", err.getvalue())
+                self.assertIn(f"v{missing} has no SHA256SUMS", err.getvalue())
+
 
 class PyPIWatchWorkflowTests(unittest.TestCase):
     def test_workflow_is_scheduled_read_only_and_pinned(self) -> None:

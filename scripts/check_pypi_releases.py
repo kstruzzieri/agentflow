@@ -9,13 +9,15 @@ list, or a different hash is reported.
 The GitHub release is the reference. This finds a file that reached PyPI some
 other way than the release workflow; it cannot find a compromised repository.
 
-Exit status: 0 everything matches, 1 a problem was found, 2 the check could
-not run (network, unreadable data).
+Exit status: 0 everything matches, 1 a discrepancy was confirmed (even if
+other releases could not be checked), 2 an incomplete scan with no confirmed
+discrepancy.
 """
 
 from __future__ import annotations
 
 import argparse
+import http.client
 import json
 import re
 import sys
@@ -38,6 +40,10 @@ Fetch = Callable[[str], Optional[bytes]]
 
 class ReleaseWatchError(ValueError):
     """The data needed for the comparison is missing or unreadable."""
+
+    def __init__(self, message: str, *, problems: Sequence[str] = ()) -> None:
+        super().__init__(message)
+        self.problems = list(problems)
 
 
 def _fetch(url: str) -> Optional[bytes]:
@@ -71,6 +77,19 @@ def parse_sums(text: str) -> dict[str, str]:
     return sums
 
 
+def _file_digest(entry: object) -> tuple[str, str]:
+    if not isinstance(entry, dict):
+        raise ReleaseWatchError("expected a PyPI file object")
+    name = entry.get("filename")
+    if not isinstance(name, str) or not name.strip():
+        raise ReleaseWatchError("expected a nonempty PyPI filename")
+    digests = entry.get("digests")
+    digest = digests.get("sha256") if isinstance(digests, dict) else None
+    if not isinstance(digest, str) or not re.fullmatch(r"[0-9a-f]{64}", digest):
+        raise ReleaseWatchError(f"invalid PyPI SHA-256 for {name}")
+    return name, digest
+
+
 def find_problems(
     fetch: Fetch = _fetch,
     project: str = PROJECT,
@@ -80,24 +99,39 @@ def find_problems(
     body = fetch(PYPI_URL.format(project=project))
     if body is None:
         raise ReleaseWatchError(f"PyPI has no project named {project}")
-    releases = json.loads(body)["releases"]
+    project_data = json.loads(body)
+    releases = project_data.get("releases") if isinstance(project_data, dict) else None
+    if not isinstance(releases, dict):
+        raise ReleaseWatchError("expected a PyPI releases object")
     problems: list[str] = []
+    errors: list[str] = []
     versions = checked = 0
-    for version in sorted(releases):
-        files = releases[version]
+    for version, entries in sorted(releases.items()):
+        if not version.strip() or not isinstance(entries, list):
+            errors.append(f"{version!r}: expected a named release with a file list")
+            continue
+        files = []
+        for entry in entries:
+            try:
+                files.append(_file_digest(entry))
+            except ReleaseWatchError as exc:
+                errors.append(f"{version}: {exc}")
         if not files:
             continue
         versions += 1
-        sums_body = fetch(SUMS_URL.format(repository=repository, version=version))
-        if sums_body is None:
+        try:
+            sums_body = fetch(SUMS_URL.format(repository=repository, version=version))
+            sums = None if sums_body is None else parse_sums(sums_body.decode("utf-8"))
+        except (OSError, http.client.HTTPException, ValueError) as exc:
+            errors.append(f"{version}: {exc}")
+            continue
+        if sums is None:
             problems.append(
                 f"{version}: PyPI has this version, but GitHub release "
                 f"v{version} has no SHA256SUMS"
             )
             continue
-        sums = parse_sums(sums_body.decode("utf-8"))
-        for entry in files:
-            name, digest = entry["filename"], entry["digests"]["sha256"]
+        for name, digest in files:
             checked += 1
             recorded = sums.get(name)
             if recorded is None:
@@ -110,6 +144,8 @@ def find_problems(
                     f"{version}: {name} on PyPI has sha256 {digest}; the "
                     f"release recorded {recorded}"
                 )
+    if errors:
+        raise ReleaseWatchError("\n".join(errors), problems=problems)
     return problems, versions, checked
 
 
@@ -117,9 +153,11 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     argparse.ArgumentParser(description=__doc__).parse_args(argv)
     try:
         problems, versions, checked = find_problems(_fetch)
-    except (OSError, KeyError, TypeError, ValueError) as exc:
+    except (OSError, http.client.HTTPException, ValueError) as exc:
         sys.stderr.write(f"could not check PyPI against the releases: {exc}\n")
-        return 2
+        if not isinstance(exc, ReleaseWatchError) or not exc.problems:
+            return 2
+        problems = exc.problems
     if problems:
         sys.stderr.write(
             "PyPI serves files that the GitHub releases did not record:\n"
