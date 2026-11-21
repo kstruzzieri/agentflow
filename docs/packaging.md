@@ -91,7 +91,10 @@ python3.11 -m venv /tmp/agentflow-sdist
 `publish-pypi` in `.github/workflows/release.yml` runs on every `v*` tag once
 a required reviewer approves the protected `pypi` environment; the Issue #5
 `if: false` gate was removed after the 1.0.0 schema freeze completed. It stages
-only the wheel and sdist; the zipapps remain release assets.
+only the wheel and sdist; the zipapps remain release assets. With each file it
+uploads a signed attestation that records the repository, workflow and commit
+that published it. PyPI shows it on the file's page, and a file uploaded any
+other way has none.
 
 ### Release inputs that are not pinned by content
 
