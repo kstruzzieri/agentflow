@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Releases now upload a signed attestation with each file on PyPI. It records
+  the repository, workflow and commit that published the file
+  ([#176](https://github.com/kstruzzieri/agentflow/issues/176)).
+
 ## [1.9.0] - 2026-11-19
 
 Agentflow 1.9.0 works with Claude Code, Codex CLI and GitHub Copilot in your
