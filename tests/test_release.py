@@ -589,7 +589,7 @@ class RepositoryReleaseDisciplineTests(unittest.TestCase):
         self.assertNotIn(".pyz", stage)
         self.assertEqual(len(_action_pins(publish, "pypa/gh-action-pypi-publish")), 1)
         self.assertIn("packages-dir: pypi-dist/", publish)
-        self.assertIn("attestations: false", publish)
+        self.assertIn("attestations: true", publish)
         self.assertNotRegex(publish, r"(?m)^\s+(?:password|token):")
 
     def test_release_workflow_checks_the_tag_and_the_artifact_contents(self) -> None:
