@@ -152,6 +152,11 @@ Python >= 3.11 before importing anything, and archives it with the stdlib
 
 ## Release tag permissions
 
+This setup is optional. Until it is done, **Create release tag** cannot run:
+it fails when it asks for the App token and creates no tag. An administrator
+pushes the tag instead, as release checklist step 8 describes, which the
+`release-tags-admin-create` ruleset allows.
+
 Configure these GitHub settings before using **Create release tag**:
 
 - Install a dedicated GitHub App on this repository with **Contents: write**.
@@ -224,10 +229,25 @@ The release guard requires Python 3.11 or newer because it reads
    python3 scripts/check_release.py --tag vX.Y.Z
    ```
 
-8. Dispatch **Create release tag** on `main`. It validates the version and
-   changelog at the exact commit selected by GitHub for this run, then creates
-   the tag at that same SHA. An existing tag causes the create request to
-   fail. In that case, inspect the existing tag and its Release run.
+8. Create the tag at the `main` commit validated in step 7. Either way, the
+   `Release` workflow stops unless that commit is on `main`, and a `v*` tag
+   cannot be moved or deleted afterwards.
+
+   Without the setup under [Release tag permissions](#release-tag-permissions),
+   an administrator pushes the tag. Name the commit, so that nothing merged in
+   the meantime is tagged by mistake. GitHub answers `Bypassed rule violations`
+   for the tag; that is the administrator bypass, not an error.
+
+   ```bash
+   git fetch origin && git tag vX.Y.Z <commit>
+   git push origin vX.Y.Z
+   ```
+
+   With that setup in place, dispatch **Create release tag** on `main`
+   instead. It validates the version and changelog at the exact commit
+   selected by GitHub for this run, then creates the tag at that same SHA. An
+   existing tag causes the create request to fail. In that case, inspect the
+   existing tag and its Release run.
 
    ```bash
    gh workflow run create-release-tag.yml --ref main -f tag=vX.Y.Z
